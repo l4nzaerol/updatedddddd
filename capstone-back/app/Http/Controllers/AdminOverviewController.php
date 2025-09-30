@@ -14,7 +14,7 @@ class AdminOverviewController extends Controller
     {
         $stocks = InventoryItem::all(['id','sku','name','category','quantity_on_hand','safety_stock','reorder_point','max_level','lead_time_days']);
 
-        $productions = Production::orderBy('date','desc')->limit(100)->get(['id','order_id','product_id','product_name','date','stage','status','quantity']);
+        $productions = Production::orderBy('date','desc')->limit(100)->get(['id','order_id','product_id','product_name','date','current_stage','status','quantity']);
 
         $orders = [
             'pending' => Order::where('status','pending')->count(),

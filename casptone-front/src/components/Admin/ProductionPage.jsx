@@ -81,19 +81,6 @@ export default function ProductionTrackingSystem() {
     } catch (e) {
       console.warn("Pusher setup failed", e);
     }
-    // Fallback polling when realtime not configured
-    const intervalId = setInterval(() => {
-      try {
-        fetchProductions();
-        fetchAnalytics();
-      } catch (e) {
-        // ignore polling errors
-      }
-    }, 8000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
   }, []);
 
   useEffect(() => {
@@ -140,15 +127,7 @@ export default function ProductionTrackingSystem() {
 
   const fetchAnalytics = async () => {
     try {
-      // Use a default 14-day window unless user selected a range
-      const today = new Date();
-      const defaultStart = new Date();
-      defaultStart.setDate(today.getDate() - 13); // inclusive of today = 14 days
-
-      const start = dateRange.start || defaultStart.toISOString().slice(0, 10);
-      const end = dateRange.end || today.toISOString().slice(0, 10);
-
-      const res = await api.get(`/productions/analytics`, { params: { start_date: start, end_date: end } });
+      const res = await api.get(`/productions/analytics`);
       const data = res.data || {};
       console.log('Analytics data:', data);
       
@@ -331,16 +310,22 @@ export default function ProductionTrackingSystem() {
 
   const updateStage = async (id, newStage) => {
     try {
-      // Use override-stage endpoint because backend ignores direct stage updates on PATCH
-      const res = await api.post(`/productions/${id}/override-stage`, { stage: newStage, reason: 'Manual stage change from dashboard' });
-      const updated = res.data?.production || res.data;
+      console.log(`Updating production ${id} to stage: ${newStage}`);
+      const res = await api.patch(`/productions/${id}`, { stage: newStage });
+      const updated = res.data;
       setProductions((prev) => prev.map((p) => (p.id === id ? updated : p)));
       // Immediately refresh analytics so charts and workload reflect the new stage
-      await fetchProductions();
-      await fetchAnalytics();
+      fetchAnalytics();
+      console.log('Stage update successful:', updated);
     } catch (err) {
       console.error("Update stage error:", err);
-      setError("Failed to update production stage");
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || "Failed to update production stage";
+      setError(errorMessage);
+      
+      // Log detailed error for debugging
+      if (err.response?.data?.errors) {
+        console.error("Validation errors:", err.response.data.errors);
+      }
     }
   };
 
@@ -534,10 +519,7 @@ export default function ProductionTrackingSystem() {
                           </div>
                           <div className="h6 mb-1">{prod.product_name}</div>
                           <div className="small text-muted">
-                            Qty: <strong>{prod.quantity || 0}</strong> • Prod ID: <strong>{prod.id}</strong>
-                            {prod.order_id && (<>
-                              {' '}• Order ID: <strong>{prod.order_id}</strong>
-                            </>)}
+                            Qty: <strong>{prod.quantity || 0}</strong> • ID: <strong>{prod.id}</strong>
                             {prod.order?.user?.name && (
                               <>
                                 {' '}• Customer: <strong>{prod.order.user.name}</strong>

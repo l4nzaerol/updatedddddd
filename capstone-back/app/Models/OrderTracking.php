@@ -93,34 +93,17 @@ class OrderTracking extends Model
                 }
             }
         } else {
-            // For tables and chairs - align with production dashboard stages
-            $stages = [
-                'Material Preparation',
-                'Cutting & Shaping',
-                'Assembly',
-                'Sanding & Surface Preparation',
-                'Finishing',
-                'Quality Check & Packaging',
-            ];
-            // Progress thresholds across 14 days (approximate distribution)
-            $stageProgress = [10, 30, 60, 75, 95, 100];
-
-            $newStage = $stages[count($stages) - 1];
+            // For tables and chairs - 2 weeks production
+            $stages = ['Planning', 'Material Selection', 'Cutting and Shaping', 'Assembly', 'Finishing', 'Quality Assurance'];
+            $stageProgress = [7, 21, 35, 57, 79, 100]; // Progress thresholds for each stage (over 14 days)
+            
             for ($i = 0; $i < count($stages); $i++) {
                 if ($progress <= $stageProgress[$i]) {
-                    $newStage = $stages[$i];
+                    $this->current_stage = $stages[$i];
+                    $this->status = $progress >= 100 ? 'completed' : ($progress > 0 ? 'in_production' : 'pending');
                     break;
                 }
             }
-
-            // Only move forward, never regress if a production update already set a later stage
-            $currentIndex = array_search($this->current_stage, $stages);
-            $newIndex = array_search($newStage, $stages);
-            if ($currentIndex === false || $newIndex === false || $newIndex >= $currentIndex) {
-                $this->current_stage = $newStage;
-            }
-
-            $this->status = $progress >= 100 ? 'completed' : ($progress > 0 ? 'in_production' : 'pending');
         }
         
         // Save changes if they're different

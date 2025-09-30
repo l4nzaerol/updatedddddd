@@ -227,7 +227,7 @@ class ReportController extends Controller
                 'id' => $p->id,
                 'date' => optional($p->date)->format('Y-m-d'),
                 'product' => optional($p->product)->name ?? $p->product_name,
-                'stage' => $p->stage,
+                'stage' => $p->current_stage,
                 'status' => $p->status,
                 'quantity' => $p->quantity,
             ];

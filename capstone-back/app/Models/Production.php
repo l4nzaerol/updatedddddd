@@ -16,7 +16,6 @@ class Production extends Model
         'product_id',
         'product_name',
         'date',
-        'stage',
         'current_stage',
         'status',
         'quantity',

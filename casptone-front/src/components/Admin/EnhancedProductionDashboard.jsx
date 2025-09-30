@@ -46,8 +46,52 @@ const EnhancedProductionDashboard = () => {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await api.get('/production-analytics');
-      setAnalytics(response.data);
+      // Use Production-based analytics for accurate, seeded data
+      const response = await api.get('/productions/analytics');
+      const d = response.data || {};
+
+      // Transform API to local dashboard structure
+      const metrics = {
+        active_productions: (d.kpis?.in_progress ?? 0),
+        completed_productions: d.kpis?.completed ?? 0,
+        efficiency_score: (() => {
+          const total = d.kpis?.total ?? 0;
+          const completed = d.kpis?.completed ?? 0;
+          return total > 0 ? Math.round((completed / total) * 1000) / 10 : 0;
+        })(),
+      };
+
+      const workload = Array.isArray(d.stage_workload) ? d.stage_workload.map(w => ({
+        stage: w.stage,
+        capacity: w.capacity,
+        current_workload: w.current_workload,
+        utilization_percentage: w.utilization_percentage,
+        status: w.status,
+        bottleneck_risk: (w.utilization_percentage ?? 0) > 85,
+      })) : [];
+
+      const resource_allocation = Array.isArray(d.resource_allocation) ? d.resource_allocation.map(r => ({
+        priority: r.priority || 'medium',
+        message: r.message,
+        action: r.priority === 'high' ? 'Reallocate resources to this stage' : 'Monitor and adjust as needed',
+      })) : [];
+
+      const daily_outputs = Array.isArray(d.daily_output) ? d.daily_output.map(item => ({
+        date: item.date,
+        completed_items: item.quantity,
+      })) : [];
+
+      const capacity_utilization = d.capacity_utilization || { utilization_percentage: 0, total_capacity: 0, current_utilization: 0, available_capacity: 0 };
+
+      setAnalytics({
+        metrics,
+        workload,
+        resource_allocation,
+        daily_outputs,
+        capacity_utilization,
+        predictions: null,
+        generated_at: new Date().toISOString(),
+      });
       setError("");
     } catch (err) {
       console.error('Analytics fetch error:', err);

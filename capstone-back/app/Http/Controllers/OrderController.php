@@ -130,7 +130,7 @@ class OrderController extends Controller
                     'product_id' => $item->product_id,
                     'product_name' => $item->product->name,
                     'date' => now()->toDateString(),
-                    'stage' => 'Preparation',
+                    'current_stage' => 'Material Preparation',
                     'status' => 'Pending',
                     'quantity' => $item->quantity,
                     'resources_used' => $bom->map(function ($m) use ($item) {
@@ -522,25 +522,8 @@ class OrderController extends Controller
         $inProgressItems = 0;
 
         foreach ($trackings as $tracking) {
-            // If there is a linked production for this order+product, use its actual stage/status
-            $linkedProduction = Production::where('order_id', $order->id)
-                ->where('product_id', $tracking->product_id)
-                ->latest('updated_at')
-                ->first();
-
-            if ($linkedProduction) {
-                $stage = $this->normalizeToDashboardStage($linkedProduction->current_stage ?: $linkedProduction->stage);
-                $status = $linkedProduction->status === 'Completed' ? 'completed' : ($linkedProduction->status === 'In Progress' ? 'in_production' : 'pending');
-
-                if ($stage && ($tracking->current_stage !== $stage || $tracking->status !== $status)) {
-                    $tracking->current_stage = $stage;
-                    $tracking->status = $status;
-                    $tracking->save();
-                }
-            } else {
-                // Fallback to time-based estimation
-                $tracking->updateCurrentStageBasedOnProgress();
-            }
+            // Update current stage based on progress
+            $tracking->updateCurrentStageBasedOnProgress();
             
             $totalProgress += $tracking->progress_percentage;
             
@@ -617,19 +600,6 @@ class OrderController extends Controller
             'stage_summary' => $stageSummary->values(), // Include stage breakdown
             'simplified' => true, // Flag to indicate simplified response
         ]);
-    }
-
-    private function normalizeToDashboardStage(?string $stage): ?string
-    {
-        if (!$stage) return null;
-        $map = [
-            'Planning' => 'Material Preparation',
-            'Material Selection' => 'Material Preparation',
-            'Cutting and Shaping' => 'Cutting & Shaping',
-            'Quality Assurance' => 'Quality Check & Packaging',
-            'Quality Control' => 'Quality Check & Packaging',
-        ];
-        return $map[$stage] ?? $stage;
     }
 
     public function show($id)
