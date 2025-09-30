@@ -10,26 +10,143 @@ class InventoryItemsSeeder extends Seeder
     public function run(): void
     {
         $items = [
+            // === ALKANSYA MATERIALS ===
             [
                 'sku' => 'PW-1x4x8',
                 'name' => 'Pinewood 1x4x8ft',
                 'category' => 'raw',
                 'unit' => 'piece',
-                'description' => 'Pine wood board 1x4x8 ft',
+                'description' => 'Pine wood board 1x4x8 ft (for Alkansya)',
             ],
             [
                 'sku' => 'PLY-4.2-4x8',
                 'name' => 'Plywood 4.2mm 4x8ft',
                 'category' => 'raw',
                 'unit' => 'sheet',
-                'description' => 'Plywood sheet 4.2mm thickness 4x8 ft',
+                'description' => 'Plywood sheet 4.2mm thickness 4x8 ft (for Alkansya)',
             ],
             [
                 'sku' => 'ACR-1.5-4x8',
                 'name' => 'Acrylic 1.5mm 4x8ft',
                 'category' => 'raw',
                 'unit' => 'sheet',
-                'description' => 'Acrylic sheet 1.5mm thickness 4x8 ft',
+                'description' => 'Acrylic sheet 1.5mm thickness 4x8 ft (for Alkansya)',
+            ],
+            
+            // === DINING TABLE MATERIALS ===
+            [
+                'sku' => 'HW-2x6x8',
+                'name' => 'Hardwood 2x6x8ft',
+                'category' => 'raw',
+                'unit' => 'piece',
+                'description' => 'Hardwood lumber 2x6x8 ft (for Table Legs)',
+            ],
+            [
+                'sku' => 'HW-1x8x10',
+                'name' => 'Hardwood 1x8x10ft',
+                'category' => 'raw',
+                'unit' => 'piece',
+                'description' => 'Hardwood board 1x8x10 ft (for Table Top)',
+            ],
+            [
+                'sku' => 'PLY-18-4x8',
+                'name' => 'Plywood 18mm 4x8ft',
+                'category' => 'raw',
+                'unit' => 'sheet',
+                'description' => 'Plywood sheet 18mm thickness 4x8 ft (for Table Support)',
+            ],
+            [
+                'sku' => 'WS-3',
+                'name' => 'Wood Screws 3 inch',
+                'category' => 'raw',
+                'unit' => 'box',
+                'description' => 'Wood screws 3 inch (for Table Assembly)',
+            ],
+            [
+                'sku' => 'WG-250',
+                'name' => 'Wood Glue 250ml',
+                'category' => 'raw',
+                'unit' => 'bottle',
+                'description' => 'Wood glue 250ml (for Table Joints)',
+            ],
+            [
+                'sku' => 'SAND-80',
+                'name' => 'Sandpaper 80 Grit',
+                'category' => 'raw',
+                'unit' => 'sheet',
+                'description' => 'Sandpaper 80 grit (for Table Sanding)',
+            ],
+            [
+                'sku' => 'SAND-120',
+                'name' => 'Sandpaper 120 Grit',
+                'category' => 'raw',
+                'unit' => 'sheet',
+                'description' => 'Sandpaper 120 grit (for Table Finishing)',
+            ],
+            [
+                'sku' => 'VARN-1L',
+                'name' => 'Wood Varnish 1 Liter',
+                'category' => 'raw',
+                'unit' => 'liter',
+                'description' => 'Wood varnish 1 liter (for Table Finish)',
+            ],
+            
+            // === WOODEN CHAIR MATERIALS ===
+            [
+                'sku' => 'HW-2x2x6',
+                'name' => 'Hardwood 2x2x6ft',
+                'category' => 'raw',
+                'unit' => 'piece',
+                'description' => 'Hardwood lumber 2x2x6 ft (for Chair Legs)',
+            ],
+            [
+                'sku' => 'HW-1x4x6',
+                'name' => 'Hardwood 1x4x6ft',
+                'category' => 'raw',
+                'unit' => 'piece',
+                'description' => 'Hardwood board 1x4x6 ft (for Chair Seat/Back)',
+            ],
+            [
+                'sku' => 'PLY-12-2x4',
+                'name' => 'Plywood 12mm 2x4ft',
+                'category' => 'raw',
+                'unit' => 'sheet',
+                'description' => 'Plywood sheet 12mm thickness 2x4 ft (for Chair Seat)',
+            ],
+            [
+                'sku' => 'WS-2',
+                'name' => 'Wood Screws 2 inch',
+                'category' => 'raw',
+                'unit' => 'box',
+                'description' => 'Wood screws 2 inch (for Chair Assembly)',
+            ],
+            [
+                'sku' => 'WD-1.5',
+                'name' => 'Wood Dowels 1.5 inch',
+                'category' => 'raw',
+                'unit' => 'piece',
+                'description' => 'Wood dowels 1.5 inch (for Chair Joints)',
+            ],
+            [
+                'sku' => 'FOAM-2',
+                'name' => 'Foam Padding 2 inch',
+                'category' => 'raw',
+                'unit' => 'sheet',
+                'description' => 'Foam padding 2 inch (for Chair Cushion)',
+            ],
+            [
+                'sku' => 'FAB-1Y',
+                'name' => 'Fabric 1 Yard',
+                'category' => 'raw',
+                'unit' => 'yard',
+                'description' => 'Upholstery fabric (for Chair Cover)',
+            ],
+            [
+                'sku' => 'STAIN-500',
+                'name' => 'Wood Stain 500ml',
+                'category' => 'raw',
+                'unit' => 'bottle',
+                'description' => 'Wood stain 500ml (for Chair Finish)',
             ],
             [
                 'sku' => 'PN-F30',
@@ -122,6 +239,7 @@ class InventoryItemsSeeder extends Seeder
 
         // Assign specific quantities for some items
         $qtyMap = [
+            // Alkansya materials
             'PW-1x4x8' => 120,
             'PLY-4.2-4x8' => 80,
             'ACR-1.5-4x8' => 60,
@@ -136,6 +254,26 @@ class InventoryItemsSeeder extends Seeder
             'FRAG-2-300' => 220,
             'BWRAP-40-100' => 50,
             'INS-8-40-100' => 45,
+            
+            // Dining Table materials
+            'HW-2x6x8' => 150,
+            'HW-1x8x10' => 200,
+            'PLY-18-4x8' => 100,
+            'WS-3' => 300,
+            'WG-250' => 80,
+            'SAND-80' => 250,
+            'SAND-120' => 200,
+            'VARN-1L' => 60,
+            
+            // Wooden Chair materials
+            'HW-2x2x6' => 180,
+            'HW-1x4x6' => 220,
+            'PLY-12-2x4' => 120,
+            'WS-2' => 350,
+            'WD-1.5' => 400,
+            'FOAM-2' => 90,
+            'FAB-1Y' => 150,
+            'STAIN-500' => 70,
         ];
 
         foreach ($items as $item) {

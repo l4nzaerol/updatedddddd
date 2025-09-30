@@ -14,7 +14,9 @@ import InventoryPage from "./components/Admin/InventoryPage";
 import OrderPage from "./components/Admin/OrderPage"; 
 import Report from "./components/Admin/Report"; 
 import InventoryAnalytics from "./components/Admin/InventoryAnalytics";
+import InventoryReportsDashboard from "./components/Admin/InventoryReportsDashboard";
 import EnhancedProductionDashboard from "./components/Admin/EnhancedProductionDashboard";
+import OrderAcceptance from "./components/Admin/OrderAcceptance";
 import MyOrders from "./components/Customers/MyOrders";
 import OrderTracking from "./components/Customers/OrderTracking";
 import SimpleOrderTracking from "./components/Customers/SimpleOrderTracking";
@@ -40,9 +42,11 @@ function App() {
                 <Route path="/product" element={isAuthenticated() ? <ProductPage /> : <Navigate to="/login" />} /> 
                 <Route path="/productions" element={isAuthenticated() ? <ProductionPage /> : <Navigate to="/login" />} /> 
                 <Route path="/production-analytics" element={isAuthenticated() ? <EnhancedProductionDashboard /> : <Navigate to="/login" />} /> 
-                <Route path="/orders" element={isAuthenticated() ? <OrderPage /> : <Navigate to="/login" />} /> 
+                <Route path="/orders" element={isAuthenticated() ? <OrderPage /> : <Navigate to="/login" />} />
+                <Route path="/order-acceptance" element={isAuthenticated() ? <OrderAcceptance /> : <Navigate to="/login" />} /> 
                 <Route path="/reports" element={isAuthenticated() ? <Report /> : <Navigate to="/login" />} /> 
                 <Route path="/inventory-analytics" element={isAuthenticated() ? <InventoryAnalytics /> : <Navigate to="/login" />} /> 
+                <Route path="/inventory-reports" element={isAuthenticated() ? <InventoryReportsDashboard /> : <Navigate to="/login" />} /> 
                 <Route path="/track/:orderId" element={isAuthenticated() ? <TrackWrapper /> : <Navigate to="/login" />} />
 
                 {/* Redirect unknown routes */}

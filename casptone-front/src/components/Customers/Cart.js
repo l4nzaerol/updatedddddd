@@ -45,12 +45,12 @@ const Cart = () => {
                 {view === "cart" ? (
                   <>
                     🛍️ Shopping Cart
-                    <span className="title-accent">Your items await checkout</span>
+                    
                   </>
                 ) : (
                   <>
                     📦 Order History
-                    <span className="title-accent">Track your purchases</span>
+                  
                   </>
                 )}
               </h1>

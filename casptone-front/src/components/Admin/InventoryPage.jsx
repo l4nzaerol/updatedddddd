@@ -693,10 +693,13 @@ const InventoryPage = () => {
   return (
     <AppLayout>
     <div className="container-fluid py-4" role="region" aria-labelledby="inv-heading">
-      {/* Back Button */}
-      <button className="btn btn-outline-secondary mb-3" onClick={() => navigate("/dashboard")}>
-        ← Back to Dashboard
-      </button>
+      {/* Navigation Buttons */}
+      <div className="d-flex gap-2 mb-3">
+        <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
+          ← Back to Dashboard
+        </button>
+        
+      </div>
 
 
 
@@ -717,9 +720,6 @@ const InventoryPage = () => {
           <button className="btn btn-outline-dark" onClick={exportUsageTrends}>
             Export Usage CSV
           </button>
-          <a className="btn btn-outline-success" href={(process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api") + "/reports/inventory-overview.csv"} target="_blank" rel="noreferrer">Overview CSV</a>
-          <a className="btn btn-outline-success" href={(process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api") + "/reports/turnover.csv"} target="_blank" rel="noreferrer">Turnover CSV</a>
-          <a className="btn btn-outline-success" href={(process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api") + "/reports/replenishment-schedule.csv"} target="_blank" rel="noreferrer">Schedule CSV</a>
           <label className="btn btn-outline-success mb-0">
             Upload Usage CSV
             <input ref={fileInputRef} type="file" accept=".csv" onChange={onUploadUsage} hidden />

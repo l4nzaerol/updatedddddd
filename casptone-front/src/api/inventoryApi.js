@@ -1,4 +1,4 @@
-import api, { openCsv } from "./client";
+import api from "./client";
 
 export async function getAdminOverview() {
   const res = await api.get(`/admin/overview`);
@@ -10,14 +10,42 @@ export async function getForecast(params = {}) {
   return res.data;
 }
 
-export function downloadStockCsv() {
-  openCsv(`/reports/stock.csv`);
+// Helper function to download CSV with authentication
+const downloadCsvFile = async (endpoint, filename) => {
+  try {
+    const response = await api.get(endpoint, {
+      responseType: 'blob',
+      headers: {
+        'Accept': 'text/csv'
+      }
+    });
+    
+    // Create blob link to download
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('CSV download error:', error);
+    alert('Failed to download CSV. Please try again.');
+  }
+};
+
+export async function downloadStockCsv() {
+  const filename = `stock_report_${new Date().toISOString().split('T')[0]}.csv`;
+  await downloadCsvFile('/reports/stock.csv', filename);
 }
 
-export function downloadUsageCsv(days = 90) {
-  openCsv(`/reports/usage.csv?days=${encodeURIComponent(days)}`);
+export async function downloadUsageCsv(days = 90) {
+  const filename = `usage_report_${days}days_${new Date().toISOString().split('T')[0]}.csv`;
+  await downloadCsvFile(`/reports/usage.csv?days=${days}`, filename);
 }
 
-export function downloadReplenishmentCsv() {
-  openCsv(`/reports/replenishment.csv`);
+export async function downloadReplenishmentCsv() {
+  const filename = `replenishment_${new Date().toISOString().split('T')[0]}.csv`;
+  await downloadCsvFile('/reports/replenishment.csv', filename);
 }

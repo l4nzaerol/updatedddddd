@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { ShoppingCart, User, Sun, Moon } from "lucide-react";
-import { LayoutDashboard, Package, ClipboardList, Boxes, Factory, BarChart } from "lucide-react";
+import { LayoutDashboard, Package, ClipboardList, Boxes, Factory, BarChart, CheckCircle, FileText } from "lucide-react";
+import NotificationBell from "./Customers/NotificationBell";
 
 
 
@@ -55,7 +56,7 @@ const Header = ({ role, username }) => {
             <div style={styles.right}>
                 {role === "customer" && (
                     <>
-                   
+                    <NotificationBell />
                     <button style={styles.iconBtn} onClick={() => navigate("/cart")}>
                         <ShoppingCart size={24} />
                         {cartCount > 0 && <span style={styles.cartBadge}>{cartCount}</span>}
@@ -98,6 +99,9 @@ const Sidebar = () => {
                     </button>
                     <button style={styles.navItem} onClick={() => navigate("/orders")}>
                         <ClipboardList size={20} /> Orders
+                    </button>
+                    <button style={styles.navItem} onClick={() => navigate("/order-acceptance")}>
+                        <CheckCircle size={20} /> Order Acceptance
                     </button>
                     <button style={styles.navItem} onClick={() => navigate("/inventory")}>
                         <Boxes size={20} /> Inventory

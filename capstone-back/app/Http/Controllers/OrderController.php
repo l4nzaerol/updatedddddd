@@ -123,24 +123,8 @@ class OrderController extends Controller
                     }
                 }
 
-                // Auto-create Production record for this item
-                Production::create([
-                    'order_id' => $order->id,
-                    'user_id' => $user->id,
-                    'product_id' => $item->product_id,
-                    'product_name' => $item->product->name,
-                    'date' => now()->toDateString(),
-                    'current_stage' => 'Material Preparation',
-                    'status' => 'Pending',
-                    'quantity' => $item->quantity,
-                    'resources_used' => $bom->map(function ($m) use ($item) {
-                        return [
-                            'inventory_item_id' => $m->inventory_item_id,
-                            'qty' => $m->qty_per_unit * $item->quantity,
-                        ];
-                    })->values(),
-                    'notes' => 'Generated from Order #' . $order->id
-                ]);
+                // Production records will be created when admin accepts the order
+                // No longer auto-creating production here
             }
 
             // Clear cart
@@ -170,7 +154,7 @@ class OrderController extends Controller
             'order_id' => $orderId,
             'product_id' => $productId,
             'tracking_type' => $trackingType,
-            'current_stage' => $trackingType === 'alkansya' ? 'Design' : 'Planning',
+            'current_stage' => $trackingType === 'alkansya' ? 'Design' : 'Material Preparation',
             'status' => 'pending',
             'estimated_start_date' => $estimatedDates['start'],
             'estimated_completion_date' => $estimatedDates['completion'],
@@ -456,20 +440,37 @@ class OrderController extends Controller
 
     public function tracking($id)
     {
-        $user = Auth::user();
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+        try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
-        $order = Order::with('items.product')->where('id', $id)->where('user_id', $user->id)->first();
-        if (!$order) {
-            return response()->json(['message' => 'Order not found'], 404);
-        }
+            $order = Order::with('items.product')->find($id);
+            if (!$order || $order->user_id !== $user->id) {
+                return response()->json(['message' => 'Order not found'], 404);
+            }
 
-        // Get tracking information from OrderTracking
-        $trackings = OrderTracking::where('order_id', $id)
-            ->with(['product'])
-            ->get();
+            // Sync OrderTracking with Production data for accuracy
+            $trackingService = app(\App\Services\ProductionTrackingService::class);
+            $trackingService->syncOrderTrackingWithProduction($id);
+
+            // IMPORTANT: Re-query tracking data after sync to get updated values
+            // Get fresh tracking information from database
+            $trackings = OrderTracking::where('order_id', $id)
+                ->with(['product'])
+                ->get();
+        } catch (\Exception $e) {
+            \Log::error('Tracking endpoint error:', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Failed to fetch tracking information',
+                'error' => $e->getMessage()
+            ], 500);
+        }
 
         if ($trackings->isEmpty()) {
             // Fallback to old production tracking if no order tracking exists
@@ -570,17 +571,30 @@ class OrderController extends Controller
             'eta' => $etaDate,
         ];
 
-        // Get simplified tracking info for each product
-        $trackingDetails = $trackings->map(function($tracking) {
+        // Get detailed tracking info for each product with process timeline
+        $trackingDetails = $trackings->map(function($tracking) use ($trackingService) {
+            $production = Production::where('order_id', $tracking->order_id)
+                ->where('product_id', $tracking->product_id)
+                ->first();
+            
+            $progress = $production ? 
+                $trackingService->calculateProgressFromProduction($production) : 
+                $tracking->progress_percentage;
+            
+            $eta = $production ? 
+                $trackingService->calculatePredictiveETA($production) : 
+                $tracking->estimated_completion_date;
+
             return [
                 'product_name' => $tracking->product->name,
                 'current_stage' => $tracking->current_stage,
                 'status' => $tracking->status,
-                'progress_percentage' => $tracking->progress_percentage,
-                'estimated_completion_date' => $tracking->estimated_completion_date,
+                'progress_percentage' => $progress,
+                'estimated_completion_date' => $eta,
                 'tracking_type' => $tracking->tracking_type,
-                'days_remaining' => $tracking->estimated_completion_date ? 
-                    max(0, now()->diffInDays($tracking->estimated_completion_date, false)) : 0,
+                'process_timeline' => $tracking->process_timeline,
+                'days_remaining' => $eta ? 
+                    max(0, now()->diffInDays($eta, false)) : 0,
             ];
         });
 
@@ -598,6 +612,10 @@ class OrderController extends Controller
             'overall' => $overall,
             'trackings' => $trackingDetails,
             'stage_summary' => $stageSummary->values(), // Include stage breakdown
+            'acceptance_status' => $order->acceptance_status,
+            'accepted_at' => $order->accepted_at,
+            'accepted_by' => $order->acceptedBy ? $order->acceptedBy->name : null,
+            'rejection_reason' => $order->rejection_reason,
             'simplified' => true, // Flag to indicate simplified response
         ]);
     }
@@ -635,7 +653,7 @@ class OrderController extends Controller
         }
 
         // Find the order
-        $order = Order::find($id);
+        $order = Order::with(['items.product', 'user'])->find($id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
@@ -644,6 +662,16 @@ class OrderController extends Controller
         // Update the order status
         $order->status = 'completed';
         $order->save();
+
+        // Create notification for customer
+        $productNames = $order->items->pluck('product.name')->unique()->join(', ');
+        \App\Models\Notification::create([
+            'user_id' => $order->user_id,
+            'order_id' => $order->id,
+            'type' => 'completed',
+            'title' => '✅ Order Completed!',
+            'message' => "Your order #{$order->id} ({$productNames}) has been completed. Thank you for your business! We hope you enjoy your new furniture.",
+        ]);
 
         return response()->json(['message' => 'Order marked as complete', 'order' => $order->load(['user', 'items.product'])]);
     }
@@ -661,14 +689,85 @@ class OrderController extends Controller
             'status' => 'required|in:pending,ready_for_delivery,delivered,completed,cancelled'
         ]);
 
-        $order = Order::find($id);
+        $order = Order::with(['items.product', 'user'])->find($id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
         }
 
-        $order->status = $validated['status'];
+        $oldStatus = $order->status;
+        $newStatus = $validated['status'];
+        
+        $order->status = $newStatus;
         $order->save();
+
+        // Create notification for customer based on status change
+        if ($oldStatus !== $newStatus) {
+            $productNames = $order->items->pluck('product.name')->unique()->join(', ');
+            
+            try {
+                $notificationData = null;
+                
+                switch ($newStatus) {
+                    case 'ready_for_delivery':
+                        $notificationData = [
+                            'type' => 'ready_for_delivery',
+                            'title' => '📦 Order Ready for Delivery!',
+                            'message' => "Great news! Your order #{$order->id} ({$productNames}) is ready for delivery. We'll contact you soon to arrange delivery.",
+                        ];
+                        break;
+                        
+                    case 'delivered':
+                        $notificationData = [
+                            'type' => 'delivered',
+                            'title' => '🚚 Order Delivered!',
+                            'message' => "Your order #{$order->id} ({$productNames}) has been successfully delivered. Thank you for choosing Unick Furniture!",
+                        ];
+                        break;
+                        
+                    case 'completed':
+                        $notificationData = [
+                            'type' => 'completed',
+                            'title' => '✅ Order Completed!',
+                            'message' => "Your order #{$order->id} ({$productNames}) has been completed. Thank you for your business! We hope you enjoy your new furniture.",
+                        ];
+                        break;
+                        
+                    case 'cancelled':
+                        $notificationData = [
+                            'type' => 'cancelled',
+                            'title' => '❌ Order Cancelled',
+                            'message' => "Your order #{$order->id} ({$productNames}) has been cancelled. If you have any questions, please contact us.",
+                        ];
+                        break;
+                }
+                
+                if ($notificationData) {
+                    $notification = \App\Models\Notification::create([
+                        'user_id' => $order->user_id,
+                        'order_id' => $order->id,
+                        'type' => $notificationData['type'],
+                        'title' => $notificationData['title'],
+                        'message' => $notificationData['message'],
+                    ]);
+                    
+                    \Log::info('Status change notification created', [
+                        'notification_id' => $notification->id,
+                        'user_id' => $order->user_id,
+                        'order_id' => $order->id,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to create status change notification', [
+                    'error' => $e->getMessage(),
+                    'order_id' => $order->id,
+                    'user_id' => $order->user_id,
+                    'status' => $newStatus
+                ]);
+            }
+        }
 
         return response()->json([
             'message' => 'Order status updated successfully',
@@ -684,7 +783,7 @@ class OrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $order = Order::find($id);
+        $order = Order::with(['items.product', 'user'])->find($id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
@@ -692,6 +791,31 @@ class OrderController extends Controller
 
         $order->status = 'ready_for_delivery';
         $order->save();
+
+        // Create notification for customer
+        $productNames = $order->items->pluck('product.name')->unique()->join(', ');
+        
+        try {
+            $notification = \App\Models\Notification::create([
+                'user_id' => $order->user_id,
+                'order_id' => $order->id,
+                'type' => 'ready_for_delivery',
+                'title' => '📦 Order Ready for Delivery!',
+                'message' => "Great news! Your order #{$order->id} ({$productNames}) is ready for delivery. We'll contact you soon to arrange delivery.",
+            ]);
+            
+            \Log::info('Notification created successfully', [
+                'notification_id' => $notification->id,
+                'user_id' => $order->user_id,
+                'order_id' => $order->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create notification', [
+                'error' => $e->getMessage(),
+                'order_id' => $order->id,
+                'user_id' => $order->user_id
+            ]);
+        }
 
         return response()->json([
             'message' => 'Order marked as ready for delivery',
@@ -707,7 +831,7 @@ class OrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $order = Order::find($id);
+        $order = Order::with(['items.product', 'user'])->find($id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
@@ -715,6 +839,31 @@ class OrderController extends Controller
 
         $order->status = 'delivered';
         $order->save();
+
+        // Create notification for customer
+        $productNames = $order->items->pluck('product.name')->unique()->join(', ');
+        
+        try {
+            $notification = \App\Models\Notification::create([
+                'user_id' => $order->user_id,
+                'order_id' => $order->id,
+                'type' => 'delivered',
+                'title' => '🚚 Order Delivered!',
+                'message' => "Your order #{$order->id} ({$productNames}) has been successfully delivered. Thank you for choosing Unick Furniture!",
+            ]);
+            
+            \Log::info('Delivered notification created', [
+                'notification_id' => $notification->id,
+                'user_id' => $order->user_id,
+                'order_id' => $order->id
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create delivered notification', [
+                'error' => $e->getMessage(),
+                'order_id' => $order->id,
+                'user_id' => $order->user_id
+            ]);
+        }
 
         return response()->json([
             'message' => 'Order marked as delivered',

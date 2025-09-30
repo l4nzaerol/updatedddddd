@@ -93,9 +93,9 @@ class OrderTracking extends Model
                 }
             }
         } else {
-            // For tables and chairs - 2 weeks production
-            $stages = ['Planning', 'Material Selection', 'Cutting and Shaping', 'Assembly', 'Finishing', 'Quality Assurance'];
-            $stageProgress = [7, 21, 35, 57, 79, 100]; // Progress thresholds for each stage (over 14 days)
+            // For tables and chairs - 2 weeks production (matches actual production stages)
+            $stages = ['Material Preparation', 'Cutting & Shaping', 'Assembly', 'Sanding & Surface Preparation', 'Finishing', 'Quality Check & Packaging'];
+            $stageProgress = [10, 30, 60, 75, 95, 100]; // Progress thresholds for each stage
             
             for ($i = 0; $i < count($stages); $i++) {
                 if ($progress <= $stageProgress[$i]) {

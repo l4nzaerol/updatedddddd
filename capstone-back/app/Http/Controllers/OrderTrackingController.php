@@ -46,7 +46,7 @@ class OrderTrackingController extends Controller
             'order_id' => $data['order_id'],
             'product_id' => $data['product_id'],
             'tracking_type' => $trackingType,
-            'current_stage' => $trackingType === 'alkansya' ? 'Design' : 'Planning',
+            'current_stage' => $trackingType === 'alkansya' ? 'Design' : 'Material Preparation',
             'status' => 'pending',
             'estimated_start_date' => $estimatedDates['start'],
             'estimated_completion_date' => $estimatedDates['completion'],
@@ -194,39 +194,39 @@ class OrderTrackingController extends Controller
         } elseif ($trackingType === 'custom') {
             return [
                 [
-                    'stage' => 'Planning',
-                    'description' => 'Detailed planning and design',
-                    'estimated_duration' => '2-3 days',
+                    'stage' => 'Material Preparation',
+                    'description' => 'Selecting and preparing high-quality materials',
+                    'estimated_duration' => '1.4 days',
                     'status' => 'pending'
                 ],
                 [
-                    'stage' => 'Material Selection',
-                    'description' => 'Selecting high-quality materials',
-                    'estimated_duration' => '1 day',
-                    'status' => 'pending'
-                ],
-                [
-                    'stage' => 'Cutting and Shaping',
-                    'description' => 'Precise cutting and shaping',
-                    'estimated_duration' => '3-4 days',
+                    'stage' => 'Cutting & Shaping',
+                    'description' => 'Precise cutting and shaping of wood components',
+                    'estimated_duration' => '2.8 days',
                     'status' => 'pending'
                 ],
                 [
                     'stage' => 'Assembly',
-                    'description' => 'Careful assembly process',
-                    'estimated_duration' => '4-5 days',
+                    'description' => 'Careful assembly of furniture components',
+                    'estimated_duration' => '4.2 days',
+                    'status' => 'pending'
+                ],
+                [
+                    'stage' => 'Sanding & Surface Preparation',
+                    'description' => 'Sanding and preparing surfaces for finishing',
+                    'estimated_duration' => '2.1 days',
                     'status' => 'pending'
                 ],
                 [
                     'stage' => 'Finishing',
-                    'description' => 'Professional finishing',
-                    'estimated_duration' => '2-3 days',
+                    'description' => 'Applying professional finish, stain, and polish',
+                    'estimated_duration' => '2.8 days',
                     'status' => 'pending'
                 ],
                 [
-                    'stage' => 'Quality Assurance',
-                    'description' => 'Comprehensive quality check',
-                    'estimated_duration' => '1 day',
+                    'stage' => 'Quality Check & Packaging',
+                    'description' => 'Final quality inspection and packaging',
+                    'estimated_duration' => '0.7 days',
                     'status' => 'pending'
                 ]
             ];

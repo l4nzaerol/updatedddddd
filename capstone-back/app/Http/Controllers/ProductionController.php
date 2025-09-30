@@ -24,19 +24,87 @@ class ProductionController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Production::with(['user', 'product']); // eager load relationships
+        try {
+            \Log::info('Productions index called');
+            
+            $query = Production::with(['user', 'product', 'processes', 'order']); // eager load relationships including order status
 
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('start_date') && $request->has('end_date')) {
+                $query->whereBetween('date', [$request->start_date, $request->end_date]);
+            }
+
+            $productions = $query->orderBy('date', 'desc')->get();
+            
+            // Update progress based on time elapsed for each production
+            foreach ($productions as $production) {
+                $this->updateTimeBasedProgress($production);
+                
+                // Add BOM (Bill of Materials) for the product
+                $production->bom = $this->getProductBOM($production->product_id);
+                
+                // Add current process details
+                $production->current_process = $this->getCurrentProcess($production);
+            }
+            
+            \Log::info('Productions count: ' . $productions->count());
+            
+            return response()->json($productions);
+            
+        } catch (\Exception $e) {
+            \Log::error('Productions index error: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+            return response()->json([
+                'error' => 'Failed to fetch productions',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        if ($request->has('start_date') && $request->has('end_date')) {
-            $query->whereBetween('date', [$request->start_date, $request->end_date]);
+    }
+    
+    /**
+     * Get Bill of Materials for a product
+     */
+    private function getProductBOM($productId)
+    {
+        return ProductMaterial::where('product_id', $productId)
+            ->with('inventoryItem:id,sku,name,unit,quantity_on_hand')
+            ->get()
+            ->map(function($material) {
+                return [
+                    'inventory_item_id' => $material->inventory_item_id,
+                    'sku' => $material->inventoryItem->sku ?? 'N/A',
+                    'name' => $material->inventoryItem->name ?? 'Unknown',
+                    'qty_per_unit' => $material->qty_per_unit,
+                    'unit' => $material->inventoryItem->unit ?? 'unit',
+                    'quantity_on_hand' => $material->inventoryItem->quantity_on_hand ?? 0,
+                ];
+            });
+    }
+    
+    /**
+     * Get current process details
+     */
+    private function getCurrentProcess($production)
+    {
+        if (!$production->processes || $production->processes->isEmpty()) {
+            return null;
         }
-
-        return response()->json(
-            $query->orderBy('date', 'desc')->get()
-        );
+        
+        // Find the current in-progress process
+        $currentProcess = $production->processes->firstWhere('status', 'in_progress');
+        
+        if (!$currentProcess) {
+            // If no in-progress, find the next pending process
+            $currentProcess = $production->processes
+                ->where('status', 'pending')
+                ->sortBy('process_order')
+                ->first();
+        }
+        
+        return $currentProcess;
     }
 
     public function store(Request $request)
@@ -218,6 +286,9 @@ class ProductionController extends Controller
                 ];
                 $normalizedStage = $stageMap[$targetStage] ?? $targetStage;
 
+                // Store old stage for logging
+                $oldStage = $production->current_stage;
+                
                 // Only update current_stage (stage column was removed in migration)
                 $production->current_stage = $normalizedStage;
 
@@ -231,6 +302,11 @@ class ProductionController extends Controller
                 }
 
                 $production->save();
+                
+                // Log stage change
+                if ($oldStage !== $normalizedStage) {
+                    $this->logStageChange($production, $oldStage, $normalizedStage);
+                }
 
             // Sync ProductionProcess records to match the selected stage (for tracked items)
             try {
@@ -592,98 +668,6 @@ class ProductionController extends Controller
         }
 
         return response()->json($production->load('processes'));
-    }
-
-    /**
-     * Update production process status
-     */
-    public function updateProcess(Request $request, $productionId, $processId)
-    {
-        $data = $request->validate([
-            'status' => 'required|in:pending,in_progress,completed,delayed',
-            'notes' => 'nullable|string',
-            'materials_used' => 'nullable|array',
-            'quality_checks' => 'nullable|array',
-        ]);
-
-        $process = ProductionProcess::where('production_id', $productionId)
-            ->where('id', $processId)
-            ->firstOrFail();
-
-        $process->update($data);
-
-        // Broadcast process update
-        broadcast(new ProductionProcessUpdated($process))->toOthers();
-
-        // If process is completed, start next process
-        if ($data['status'] === 'completed') {
-            $process->update(['completed_at' => Carbon::now()]);
-            
-            $nextProcess = ProductionProcess::where('production_id', $productionId)
-                ->where('process_order', $process->process_order + 1)
-                ->first();
-
-            if ($nextProcess) {
-                $nextProcess->update([
-                    'status' => 'in_progress',
-                    'started_at' => Carbon::now(),
-                ]);
-            } else {
-                // All processes completed
-                $production = Production::find($productionId);
-                $production->update([
-                    'status' => 'Completed',
-                    'current_stage' => 'Quality Check & Packaging'
-                ]);
-
-                // If linked to an order, mark tracking completed
-                if ($production && $production->order_id) {
-                    $tracking = OrderTracking::firstOrCreate([
-                        'order_id' => $production->order_id,
-                        'product_id' => $production->product_id,
-                    ], [
-                        'tracking_type' => 'standard',
-                        'current_stage' => 'Quality Control',
-                        'status' => 'completed',
-                    ]);
-                    $tracking->update([
-                        'current_stage' => 'Quality Control',
-                        'status' => 'completed',
-                        'actual_completion_date' => Carbon::now(),
-                    ]);
-                    broadcast(new \App\Events\OrderTrackingUpdated($tracking))->toOthers();
-                }
-            }
-        }
-
-        // Sync order tracking current stage/status when linked to order
-        $production = Production::find($productionId);
-        if ($production && $production->order_id) {
-            $stageStatus = match ($process->status) {
-                'in_progress' => 'in_production',
-                'completed' => 'completed',
-                'delayed' => 'in_production',
-                default => 'pending',
-            };
-
-            $tracking = OrderTracking::firstOrCreate([
-                'order_id' => $production->order_id,
-                'product_id' => $production->product_id,
-            ], [
-                'tracking_type' => 'standard',
-                'current_stage' => $process->process_name,
-                'status' => $stageStatus,
-            ]);
-
-            $tracking->update([
-                'current_stage' => $process->process_name,
-                'status' => $stageStatus,
-            ]);
-
-            broadcast(new \App\Events\OrderTrackingUpdated($tracking))->toOthers();
-        }
-
-        return response()->json($process->load('production'));
     }
 
     /**
@@ -1357,4 +1341,208 @@ class ProductionController extends Controller
             
         return round($progress, 2);
     }
+
+    /**
+     * Update production progress based on time elapsed
+     */
+    private function updateTimeBasedProgress($production)
+    {
+        try {
+            // Skip if production hasn't started or is already completed
+            if (!$production->production_started_at || $production->status === 'Completed') {
+                return;
+            }
+
+            $processes = $production->processes;
+            if ($processes->isEmpty()) {
+                return;
+            }
+
+            $now = Carbon::now();
+            $startTime = Carbon::parse($production->production_started_at);
+            $estimatedEnd = Carbon::parse($production->estimated_completion_date);
+            
+            // Calculate total elapsed time vs total estimated time
+            $totalEstimatedMinutes = $startTime->diffInMinutes($estimatedEnd);
+            $elapsedMinutes = $startTime->diffInMinutes($now);
+            
+            // Don't exceed 100%
+            if ($elapsedMinutes >= $totalEstimatedMinutes) {
+                $elapsedMinutes = $totalEstimatedMinutes;
+            }
+            
+            $overallProgressPercent = $totalEstimatedMinutes > 0 
+                ? ($elapsedMinutes / $totalEstimatedMinutes) * 100 
+                : 0;
+            
+            // Update each process based on time
+            $cumulativeMinutes = 0;
+            $updated = false;
+            
+            foreach ($processes as $process) {
+                $processStart = $cumulativeMinutes;
+                $processEnd = $cumulativeMinutes + $process->estimated_duration_minutes;
+                
+                if ($elapsedMinutes >= $processEnd && $process->status !== 'completed') {
+                    // Process should be completed
+                    $process->update([
+                        'status' => 'completed',
+                        'started_at' => $process->started_at ?? $startTime->copy()->addMinutes($processStart),
+                        'completed_at' => $startTime->copy()->addMinutes($processEnd),
+                    ]);
+                    $updated = true;
+                } elseif ($elapsedMinutes > $processStart && $elapsedMinutes < $processEnd && $process->status === 'pending') {
+                    // Process should be in progress
+                    $process->update([
+                        'status' => 'in_progress',
+                        'started_at' => $startTime->copy()->addMinutes($processStart),
+                    ]);
+                    $updated = true;
+                }
+                
+                $cumulativeMinutes += $process->estimated_duration_minutes;
+            }
+            
+            // Update production overall progress and status
+            if ($updated || $production->overall_progress != $overallProgressPercent) {
+                $completedCount = $processes->where('status', 'completed')->count();
+                $totalCount = $processes->count();
+                
+                $newStatus = $production->status;
+                $newStage = $production->current_stage;
+                
+                if ($completedCount === $totalCount) {
+                    $newStatus = 'Completed';
+                    $newStage = 'Completed';
+                } elseif ($completedCount > 0) {
+                    $newStatus = 'In Progress';
+                    // Find current in-progress process
+                    $currentProcess = $processes->firstWhere('status', 'in_progress');
+                    if ($currentProcess) {
+                        $newStage = $currentProcess->process_name;
+                    }
+                }
+                
+                $production->update([
+                    'overall_progress' => round($overallProgressPercent, 2),
+                    'status' => $newStatus,
+                    'current_stage' => $newStage,
+                    'actual_completion_date' => $newStatus === 'Completed' ? $now : null,
+                ]);
+                
+                // Log analytics data
+                $this->logProductionAnalytics($production);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error("Error updating time-based progress for production #{$production->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Log production analytics data
+     */
+    private function logProductionAnalytics($production)
+    {
+        try {
+            $today = Carbon::now()->format('Y-m-d');
+            
+            // Calculate efficiency
+            $processes = $production->processes;
+            $totalEstimatedMinutes = $processes->sum('estimated_duration_minutes');
+            $totalActualMinutes = 0;
+            
+            foreach ($processes as $process) {
+                if ($process->started_at && $process->completed_at) {
+                    $totalActualMinutes += Carbon::parse($process->started_at)->diffInMinutes($process->completed_at);
+                }
+            }
+            
+            $efficiency = $totalEstimatedMinutes > 0 
+                ? ($totalEstimatedMinutes / max($totalActualMinutes, 1)) * 100 
+                : 100;
+            
+            // Check if analytics record exists for today
+            $analytics = ProductionAnalytics::firstOrCreate(
+                [
+                    'date' => $today,
+                    'product_id' => $production->product_id,
+                ],
+                [
+                    'target_output' => 10,
+                    'actual_output' => 0,
+                    'efficiency_percentage' => 0,
+                    'total_duration_minutes' => 0,
+                    'avg_process_duration_minutes' => 0,
+                ]
+            );
+            
+            // Update analytics
+            if ($production->status === 'Completed' && $production->actual_completion_date) {
+                $analytics->increment('actual_output', $production->quantity);
+            }
+            
+            $analytics->update([
+                'efficiency_percentage' => round($efficiency, 2),
+                'total_duration_minutes' => $totalActualMinutes,
+            ]);
+            
+            \Log::info("Analytics logged for production #{$production->id}");
+            
+        } catch (\Exception $e) {
+            \Log::error("Error logging analytics for production #{$production->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Log production stage changes
+     */
+    private function logStageChange($production, $oldStage, $newStage)
+    {
+        try {
+            // Find or create production stage
+            $stage = \App\Models\ProductionStage::firstOrCreate(
+                ['name' => $newStage],
+                [
+                    'description' => "Production stage: {$newStage}",
+                    'order' => $this->getStageOrder($newStage),
+                ]
+            );
+            
+            // Create stage log
+            \App\Models\ProductionStageLog::create([
+                'production_id' => $production->id,
+                'production_stage_id' => $stage->id,
+                'status' => 'completed',
+                'started_at' => Carbon::now(),
+                'completed_at' => Carbon::now(),
+                'notes' => "Stage changed from {$oldStage} to {$newStage}",
+            ]);
+            
+            \Log::info("Stage log created for production #{$production->id}: {$oldStage} → {$newStage}");
+            
+        } catch (\Exception $e) {
+            \Log::error("Error logging stage change for production #{$production->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get stage order number
+     */
+    private function getStageOrder($stageName)
+    {
+        $stageOrder = [
+            'Material Preparation' => 1,
+            'Cutting & Shaping' => 2,
+            'Assembly' => 3,
+            'Sanding & Surface Preparation' => 4,
+            'Finishing' => 5,
+            'Quality Check & Packaging' => 6,
+            'Completed' => 7,
+            'Ready for Delivery' => 8,
+        ];
+        
+        return $stageOrder[$stageName] ?? 0;
+    }
+
 }

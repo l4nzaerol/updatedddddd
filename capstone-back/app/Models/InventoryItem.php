@@ -16,4 +16,8 @@ class InventoryItem extends Model
     public function usage(): HasMany {
         return $this->hasMany(InventoryUsage::class);
     }
+
+    public function usages(): HasMany {
+        return $this->hasMany(InventoryUsage::class);
+    }
 }

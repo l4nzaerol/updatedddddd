@@ -13,12 +13,22 @@ class Order extends Model
         'user_id',
         'total_price',
         'status',
+        'acceptance_status',
+        'accepted_by',
+        'accepted_at',
+        'rejection_reason',
+        'admin_notes',
         'checkout_date',
         'payment_method',
         'payment_status',
         'transaction_ref',
         'shipping_address',
         'contact_phone',
+    ];
+
+    protected $casts = [
+        'accepted_at' => 'datetime',
+        'checkout_date' => 'datetime',
     ];
 
     // An order belongs to a user
@@ -35,5 +45,29 @@ class Order extends Model
     public function tracking()
     {
         return $this->hasMany(OrderTracking::class);
+    }
+
+    // Relationship to admin who accepted the order
+    public function acceptedBy()
+    {
+        return $this->belongsTo(User::class, 'accepted_by');
+    }
+
+    // Check if order is accepted
+    public function isAccepted()
+    {
+        return $this->acceptance_status === 'accepted';
+    }
+
+    // Check if order is pending acceptance
+    public function isPendingAcceptance()
+    {
+        return $this->acceptance_status === 'pending';
+    }
+
+    // Check if order is rejected
+    public function isRejected()
+    {
+        return $this->acceptance_status === 'rejected';
     }
 }

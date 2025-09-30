@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import AppLayout from "../Header";
-import { FaCheckCircle, FaClock, FaHammer, FaTools, FaPaintBrush, FaBox, FaTruck, FaSpinner, FaCalendarAlt } from "react-icons/fa";
+import { FaCheckCircle, FaClock, FaHammer, FaTools, FaPaintBrush, FaBox, FaTruck, FaSpinner, FaCalendarAlt, FaExclamationTriangle } from "react-icons/fa";
 
 const ProductionTracking = () => {
   const [orders, setOrders] = useState([]);
@@ -30,9 +30,11 @@ const ProductionTracking = () => {
             const trackingResponse = await axios.get(`http://localhost:8000/api/orders/${order.id}/tracking`, {
               headers: { Authorization: `Bearer ${token}` },
             });
+            console.log(`Tracking for order ${order.id}:`, trackingResponse.data);
             return { ...order, tracking: trackingResponse.data };
           } catch (err) {
-            return { ...order, tracking: null };
+            console.error(`Failed to fetch tracking for order ${order.id}:`, err.response?.data || err.message);
+            return { ...order, tracking: { error: "Failed to fetch tracking", details: err.response?.data?.message || err.message } };
           }
         })
       );
@@ -78,12 +80,33 @@ const ProductionTracking = () => {
         return 'primary';
       case 'pending':
         return 'secondary';
+      case 'awaiting_acceptance':
+        return 'warning';
+      case 'rejected':
+        return 'danger';
       default:
         return 'light';
     }
   };
 
   const getOrderStatus = (order) => {
+    // Check acceptance status first
+    if (order.tracking?.acceptance_status === 'pending') {
+      return {
+        status: 'awaiting_acceptance',
+        progress: 0,
+        message: 'Awaiting admin acceptance'
+      };
+    }
+
+    if (order.tracking?.acceptance_status === 'rejected') {
+      return {
+        status: 'rejected',
+        progress: 0,
+        message: 'Order rejected'
+      };
+    }
+
     if (!order.tracking || !order.tracking.overall) {
       return {
         status: order.status,
@@ -98,7 +121,7 @@ const ProductionTracking = () => {
     } else if (overall.progress_pct > 0) {
       return { status: 'in_progress', progress: overall.progress_pct, message: 'In production' };
     } else {
-      return { status: 'pending', progress: 0, message: 'Preparing to start' };
+      return { status: 'pending', progress: 0, message: 'Production pending' };
     }
   };
 
@@ -191,33 +214,111 @@ const ProductionTracking = () => {
                         </div>
                       </div>
 
+                      {/* Tracking Error Alert */}
+                      {order.tracking?.error && (
+                        <div className="alert alert-danger mb-4">
+                          <div className="d-flex align-items-center">
+                            <FaExclamationTriangle className="me-3" style={{ fontSize: '2rem' }} />
+                            <div>
+                              <h5 className="alert-heading mb-1">Tracking Error</h5>
+                              <p className="mb-0">{order.tracking.error}</p>
+                              {order.tracking.details && (
+                                <small className="text-muted d-block mt-1">Details: {order.tracking.details}</small>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Acceptance Status Alert */}
+                      {orderStatus.status === 'awaiting_acceptance' && (
+                        <div className="alert alert-warning mb-4">
+                          <div className="d-flex align-items-center">
+                            <FaClock className="me-3" style={{ fontSize: '2rem' }} />
+                            <div>
+                              <h5 className="alert-heading mb-1">Order Awaiting Acceptance</h5>
+                              <p className="mb-0">
+                                Your order has been received and is awaiting admin review. 
+                                Production will begin once the order is accepted.
+                              </p>
+                              {order.tracking?.accepted_at && (
+                                <small className="text-muted">
+                                  Submitted: {new Date(order.checkout_date).toLocaleString()}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {orderStatus.status === 'rejected' && (
+                        <div className="alert alert-danger mb-4">
+                          <div className="d-flex align-items-center">
+                            <FaExclamationTriangle className="me-3" style={{ fontSize: '2rem' }} />
+                            <div>
+                              <h5 className="alert-heading mb-1">Order Rejected</h5>
+                              <p className="mb-0">
+                                {order.tracking?.rejection_reason || 'Unfortunately, we cannot process this order at this time.'}
+                              </p>
+                              {order.tracking?.accepted_at && (
+                                <small className="text-muted">
+                                  Reviewed: {new Date(order.tracking.accepted_at).toLocaleString()}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {orderStatus.status === 'pending' && order.tracking?.acceptance_status === 'accepted' && (
+                        <div className="alert alert-info mb-4">
+                          <div className="d-flex align-items-center">
+                            <FaCheckCircle className="me-3" style={{ fontSize: '2rem' }} />
+                            <div>
+                              <h5 className="alert-heading mb-1">Order Accepted!</h5>
+                              <p className="mb-0">
+                                Your order has been accepted and production will begin shortly.
+                              </p>
+                              {order.tracking?.accepted_at && (
+                                <small className="text-muted">
+                                  Accepted: {new Date(order.tracking.accepted_at).toLocaleString()}
+                                  {order.tracking?.accepted_by && ` by ${order.tracking.accepted_by}`}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Progress Section */}
-                      <div className="mb-4">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <h5 className="text-primary mb-0">Overall Progress</h5>
-                          <div className="text-end">
-                            <div className="h3 text-primary mb-0">{orderStatus.progress}%</div>
-                            {order.tracking?.overall?.eta && (
-                              <small className="text-muted">
-                                <FaCalendarAlt className="me-1" />
-                                ETA: {order.tracking.overall.eta}
-                              </small>
-                            )}
+                      {orderStatus.status !== 'awaiting_acceptance' && orderStatus.status !== 'rejected' && (
+                        <div className="mb-4">
+                          <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h5 className="text-primary mb-0">Overall Progress</h5>
+                            <div className="text-end">
+                              <div className="h3 text-primary mb-0">{orderStatus.progress}%</div>
+                              {order.tracking?.overall?.eta && (
+                                <small className="text-muted">
+                                  <FaCalendarAlt className="me-1" />
+                                  ETA: {order.tracking.overall.eta}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                          <div className="progress mb-3" style={{ height: '25px' }}>
+                            <div 
+                              className="progress-bar bg-primary" 
+                              role="progressbar" 
+                              style={{ width: `${orderStatus.progress}%` }}
+                              aria-valuenow={orderStatus.progress}
+                              aria-valuemin="0" 
+                              aria-valuemax="100"
+                            >
+                              {orderStatus.progress}%
+                            </div>
                           </div>
                         </div>
-                        <div className="progress mb-3" style={{ height: '25px' }}>
-                          <div 
-                            className="progress-bar bg-primary" 
-                            role="progressbar" 
-                            style={{ width: `${orderStatus.progress}%` }}
-                            aria-valuenow={orderStatus.progress}
-                            aria-valuemin="0" 
-                            aria-valuemax="100"
-                          >
-                            {orderStatus.progress}%
-                          </div>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Current Stage */}
                       {orderStatus.status !== 'completed' && (

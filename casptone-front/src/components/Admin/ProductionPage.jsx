@@ -91,13 +91,29 @@ export default function ProductionTrackingSystem() {
     setLoading(true);
     setError("");
     try {
+      const token = localStorage.getItem('token');
+      console.log('Token exists:', !!token);
+      
       const res = await api.get(`/productions`);
       const data = res.data || [];
+      console.log('Productions fetched:', data.length);
+      console.log('First production BOM:', data[0]?.bom);
+      console.log('First production current_process:', data[0]?.current_process);
       setProductions(data);
       setFiltered(data);
     } catch (err) {
       console.error("Fetch error:", err);
-      setError("Failed to load production data. Please check your API endpoint and authentication.");
+      
+      if (err.response?.status === 401) {
+        setError("Session expired. Please login again.");
+        // Redirect to login after 2 seconds
+        setTimeout(() => {
+          localStorage.clear();
+          navigate('/login');
+        }, 2000);
+      } else {
+        setError("Failed to load production data. Please check your API endpoint and authentication.");
+      }
     } finally {
       setLoading(false);
     }
@@ -105,23 +121,41 @@ export default function ProductionTrackingSystem() {
 
   const markOrderReadyForDelivery = async (orderId) => {
     try {
-      await api.put(`/orders/${orderId}/ready-for-delivery`);
+      console.log('Marking order as ready for delivery:', orderId);
+      const response = await api.put(`/orders/${orderId}/ready-for-delivery`);
+      console.log('Response:', response.data);
+      
+      alert('✅ Order marked as ready for delivery! Customer will be notified.');
+      
       await fetchProductions();
       await fetchAnalytics();
     } catch (err) {
       console.error('Ready for delivery error:', err);
-      setError('Failed to mark order as ready for delivery');
+      console.error('Error details:', err.response?.data);
+      
+      const errorMsg = err.response?.data?.message || 'Failed to mark order as ready for delivery';
+      setError(errorMsg);
+      alert('❌ Error: ' + errorMsg);
     }
   };
 
   const markOrderDelivered = async (orderId) => {
     try {
-      await api.put(`/orders/${orderId}/delivered`);
+      console.log('Marking order as delivered:', orderId);
+      const response = await api.put(`/orders/${orderId}/delivered`);
+      console.log('Response:', response.data);
+      
+      alert('✅ Order marked as delivered! Customer will be notified.');
+      
       await fetchProductions();
       await fetchAnalytics();
     } catch (err) {
       console.error('Mark delivered error:', err);
-      setError('Failed to mark order as delivered');
+      console.error('Error details:', err.response?.data);
+      
+      const errorMsg = err.response?.data?.message || 'Failed to mark order as delivered';
+      setError(errorMsg);
+      alert('❌ Error: ' + errorMsg);
     }
   };
 
@@ -393,9 +427,6 @@ export default function ProductionTrackingSystem() {
                     <button className="btn btn-outline-secondary" onClick={bulkExportPDF}>
                       Export Report
                     </button>
-                    <button className="btn btn-outline-success" onClick={() => exportProductionCsv({ start_date: dateRange.start, end_date: dateRange.end })}>
-                      Server Export
-                    </button>
                   </div>
                   
                 </div>
@@ -539,14 +570,17 @@ export default function ProductionTrackingSystem() {
                       </div>
                       
                       <div className="mt-2">
-                        <label className="form-label small">Stage:</label>
-                        <select 
-                          className="form-select form-select-sm" 
-                          value={prod.stage} 
-                          onChange={(e) => updateStage(prod.id, e.target.value)}
-                        >
-                          {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        <label className="form-label small">Current Process:</label>
+                        <div className="d-flex align-items-center gap-2">
+                          <div className="badge bg-primary text-white px-3 py-2 flex-grow-1">
+                            {prod.current_stage || 'N/A'}
+                          </div>
+                          {prod.current_process && (
+                            <span className="badge bg-info text-capitalize">
+                              {prod.current_process.status}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Gantt-like view for processes if available */}
@@ -570,17 +604,50 @@ export default function ProductionTrackingSystem() {
                         </div>
                       )}
                       
-                      <div className="mt-2 small text-muted">
-                        <strong>Resources:</strong> {
-                          Array.isArray(prod.resources_used)
-                            ? (prod.resources_used.length
-                                ? prod.resources_used.map((r) => `${r.inventory_item_id ?? r.sku ?? 'item'}: ${r.qty ?? r.quantity ?? 0}`).join(", ")
-                                : "N/A")
-                            : (typeof prod.resources_used === "object" && prod.resources_used
-                                ? Object.entries(prod.resources_used || {}).map(([k,v]) => `${k}: ${v}`).join(", ")
-                                : (prod.resources_used || "N/A"))
-                        }
-                      </div>
+                      {/* BOM Materials for Current Process */}
+                      {prod.bom && prod.bom.length > 0 && (
+                        <div className="mt-3">
+                          <div className="small fw-bold mb-2">📦 Required Materials (BOM):</div>
+                          <div className="table-responsive">
+                            <table className="table table-sm table-bordered mb-0">
+                              <thead className="table-light">
+                                <tr>
+                                  <th className="small">Material</th>
+                                  <th className="small text-end">Qty/Unit</th>
+                                  <th className="small text-end">Total Needed</th>
+                                  <th className="small text-end">In Stock</th>
+                                  <th className="small text-center">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {prod.bom.map((material, idx) => {
+                                  const totalNeeded = material.qty_per_unit * (prod.quantity || 1);
+                                  const inStock = material.quantity_on_hand || 0;
+                                  const isAvailable = inStock >= totalNeeded;
+                                  return (
+                                    <tr key={idx}>
+                                      <td className="small">
+                                        <div className="fw-bold">{material.name}</div>
+                                        <div className="text-muted" style={{fontSize: '0.75rem'}}>{material.sku}</div>
+                                      </td>
+                                      <td className="small text-end">{material.qty_per_unit} {material.unit}</td>
+                                      <td className="small text-end fw-bold">{totalNeeded} {material.unit}</td>
+                                      <td className="small text-end">{inStock} {material.unit}</td>
+                                      <td className="text-center">
+                                        {isAvailable ? (
+                                          <span className="badge bg-success" style={{fontSize: '0.7rem'}}>✓ Available</span>
+                                        ) : (
+                                          <span className="badge bg-danger" style={{fontSize: '0.7rem'}}>⚠ Low Stock</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                       
                       {prod.notes && (
                         <div className="mt-1 small">
@@ -602,14 +669,24 @@ export default function ProductionTrackingSystem() {
               <h5 className="card-title mb-0">
                 Ready to Deliver
                 <span className="badge bg-light text-dark ms-2">
-                  {filtered.filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed').length}
+                  {filtered.filter(p => 
+                    p.status === 'Completed' && 
+                    p.overall_progress >= 100 && 
+                    p.order?.status !== 'ready_for_delivery' && 
+                    p.order?.status !== 'delivered'
+                  ).length}
                 </span>
               </h5>
             </div>
             <div className="card-body">
               <div className="timeline-list" style={{ maxHeight: 500, overflowY: "auto" }}>
                 {filtered
-                  .filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed')
+                  .filter(p => 
+                    p.status === 'Completed' && 
+                    p.overall_progress >= 100 && 
+                    p.order?.status !== 'ready_for_delivery' && 
+                    p.order?.status !== 'delivered'
+                  )
                   .map(prod => (
                     <div key={prod.id} className="card mb-3 border-start border-4" style={{ borderColor: '#f39c12' }}>
                       <div className="card-body p-3">
@@ -660,7 +737,12 @@ export default function ProductionTrackingSystem() {
                     </div>
                   ))}
 
-                {filtered.filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed').length === 0 && (
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.overall_progress >= 100 && 
+                  p.order?.status !== 'ready_for_delivery' && 
+                  p.order?.status !== 'delivered'
+                ).length === 0 && (
                   <div className="text-center py-4 text-muted">
                     <i className="fas fa-truck-loading fa-3x mb-3"></i>
                     <div>No orders are currently ready to deliver.</div>
@@ -700,8 +782,8 @@ export default function ProductionTrackingSystem() {
                   </div>
                 </div>
                 <div className="col-lg-4">
-                  <h6>Current Production by Stage</h6>
-                  <div style={{ width: "100%", height: 260 }}>
+                  <h6 className="mb-3 text-center fw-bold">Stage Breakdown</h6>
+                  <div style={{ width: "100%", height: 340, position: 'relative' }}>
                     {stageData && stageData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -709,22 +791,76 @@ export default function ProductionTrackingSystem() {
                             data={stageData} 
                             dataKey="value" 
                             nameKey="name" 
-                            outerRadius={80} 
-                            label={({name, value}) => `${name}: ${value}`}
+                            cx="50%" 
+                            cy="50%" 
+                            outerRadius={110}
+                            innerRadius={0}
+                            label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
+                              const RADIAN = Math.PI / 180;
+                              const radius = outerRadius + 35;
+                              const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                              const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                              
+                              // Shorten stage names for display
+                              const shortName = name
+                                .replace('Material Preparation', 'Material Prep')
+                                .replace('Cutting & Shaping', 'Cutting')
+                                .replace('Sanding & Surface Preparation', 'Sanding')
+                                .replace('Quality Check & Packaging', 'Quality Check');
+                              
+                              return (
+                                <text 
+                                  x={x} 
+                                  y={y} 
+                                  fill="#333"
+                                  textAnchor={x > cx ? 'start' : 'end'} 
+                                  dominantBaseline="central"
+                                  style={{ 
+                                    fontSize: '13px', 
+                                    fontWeight: '600',
+                                    textShadow: '0 0 3px white, 0 0 3px white'
+                                  }}
+                                >
+                                  {shortName}
+                                </text>
+                              );
+                            }}
+                            labelLine={{
+                              stroke: '#666',
+                              strokeWidth: 1.5
+                            }}
                           >
                             {stageData.map((entry, index) => (
-                              <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                              <Cell 
+                                key={entry.name} 
+                                fill={COLORS[index % COLORS.length]}
+                                stroke="#fff"
+                                strokeWidth={2}
+                              />
                             ))}
                           </Pie>
-                          <Tooltip />
-                          <Legend />
+                          <Tooltip 
+                            formatter={(value, name) => [`${value} order${value !== 1 ? 's' : ''}`, name]}
+                            contentStyle={{ 
+                              backgroundColor: 'rgba(255, 255, 255, 0.98)', 
+                              border: '2px solid #ddd',
+                              borderRadius: '8px',
+                              padding: '10px',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                            }}
+                            labelStyle={{
+                              fontWeight: 'bold',
+                              color: '#333'
+                            }}
+                          />
                         </PieChart>
                       </ResponsiveContainer>
                     ) : (
                       <div className="d-flex align-items-center justify-content-center h-100">
                         <div className="text-center text-muted">
-                          <div className="mb-2">No current production stages</div>
-                          <small>Only stages with active production are shown</small>
+                          <i className="fas fa-chart-pie fa-3x mb-3 opacity-25"></i>
+                          <div className="mb-2 fw-bold">No Active Production Stages</div>
+                          <small>Start production to see stage breakdown</small>
                         </div>
                       </div>
                     )}

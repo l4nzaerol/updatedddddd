@@ -251,4 +251,288 @@ class InventoryController extends Controller
             'critical_items' => $criticalItems
         ]);
     }
+
+    /**
+     * Get comprehensive inventory report
+     */
+    public function getInventoryReport(Request $request)
+    {
+        $startDate = $request->get('start_date', Carbon::now()->subDays(30)->format('Y-m-d'));
+        $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
+        
+        $items = InventoryItem::with(['usages' => function($query) use ($startDate, $endDate) {
+            $query->whereBetween('date', [$startDate, $endDate]);
+        }])->get();
+
+        $report = $items->map(function($item) use ($startDate, $endDate) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $avgDailyUsage = $totalUsage / max(1, Carbon::parse($startDate)->diffInDays($endDate));
+            
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'category' => $item->category,
+                'current_stock' => $item->quantity_on_hand,
+                'safety_stock' => $item->safety_stock,
+                'reorder_point' => $item->reorder_point,
+                'total_usage' => $totalUsage,
+                'avg_daily_usage' => round($avgDailyUsage, 2),
+                'days_until_stockout' => $avgDailyUsage > 0 ? floor($item->quantity_on_hand / $avgDailyUsage) : 999,
+                'stock_status' => $this->getStockStatus($item),
+                'reorder_needed' => $item->quantity_on_hand <= $item->reorder_point,
+                'unit' => $item->unit,
+                'location' => $item->location,
+            ];
+        });
+
+        return response()->json([
+            'period' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'days' => Carbon::parse($startDate)->diffInDays($endDate)
+            ],
+            'summary' => [
+                'total_items' => $items->count(),
+                'items_needing_reorder' => $report->where('reorder_needed', true)->count(),
+                'critical_items' => $report->where('stock_status', 'critical')->count(),
+                'total_usage' => $report->sum('total_usage'),
+            ],
+            'items' => $report
+        ]);
+    }
+
+    /**
+     * Get stock turnover report
+     */
+    public function getStockTurnoverReport(Request $request)
+    {
+        $days = $request->get('days', 30);
+        $startDate = Carbon::now()->subDays($days);
+
+        $items = InventoryItem::with(['usages' => function($query) use ($startDate) {
+            $query->where('date', '>=', $startDate);
+        }])->get();
+
+        $turnoverData = $items->map(function($item) use ($days) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $avgStock = ($item->quantity_on_hand + $totalUsage) / 2; // Simplified average
+            $turnoverRate = $avgStock > 0 ? $totalUsage / $avgStock : 0;
+            $turnoverDays = $turnoverRate > 0 ? $days / $turnoverRate : 999;
+
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'total_usage' => $totalUsage,
+                'avg_stock_level' => round($avgStock, 2),
+                'turnover_rate' => round($turnoverRate, 2),
+                'turnover_days' => round($turnoverDays, 1),
+                'turnover_category' => $this->getTurnoverCategory($turnoverDays),
+                'current_stock' => $item->quantity_on_hand,
+            ];
+        })->sortByDesc('turnover_rate')->values();
+
+        return response()->json([
+            'period_days' => $days,
+            'summary' => [
+                'fast_moving' => $turnoverData->where('turnover_category', 'fast')->count(),
+                'medium_moving' => $turnoverData->where('turnover_category', 'medium')->count(),
+                'slow_moving' => $turnoverData->where('turnover_category', 'slow')->count(),
+                'avg_turnover_rate' => round($turnoverData->avg('turnover_rate'), 2),
+            ],
+            'items' => $turnoverData
+        ]);
+    }
+
+    /**
+     * Get material usage forecast
+     */
+    public function getMaterialForecast(Request $request)
+    {
+        $days = $request->get('forecast_days', 30);
+        $historicalDays = $request->get('historical_days', 30);
+        
+        $startDate = Carbon::now()->subDays($historicalDays);
+        
+        $items = InventoryItem::with(['usages' => function($query) use ($startDate) {
+            $query->where('date', '>=', $startDate);
+        }])->get();
+
+        $forecasts = $items->map(function($item) use ($days, $historicalDays) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $avgDailyUsage = $totalUsage / max(1, $historicalDays);
+            $forecastedUsage = $avgDailyUsage * $days;
+            $projectedStock = $item->quantity_on_hand - $forecastedUsage;
+            
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'current_stock' => $item->quantity_on_hand,
+                'avg_daily_usage' => round($avgDailyUsage, 2),
+                'forecasted_usage_' . $days . '_days' => round($forecastedUsage, 2),
+                'projected_stock' => round($projectedStock, 2),
+                'reorder_point' => $item->reorder_point,
+                'will_need_reorder' => $projectedStock <= $item->reorder_point,
+                'days_until_stockout' => $avgDailyUsage > 0 ? floor($item->quantity_on_hand / $avgDailyUsage) : 999,
+                'recommended_order_qty' => $projectedStock < $item->reorder_point ? 
+                    max(0, $item->max_level - $projectedStock) : 0,
+            ];
+        })->sortBy('days_until_stockout')->values();
+
+        return response()->json([
+            'forecast_period_days' => $days,
+            'based_on_historical_days' => $historicalDays,
+            'summary' => [
+                'items_will_need_reorder' => $forecasts->where('will_need_reorder', true)->count(),
+                'total_forecasted_usage' => round($forecasts->sum('forecasted_usage_' . $days . '_days'), 2),
+                'items_critical' => $forecasts->where('days_until_stockout', '<', 7)->count(),
+            ],
+            'forecasts' => $forecasts
+        ]);
+    }
+
+    /**
+     * Get replenishment schedule
+     */
+    public function getReplenishmentSchedule(Request $request)
+    {
+        $items = InventoryItem::with(['usages' => function($query) {
+            $query->where('date', '>=', Carbon::now()->subDays(30));
+        }])->get();
+
+        $schedule = $items->map(function($item) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $avgDailyUsage = $totalUsage / 30;
+            $daysUntilReorder = $avgDailyUsage > 0 ? 
+                floor(($item->quantity_on_hand - $item->reorder_point) / $avgDailyUsage) : 999;
+            
+            $needsReorder = $item->quantity_on_hand <= $item->reorder_point;
+            $reorderDate = $needsReorder ? Carbon::now() : Carbon::now()->addDays(max(0, $daysUntilReorder));
+            $orderQty = $needsReorder ? ($item->max_level - $item->quantity_on_hand) : 0;
+
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'current_stock' => $item->quantity_on_hand,
+                'reorder_point' => $item->reorder_point,
+                'needs_immediate_reorder' => $needsReorder,
+                'estimated_reorder_date' => $reorderDate->format('Y-m-d'),
+                'days_until_reorder' => max(0, $daysUntilReorder),
+                'recommended_order_qty' => round($orderQty, 2),
+                'lead_time_days' => $item->lead_time_days,
+                'order_by_date' => $reorderDate->subDays($item->lead_time_days)->format('Y-m-d'),
+                'supplier' => $item->supplier,
+                'priority' => $this->getReorderPriority($daysUntilReorder),
+            ];
+        })->sortBy('days_until_reorder')->values();
+
+        return response()->json([
+            'generated_at' => Carbon::now()->toDateTimeString(),
+            'summary' => [
+                'immediate_reorders' => $schedule->where('needs_immediate_reorder', true)->count(),
+                'high_priority' => $schedule->where('priority', 'high')->count(),
+                'medium_priority' => $schedule->where('priority', 'medium')->count(),
+                'total_reorder_value' => $schedule->sum('recommended_order_qty'),
+            ],
+            'schedule' => $schedule
+        ]);
+    }
+
+    /**
+     * Get ABC analysis (inventory classification)
+     */
+    public function getABCAnalysis(Request $request)
+    {
+        $days = $request->get('days', 90);
+        $startDate = Carbon::now()->subDays($days);
+
+        $items = InventoryItem::with(['usages' => function($query) use ($startDate) {
+            $query->where('date', '>=', $startDate);
+        }])->get();
+
+        // Calculate usage value for each item
+        $itemsWithValue = $items->map(function($item) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $usageValue = $totalUsage * ($item->unit_cost ?? 0);
+            
+            return [
+                'item' => $item,
+                'total_usage' => $totalUsage,
+                'usage_value' => $usageValue,
+            ];
+        })->sortByDesc('usage_value');
+
+        $totalValue = $itemsWithValue->sum('usage_value');
+        $cumulativeValue = 0;
+        
+        $classified = $itemsWithValue->map(function($data) use ($totalValue, &$cumulativeValue) {
+            $item = $data['item'];
+            $cumulativeValue += $data['usage_value'];
+            $cumulativePercent = ($cumulativeValue / max(1, $totalValue)) * 100;
+            
+            $classification = 'C';
+            if ($cumulativePercent <= 80) {
+                $classification = 'A';
+            } elseif ($cumulativePercent <= 95) {
+                $classification = 'B';
+            }
+
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'total_usage' => $data['total_usage'],
+                'usage_value' => round($data['usage_value'], 2),
+                'percent_of_total' => round(($data['usage_value'] / max(1, $totalValue)) * 100, 2),
+                'cumulative_percent' => round($cumulativePercent, 2),
+                'classification' => $classification,
+                'current_stock' => $item->quantity_on_hand,
+                'recommendation' => $this->getABCRecommendation($classification),
+            ];
+        });
+
+        return response()->json([
+            'period_days' => $days,
+            'summary' => [
+                'class_a_items' => $classified->where('classification', 'A')->count(),
+                'class_b_items' => $classified->where('classification', 'B')->count(),
+                'class_c_items' => $classified->where('classification', 'C')->count(),
+                'total_value' => round($totalValue, 2),
+            ],
+            'items' => $classified
+        ]);
+    }
+
+    // Helper methods
+    private function getStockStatus($item)
+    {
+        if ($item->quantity_on_hand == 0) return 'out_of_stock';
+        if ($item->quantity_on_hand <= $item->safety_stock) return 'critical';
+        if ($item->quantity_on_hand <= $item->reorder_point) return 'low';
+        if ($item->quantity_on_hand >= $item->max_level) return 'overstock';
+        return 'normal';
+    }
+
+    private function getTurnoverCategory($turnoverDays)
+    {
+        if ($turnoverDays < 30) return 'fast';
+        if ($turnoverDays < 90) return 'medium';
+        return 'slow';
+    }
+
+    private function getReorderPriority($daysUntilReorder)
+    {
+        if ($daysUntilReorder <= 0) return 'urgent';
+        if ($daysUntilReorder <= 7) return 'high';
+        if ($daysUntilReorder <= 14) return 'medium';
+        return 'low';
+    }
+
+    private function getABCRecommendation($classification)
+    {
+        $recommendations = [
+            'A' => 'High priority - Monitor closely, maintain optimal stock levels',
+            'B' => 'Medium priority - Regular monitoring, standard reorder procedures',
+            'C' => 'Low priority - Periodic review, bulk ordering acceptable',
+        ];
+        return $recommendations[$classification] ?? 'Review required';
+    }
 }

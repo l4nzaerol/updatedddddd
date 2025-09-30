@@ -16,6 +16,7 @@ use App\Http\Controllers\AdminOverviewController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\ProductionTrackingController;
+use App\Http\Controllers\OrderAcceptanceController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -51,8 +52,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/payments/confirm', [OrderController::class, 'confirmPayment']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
+    
+    // Order Acceptance Routes (Admin only) - MUST be before /orders/{id}
+    Route::get('/orders/pending-acceptance', [OrderAcceptanceController::class, 'getPendingOrders']);
+    Route::get('/orders/accepted', [OrderAcceptanceController::class, 'getAcceptedOrders']);
+    Route::get('/orders/rejected', [OrderAcceptanceController::class, 'getRejectedOrders']);
+    Route::get('/orders/acceptance/statistics', [OrderAcceptanceController::class, 'getStatistics']);
+    Route::post('/orders/{id}/accept', [OrderAcceptanceController::class, 'acceptOrder']);
+    Route::post('/orders/{id}/reject', [OrderAcceptanceController::class, 'rejectOrder']);
+    
+    // Specific order routes
     Route::get('/orders/{id}/tracking', [OrderController::class, 'tracking']);
-    Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/payment-status', function($id){
         $order = \App\Models\Order::select('id','payment_status')->find($id);
         return $order ? response()->json($order) : response()->json(['message'=>'Not found'],404);
@@ -61,6 +71,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::put('/orders/{id}/ready-for-delivery', [OrderController::class, 'markAsReadyForDelivery']);
     Route::put('/orders/{id}/delivered', [OrderController::class, 'markAsDelivered']);
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+
+    // Notification Routes
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
+    Route::put('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead']);
+    Route::put('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
+    Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy']);
 
     // Inventory Routes
     Route::get('/inventory', [InventoryController::class, 'index']);
@@ -71,6 +88,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/inventory/daily-usage', [InventoryController::class, 'getDailyUsage']);
     Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
     Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
+    
+    // Inventory Reports (NEW)
+    Route::get('/inventory/report', [InventoryController::class, 'getInventoryReport']);
+    Route::get('/inventory/turnover-report', [InventoryController::class, 'getStockTurnoverReport']);
+    Route::get('/inventory/forecast', [InventoryController::class, 'getMaterialForecast']);
+    Route::get('/inventory/replenishment-schedule', [InventoryController::class, 'getReplenishmentSchedule']);
+    Route::get('/inventory/abc-analysis', [InventoryController::class, 'getABCAnalysis']);
 
     // Usage
     Route::get('/usage', [UsageController::class, 'index']);
