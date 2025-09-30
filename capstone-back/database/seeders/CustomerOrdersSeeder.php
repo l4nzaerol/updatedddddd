@@ -8,6 +8,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderTracking;
 use App\Models\Product;
+use App\Models\Production;
+use App\Models\ProductionProcess;
 use Carbon\Carbon;
 
 class CustomerOrdersSeeder extends Seeder
@@ -80,6 +82,18 @@ class CustomerOrdersSeeder extends Seeder
         $estimatedStart = now()->subDays($daysAgo);
         $estimatedCompletion = $estimatedStart->copy()->addWeeks($trackingType === 'alkansya' ? 1 : 2);
 
+        // Map legacy/current stage names to production dashboard stages for custom items
+        if ($trackingType === 'custom') {
+            $stageMap = [
+                'Planning' => 'Material Preparation',
+                'Material Selection' => 'Material Preparation',
+                'Cutting and Shaping' => 'Cutting & Shaping',
+                'Quality Assurance' => 'Quality Check & Packaging',
+                'Quality Control' => 'Quality Check & Packaging',
+            ];
+            $currentStage = $stageMap[$currentStage] ?? $currentStage;
+        }
+
         $tracking = OrderTracking::create([
             'order_id' => $order->id,
             'product_id' => $product->id,
@@ -95,7 +109,49 @@ class CustomerOrdersSeeder extends Seeder
             'updated_at' => now()->subDays($daysAgo),
         ]);
 
-        $this->command->info("Created order #{$order->id} - {$product->name} x{$quantity} - {$status} - {$currentStage} - {$progress}%");
+        // Also create a corresponding production so it shows up in Productions and can be tracked
+        $isAlkansya = strtolower($product->name) === 'alkansya';
+        $production = Production::create([
+            'order_id' => $order->id,
+            'user_id' => $customer->id, // seeded under the customer for visibility; real ops may use employee
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'date' => now()->subDays($daysAgo)->format('Y-m-d'),
+            'current_stage' => $isAlkansya ? 'Ready for Delivery' : 'Material Preparation',
+            'status' => $isAlkansya ? 'Completed' : ($status === 'completed' ? 'Completed' : 'In Progress'),
+            'quantity' => $quantity,
+            'priority' => 'medium',
+            'requires_tracking' => !$isAlkansya,
+            'product_type' => $isAlkansya ? 'alkansya' : (strtolower($product->name) === 'dining table' ? 'table' : 'chair'),
+            'production_started_at' => $estimatedStart,
+            'estimated_completion_date' => $estimatedCompletion,
+        ]);
+
+        if (!$isAlkansya) {
+            // Create process records with the same 2-week split used by the app
+            $totalMinutes = 14 * 24 * 60; // 20160 minutes
+            $processes = [
+                ['name' => 'Material Preparation', 'order' => 1, 'estimated_duration' => (int) round($totalMinutes * 0.10)],
+                ['name' => 'Cutting & Shaping', 'order' => 2, 'estimated_duration' => (int) round($totalMinutes * 0.20)],
+                ['name' => 'Assembly', 'order' => 3, 'estimated_duration' => (int) round($totalMinutes * 0.30)],
+                ['name' => 'Sanding & Surface Preparation', 'order' => 4, 'estimated_duration' => (int) round($totalMinutes * 0.15)],
+                ['name' => 'Finishing', 'order' => 5, 'estimated_duration' => (int) round($totalMinutes * 0.20)],
+                ['name' => 'Quality Check & Packaging', 'order' => 6, 'estimated_duration' => (int) round($totalMinutes * 0.05)],
+            ];
+
+            foreach ($processes as $proc) {
+                ProductionProcess::create([
+                    'production_id' => $production->id,
+                    'process_name' => $proc['name'],
+                    'process_order' => $proc['order'],
+                    'status' => $proc['order'] === 1 ? 'in_progress' : 'pending',
+                    'estimated_duration_minutes' => $proc['estimated_duration'],
+                    'started_at' => $proc['order'] === 1 ? $estimatedStart : null,
+                ]);
+            }
+        }
+
+        $this->command->info("Created order #{$order->id} and production #{$production->id} - {$product->name} x{$quantity} - {$status} - {$currentStage} - {$progress}%");
     }
 
     private function generateProcessTimeline($trackingType, $currentStage, $status, $progress)

@@ -263,21 +263,16 @@ class OrderController extends Controller
                 ]
             ];
         } elseif ($trackingType === 'custom') {
+            // Align to production dashboard stages
             return [
                 [
-                    'stage' => 'Planning',
-                    'description' => 'Detailed planning and design',
+                    'stage' => 'Material Preparation',
+                    'description' => 'Selecting and preparing materials',
                     'estimated_duration' => '2-3 days',
                     'status' => 'pending'
                 ],
                 [
-                    'stage' => 'Material Selection',
-                    'description' => 'Selecting high-quality materials',
-                    'estimated_duration' => '1 day',
-                    'status' => 'pending'
-                ],
-                [
-                    'stage' => 'Cutting and Shaping',
+                    'stage' => 'Cutting & Shaping',
                     'description' => 'Precise cutting and shaping',
                     'estimated_duration' => '3-4 days',
                     'status' => 'pending'
@@ -289,14 +284,20 @@ class OrderController extends Controller
                     'status' => 'pending'
                 ],
                 [
+                    'stage' => 'Sanding & Surface Preparation',
+                    'description' => 'Sanding and prepping surfaces',
+                    'estimated_duration' => '1-2 days',
+                    'status' => 'pending'
+                ],
+                [
                     'stage' => 'Finishing',
-                    'description' => 'Professional finishing',
+                    'description' => 'Finishes, coats, and polish',
                     'estimated_duration' => '2-3 days',
                     'status' => 'pending'
                 ],
                 [
-                    'stage' => 'Quality Assurance',
-                    'description' => 'Comprehensive quality check',
+                    'stage' => 'Quality Check & Packaging',
+                    'description' => 'QA and packaging for dispatch',
                     'estimated_duration' => '1 day',
                     'status' => 'pending'
                 ]
@@ -521,8 +522,25 @@ class OrderController extends Controller
         $inProgressItems = 0;
 
         foreach ($trackings as $tracking) {
-            // Update current stage based on progress
-            $tracking->updateCurrentStageBasedOnProgress();
+            // If there is a linked production for this order+product, use its actual stage/status
+            $linkedProduction = Production::where('order_id', $order->id)
+                ->where('product_id', $tracking->product_id)
+                ->latest('updated_at')
+                ->first();
+
+            if ($linkedProduction) {
+                $stage = $this->normalizeToDashboardStage($linkedProduction->current_stage ?: $linkedProduction->stage);
+                $status = $linkedProduction->status === 'Completed' ? 'completed' : ($linkedProduction->status === 'In Progress' ? 'in_production' : 'pending');
+
+                if ($stage && ($tracking->current_stage !== $stage || $tracking->status !== $status)) {
+                    $tracking->current_stage = $stage;
+                    $tracking->status = $status;
+                    $tracking->save();
+                }
+            } else {
+                // Fallback to time-based estimation
+                $tracking->updateCurrentStageBasedOnProgress();
+            }
             
             $totalProgress += $tracking->progress_percentage;
             
@@ -599,6 +617,19 @@ class OrderController extends Controller
             'stage_summary' => $stageSummary->values(), // Include stage breakdown
             'simplified' => true, // Flag to indicate simplified response
         ]);
+    }
+
+    private function normalizeToDashboardStage(?string $stage): ?string
+    {
+        if (!$stage) return null;
+        $map = [
+            'Planning' => 'Material Preparation',
+            'Material Selection' => 'Material Preparation',
+            'Cutting and Shaping' => 'Cutting & Shaping',
+            'Quality Assurance' => 'Quality Check & Packaging',
+            'Quality Control' => 'Quality Check & Packaging',
+        ];
+        return $map[$stage] ?? $stage;
     }
 
     public function show($id)

@@ -81,6 +81,19 @@ export default function ProductionTrackingSystem() {
     } catch (e) {
       console.warn("Pusher setup failed", e);
     }
+    // Fallback polling when realtime not configured
+    const intervalId = setInterval(() => {
+      try {
+        fetchProductions();
+        fetchAnalytics();
+      } catch (e) {
+        // ignore polling errors
+      }
+    }, 8000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, []);
 
   useEffect(() => {
@@ -103,9 +116,39 @@ export default function ProductionTrackingSystem() {
     }
   };
 
+  const markOrderReadyForDelivery = async (orderId) => {
+    try {
+      await api.put(`/orders/${orderId}/ready-for-delivery`);
+      await fetchProductions();
+      await fetchAnalytics();
+    } catch (err) {
+      console.error('Ready for delivery error:', err);
+      setError('Failed to mark order as ready for delivery');
+    }
+  };
+
+  const markOrderDelivered = async (orderId) => {
+    try {
+      await api.put(`/orders/${orderId}/delivered`);
+      await fetchProductions();
+      await fetchAnalytics();
+    } catch (err) {
+      console.error('Mark delivered error:', err);
+      setError('Failed to mark order as delivered');
+    }
+  };
+
   const fetchAnalytics = async () => {
     try {
-      const res = await api.get(`/productions/analytics`);
+      // Use a default 14-day window unless user selected a range
+      const today = new Date();
+      const defaultStart = new Date();
+      defaultStart.setDate(today.getDate() - 13); // inclusive of today = 14 days
+
+      const start = dateRange.start || defaultStart.toISOString().slice(0, 10);
+      const end = dateRange.end || today.toISOString().slice(0, 10);
+
+      const res = await api.get(`/productions/analytics`, { params: { start_date: start, end_date: end } });
       const data = res.data || {};
       console.log('Analytics data:', data);
       
@@ -217,7 +260,7 @@ export default function ProductionTrackingSystem() {
     // Fallback to local productions data - only show stages with active production
     const fallbackResult = STAGES.map((stage) => ({
       name: stage,
-      value: productions.filter((p) => p.current_stage === stage && p.status === 'In Progress').length
+      value: productions.filter((p) => (p.current_stage || p.stage) === stage && p.status === 'In Progress').length
     })).filter(stage => stage.value > 0); // Only show stages with active production
     console.log('Using fallback stage data:', fallbackResult);
     return fallbackResult;
@@ -254,7 +297,7 @@ export default function ProductionTrackingSystem() {
     };
     
     const pending = productions.filter((p) => p.status === "In Progress" || p.status === "Pending");
-    const byStage = STAGES.reduce((acc, s) => ({ ...acc, [s]: pending.filter((p) => p.current_stage === s) }), {});
+    const byStage = STAGES.reduce((acc, s) => ({ ...acc, [s]: pending.filter((p) => (p.current_stage || p.stage) === s) }), {});
 
     const alloc = [];
     STAGES.forEach((s) => {
@@ -288,9 +331,13 @@ export default function ProductionTrackingSystem() {
 
   const updateStage = async (id, newStage) => {
     try {
-      const res = await api.patch(`/productions/${id}`, { stage: newStage });
-      const updated = res.data;
+      // Use override-stage endpoint because backend ignores direct stage updates on PATCH
+      const res = await api.post(`/productions/${id}/override-stage`, { stage: newStage, reason: 'Manual stage change from dashboard' });
+      const updated = res.data?.production || res.data;
       setProductions((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      // Immediately refresh analytics so charts and workload reflect the new stage
+      await fetchProductions();
+      await fetchAnalytics();
     } catch (err) {
       console.error("Update stage error:", err);
       setError("Failed to update production stage");
@@ -338,21 +385,20 @@ export default function ProductionTrackingSystem() {
     <AppLayout>
     <div className="container-fluid py-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
       {/* Header Section */}
+      <button className="btn btn-outline-secondary mb-3" onClick={() => navigate("/dashboard")}>
+                    ← Back to Dashboard
+                  </button>
       <div className="row mb-4">
         <div className="col-12">
           <div className="card shadow-sm">
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center">
                 <div>
-                  <button className="btn btn-outline-secondary mb-3" onClick={() => navigate("/dashboard")}>
-                    ← Back to Dashboard
-                  </button>
+
                   <h1 id="prod-track-heading" className="text-primary mb-2">
                     Production Tracking System
                   </h1>
-                  <p className="text-muted mb-0">
-                    Monitor and manage production operations
-                  </p>
+                  
                 </div>
                 <div className="text-end">
                   <div className="d-flex gap-2 mb-3">
@@ -366,9 +412,7 @@ export default function ProductionTrackingSystem() {
                       Server Export
                     </button>
                   </div>
-                  <div className="badge bg-success">
-                    Live Updates
-                  </div>
+                  
                 </div>
               </div>
             </div>
@@ -384,28 +428,26 @@ export default function ProductionTrackingSystem() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="card mb-4 shadow-sm">
-        <div className="card-body">
-          <h5 className="card-title">Filters & Search</h5>
-          <div className="row g-3">
+      {/* Simple Filters (compact, like Orders page) */}
+      <div className="card mb-3 shadow-sm">
+        <div className="card-body py-3">
+          <div className="row g-2 align-items-end">
             <div className="col-md-4">
-              <label className="form-label">Search</label>
               <input 
                 className="form-control" 
-                placeholder="Search by product, ID, or date" 
+                placeholder="Search product, prod ID, order ID, or date" 
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
               />
             </div>
             <div className="col-md-2">
-              <label className="form-label">Status</label>
               <select 
                 className="form-select" 
                 value={statusFilter} 
                 onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Status filter"
               >
-                <option value="all">All Statuses</option>
+                <option value="all">All</option>
                 <option value="Pending">Pending</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
@@ -413,34 +455,35 @@ export default function ProductionTrackingSystem() {
               </select>
             </div>
             <div className="col-md-2">
-              <label className="form-label">Start Date</label>
               <input 
                 type="date" 
                 className="form-control" 
                 value={dateRange.start} 
                 onChange={(e) => setDateRange((d) => ({ ...d, start: e.target.value }))} 
+                aria-label="Start date"
               />
             </div>
             <div className="col-md-2">
-              <label className="form-label">End Date</label>
               <input 
                 type="date" 
                 className="form-control" 
                 value={dateRange.end} 
                 onChange={(e) => setDateRange((d) => ({ ...d, end: e.target.value }))} 
+                aria-label="End date"
               />
             </div>
-            <div className="col-md-2 d-flex align-items-end">
-              <button 
-                className="btn btn-outline-secondary w-100" 
-                onClick={() => { 
-                  setSearch(""); 
-                  setStatusFilter("all"); 
-                  setDateRange({ start: "", end: "" }); 
-                }}
-              >
-                Reset
-              </button>
+            <div className="col-md-2">
+              <div className="d-flex gap-2">
+                <button 
+                  className="btn btn-outline-secondary w-100" 
+                  onClick={() => { setSearch(""); setStatusFilter("all"); setDateRange({ start: "", end: "" }); }}
+                >
+                  Reset
+                </button>
+                <button className="btn btn-primary w-100" onClick={() => { applyFilters(); }}>
+                  Apply
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -448,7 +491,7 @@ export default function ProductionTrackingSystem() {
 
       <div className="row">
         {/* Current Production Processes */}
-        <div className="col-lg-4 mb-4">
+        <div className="col-lg-6 mb-4">
           <div className="card h-100 shadow-sm">
             <div className="card-header bg-primary text-white">
               <h5 className="card-title mb-0">
@@ -491,7 +534,15 @@ export default function ProductionTrackingSystem() {
                           </div>
                           <div className="h6 mb-1">{prod.product_name}</div>
                           <div className="small text-muted">
-                            Qty: <strong>{prod.quantity || 0}</strong> • ID: <strong>{prod.id}</strong>
+                            Qty: <strong>{prod.quantity || 0}</strong> • Prod ID: <strong>{prod.id}</strong>
+                            {prod.order_id && (<>
+                              {' '}• Order ID: <strong>{prod.order_id}</strong>
+                            </>)}
+                            {prod.order?.user?.name && (
+                              <>
+                                {' '}• Customer: <strong>{prod.order.user.name}</strong>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="text-end">
@@ -562,8 +613,87 @@ export default function ProductionTrackingSystem() {
           </div>
         </div>
 
-        {/* Charts and Analytics */}
-        <div className="col-lg-8">
+        {/* Ready to Deliver */}
+        <div className="col-lg-6 mb-4">
+          <div className="card h-100 shadow-sm">
+            <div className="card-header bg-warning text-dark">
+              <h5 className="card-title mb-0">
+                Ready to Deliver
+                <span className="badge bg-light text-dark ms-2">
+                  {filtered.filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed').length}
+                </span>
+              </h5>
+            </div>
+            <div className="card-body">
+              <div className="timeline-list" style={{ maxHeight: 500, overflowY: "auto" }}>
+                {filtered
+                  .filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed')
+                  .map(prod => (
+                    <div key={prod.id} className="card mb-3 border-start border-4" style={{ borderColor: '#f39c12' }}>
+                      <div className="card-body p-3">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <div className="small text-muted mb-1">
+                              {prod.date ? new Date(prod.date).toLocaleDateString() : 'No date'}
+                            </div>
+                            <div className="h6 mb-1">{prod.product_name}</div>
+                            <div className="small text-muted">
+                              Qty: <strong>{prod.quantity || 0}</strong> • Prod ID: <strong>{prod.id}</strong>
+                              {prod.order_id ? (<>
+                                {' '}• Order ID: <strong>{prod.order_id}</strong>
+                              </>) : null}
+                              {prod.order?.user?.name && (
+                                <>
+                                  {' '}• Customer: <strong>{prod.order.user.name}</strong>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-end">
+                            <span className="badge bg-success">Completed</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 d-flex gap-2">
+                          {prod.order_id && (
+                            <>
+                              <button
+                                className="btn btn-outline-warning btn-sm"
+                                onClick={() => markOrderReadyForDelivery(prod.order_id)}
+                                title="Mark Order as Ready for Delivery"
+                              >
+                                Mark Ready for Delivery
+                              </button>
+                              <button
+                                className="btn btn-outline-success btn-sm"
+                                onClick={() => markOrderDelivered(prod.order_id)}
+                                title="Mark Order as Delivered"
+                              >
+                                Mark Delivered
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                {filtered.filter(p => (p.current_stage === 'Ready for Delivery' || p.stage === 'Ready for Delivery') && p.status === 'Completed').length === 0 && (
+                  <div className="text-center py-4 text-muted">
+                    <i className="fas fa-truck-loading fa-3x mb-3"></i>
+                    <div>No orders are currently ready to deliver.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Charts and Analytics */}
+      <div className="row">
+        <div className="col-12">
           {/* Charts */}
           <div className="card mb-4 shadow-sm">
             <div className="card-header bg-success text-white">
@@ -573,7 +703,7 @@ export default function ProductionTrackingSystem() {
             </div>
             <div className="card-body">
               <div className="row">
-                <div className="col-md-6">
+                <div className="col-lg-8">
                   <h6>Daily Output</h6>
                   <div style={{ width: "100%", height: 260 }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -587,7 +717,7 @@ export default function ProductionTrackingSystem() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="col-md-6">
+                <div className="col-lg-4">
                   <h6>Current Production by Stage</h6>
                   <div style={{ width: "100%", height: 260 }}>
                     {stageData && stageData.length > 0 ? (

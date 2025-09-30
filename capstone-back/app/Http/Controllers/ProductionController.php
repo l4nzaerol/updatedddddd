@@ -24,7 +24,7 @@ class ProductionController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Production::with(['user', 'product']); // eager load relationships
+        $query = Production::with(['user', 'product', 'order.user']); // eager load relationships including customer
 
         if ($request->has('status')) {
             $query->where('status', $request->status);
@@ -75,7 +75,6 @@ class ProductionController extends Controller
             'product_id'    => 'sometimes|exists:products,id',
             'product_name'  => 'sometimes|string|max:255',
             'date'          => 'sometimes|date',
-            'stage'         => 'sometimes|string|in:Design,Preparation,Cutting,Assembly,Finishing,Quality Control',
             'status'        => 'sometimes|string|in:Pending,In Progress,Completed,Hold',
             'quantity'      => 'sometimes|integer|min:0',
             'resources_used'=> 'nullable|array',
@@ -83,6 +82,8 @@ class ProductionController extends Controller
         ]);
 
         $old = $production->replicate();
+        // Enforce stage progression via process updates/auto-advance only
+        unset($data['stage']);
         $production->update($data);
 
         $production->load(['user', 'product']); // reload relationships
@@ -105,6 +106,79 @@ class ProductionController extends Controller
         return response()->json($production);
     }
 
+    /**
+     * Manually override the active production stage (admin/supervisor action).
+     * Sets all earlier processes to completed, selected stage to in_progress, later to pending.
+     */
+    public function overrideStage(Request $request, $id)
+    {
+        $request->validate([
+            'stage' => 'required|string',
+            'reason' => 'nullable|string'
+        ]);
+
+        $production = Production::with('processes')->findOrFail($id);
+        $targetStage = $request->input('stage');
+
+        // Find the process order for the target stage
+        $target = $production->processes->firstWhere('process_name', $targetStage);
+        if (!$target) {
+            return response()->json(['message' => 'Unknown stage for this production'], 422);
+        }
+
+        // Apply status changes
+        foreach ($production->processes as $proc) {
+            if ($proc->process_order < $target->process_order) {
+                if ($proc->status !== 'completed') {
+                    $proc->status = 'completed';
+                    $proc->completed_at = Carbon::now();
+                }
+            } elseif ($proc->process_order === $target->process_order) {
+                $proc->status = 'in_progress';
+                $proc->started_at = $proc->started_at ?: Carbon::now();
+            } else {
+                $proc->status = 'pending';
+                $proc->started_at = null;
+                $proc->completed_at = null;
+            }
+            if ($request->filled('reason')) {
+                $proc->notes = trim(($proc->notes ? $proc->notes."\n" : '').'[Override] '.$request->input('reason'));
+            }
+            $proc->save();
+        }
+
+        // Update production stage/current_stage and overall progress
+        $production->refresh();
+        $production->update([
+            'stage' => $targetStage,
+            'current_stage' => $targetStage,
+            'status' => 'In Progress',
+            'overall_progress' => $this->calculateOverallProgress($production),
+        ]);
+
+        // Sync order tracking if applicable
+        if ($production->order_id) {
+            $tracking = OrderTracking::firstOrCreate([
+                'order_id' => $production->order_id,
+                'product_id' => $production->product_id,
+            ], [
+                'tracking_type' => 'standard',
+                'current_stage' => $targetStage,
+                'status' => 'in_production',
+            ]);
+            $tracking->update([
+                'current_stage' => $targetStage,
+                'status' => 'in_production',
+            ]);
+            broadcast(new \App\Events\OrderTrackingUpdated($tracking))->toOthers();
+        }
+
+        // Broadcast production update for dashboards/analytics
+        broadcast(new ProductionUpdated($production->fresh(['processes'])))->toOthers();
+
+        return response()->json(['message' => 'Stage overridden', 'production' => $production->fresh('processes')]);
+    }
+
     public function destroy($id)
     {
         $production = Production::findOrFail($id);
@@ -124,16 +198,65 @@ class ProductionController extends Controller
 
         $productionData = $productionQuery->get();
 
+        // Normalize statuses and stages to be resilient to seeder/manual variations
+        $normalized = $productionData->map(function($p) {
+            // Status normalization (case/whitespace, multi-word mapping)
+            $rawStatus = trim((string) ($p->status ?? ''));
+            $lc = strtolower($rawStatus);
+            $statusMap = [
+                'in progress' => 'In Progress',
+                'in_progress' => 'In Progress',
+                'pending' => 'Pending',
+                'on hold' => 'Hold',
+                'hold' => 'Hold',
+                'completed' => 'Completed',
+                'ready' => 'Completed',
+            ];
+            $status = $statusMap[$lc] ?? (strlen($rawStatus) ? ucwords($lc) : 'Pending');
+
+            // Stage normalization: prefer current_stage, but accept 'stage' if present in payloads
+            $stage = trim((string) ($p->current_stage ?? ($p->stage ?? '')));
+            $stageLc = strtolower($stage);
+            // Map common variants to canonical values used by dashboard/seeders
+            $stageAliases = [
+                'cutting and shaping' => 'Cutting & Shaping',
+                'sanding and surface preparation' => 'Sanding & Surface Preparation',
+                'quality assurance' => 'Quality Check & Packaging',
+                'quality control' => 'Quality Check & Packaging',
+                'ready to deliver' => 'Ready for Delivery',
+                'ready for delivery' => 'Ready for Delivery',
+                'completed' => 'Ready for Delivery', // completed items treated as ready slice
+            ];
+            if (isset($stageAliases[$stageLc])) {
+                $stage = $stageAliases[$stageLc];
+            }
+
+            // Attach normalized virtual attributes for downstream collection ops
+            $p->setAttribute('normalized_status', $status);
+            $p->setAttribute('normalized_stage', $stage);
+            return $p;
+        });
+
         // KPIs from Production data
         $kpis = [
-            'total'       => $productionData->count(),
-            'in_progress' => $productionData->where('status', 'In Progress')->count(),
-            'completed'   => $productionData->where('status', 'Completed')->count(),
-            'hold'        => $productionData->where('status', 'Hold')->count(),
+            'total'       => $normalized->count(),
+            'in_progress' => $normalized->where('normalized_status', 'In Progress')->count(),
+            'completed'   => $normalized->where('normalized_status', 'Completed')->count(),
+            'hold'        => $normalized->where('normalized_status', 'Hold')->count(),
         ];
 
         // Daily output from Production data
-        $daily = $productionData->groupBy(fn($p) => optional($p->date)->format('Y-m-d'))
+        $daily = $normalized
+            ->filter(function($p){ return !empty($p->date); })
+            ->groupBy(function($p){
+                // Ensure date is grouped reliably even if stored as string
+                try {
+                    return optional($p->date instanceof \Carbon\Carbon ? $p->date : \Carbon\Carbon::parse($p->date))->format('Y-m-d');
+                } catch (\Throwable $e) {
+                    return null;
+                }
+            })
+            ->forget([null])
             ->map(fn($items, $date) => [
                 'date'     => $date,
                 'quantity' => $items->sum('quantity'),
@@ -143,9 +266,9 @@ class ProductionController extends Controller
             ->values();
 
         // Stage breakdown from Production data (using actual stages from data)
-        $actualStages = $productionData->whereNotNull('current_stage')
-            ->where('current_stage', '!=', '')
-            ->pluck('current_stage')
+        $actualStages = $normalized->whereNotNull('normalized_stage')
+            ->where('normalized_stage', '!=', '')
+            ->pluck('normalized_stage')
             ->unique()
             ->values()
             ->toArray();
@@ -161,16 +284,26 @@ class ProductionController extends Controller
                 'Quality Check & Packaging'
             ];
         }
+        // Always include Ready for Delivery slice for analytics visibility
+        if (!in_array('Ready for Delivery', $actualStages, true)) {
+            $actualStages[] = 'Ready for Delivery';
+        }
         
-        $stageBreakdown = collect($actualStages)->map(fn($stage) => [
-            'name'  => $stage,
-            'value' => $productionData->where('current_stage', $stage)->count(),
-        ])->values();
+        // Align stage breakdown with the dashboard's "Current Production Processes"
+        // Only count items that are actively In Progress to avoid including Pending
+        $stageBreakdown = collect($actualStages)->map(function($stage) use ($normalized) {
+            $query = $normalized->where('normalized_stage', $stage);
+            $value = $stage === 'Ready for Delivery'
+                ? $query->where('normalized_status', 'Completed')->count() // completed items in Ready for Delivery
+                : $query->where('normalized_status', 'In Progress')->count(); // active items elsewhere
+            return [ 'name' => $stage, 'value' => $value ];
+        })->values();
 
         // Resource allocation suggestions based on Production data
         $resourceAllocation = [];
         foreach ($actualStages as $stage) {
-            $stageCount = $productionData->where('current_stage', $stage)->whereIn('status', ['In Progress', 'Pending'])->count();
+            // Focus allocation on active items (In Progress)
+            $stageCount = $normalized->where('normalized_stage', $stage)->where('normalized_status', 'In Progress')->count();
             if ($stageCount > 3) {
                 $resourceAllocation[] = [
                     'stage' => $stage,
@@ -191,8 +324,9 @@ class ProductionController extends Controller
             'Quality Check & Packaging' => 2
         ];
         
-        $stageWorkload = collect($actualStages)->map(function($stage) use ($productionData, $capacities) {
-            $currentWorkload = $productionData->where('current_stage', $stage)->whereIn('status', ['In Progress', 'Pending'])->count();
+        $stageWorkload = collect($actualStages)->map(function($stage) use ($normalized, $capacities) {
+            // Only consider In Progress for current workload to match dashboard cards
+            $currentWorkload = $normalized->where('normalized_stage', $stage)->where('normalized_status', 'In Progress')->count();
             $capacity = $capacities[$stage] ?? 1;
             $utilization = ($currentWorkload / $capacity) * 100;
             
@@ -206,7 +340,7 @@ class ProductionController extends Controller
         })->values();
 
         // Get top products from Production data
-        $topProducts = $productionData->groupBy('product_name')
+        $topProducts = $normalized->groupBy('product_name')
             ->map(function($productions, $productName) {
                 return [
                     'name' => $productName,
@@ -218,7 +352,7 @@ class ProductionController extends Controller
             ->values();
 
         // Get top users from Production data
-        $topUsers = $productionData->groupBy('user_id')
+        $topUsers = $normalized->groupBy('user_id')
             ->map(function($productions, $userId) {
                 $user = \App\Models\User::find($userId);
                 return [
@@ -240,8 +374,12 @@ class ProductionController extends Controller
             'stage_workload'   => $stageWorkload,
             'capacity_utilization' => [
                 'total_capacity' => array_sum($capacities),
-                'current_utilization' => $productionData->whereIn('status', ['In Progress', 'Pending'])->count(),
-                'utilization_percentage' => round(($productionData->whereIn('status', ['In Progress', 'Pending'])->count() / max(1, array_sum($capacities))) * 100, 1)
+                'current_utilization' => $normalized->filter(function($p){
+                    return in_array($p->normalized_status, ['In Progress', 'Pending']);
+                })->count(),
+                'utilization_percentage' => round(($normalized->filter(function($p){
+                    return in_array($p->normalized_status, ['In Progress', 'Pending']);
+                })->count() / max(1, array_sum($capacities))) * 100, 1)
             ]
         ]);
     }
@@ -365,13 +503,16 @@ class ProductionController extends Controller
         // Create process records for Tables and Chairs (6 processes)
         // Exclude alkansya from production tracking as they are pre-made inventory
         if (!str_contains(strtolower($product->name), 'alkansya')) {
+            // Allocate the 2-week timeline (14 days ≈ 14*24*60 = 20160 minutes)
+            // Distribution by complexity: 10%, 20%, 30%, 15%, 20%, 5%
+            $totalMinutes = 14 * 24 * 60; // 20160
             $processes = [
-                ['name' => 'Material Preparation', 'order' => 1, 'estimated_duration' => 120], // 2 hours
-                ['name' => 'Cutting & Shaping', 'order' => 2, 'estimated_duration' => 240], // 4 hours
-                ['name' => 'Assembly', 'order' => 3, 'estimated_duration' => 360], // 6 hours
-                ['name' => 'Sanding & Surface Preparation', 'order' => 4, 'estimated_duration' => 180], // 3 hours
-                ['name' => 'Finishing', 'order' => 5, 'estimated_duration' => 240], // 4 hours
-                ['name' => 'Quality Check & Packaging', 'order' => 6, 'estimated_duration' => 60], // 1 hour
+                ['name' => 'Material Preparation', 'order' => 1, 'estimated_duration' => (int) round($totalMinutes * 0.10)],
+                ['name' => 'Cutting & Shaping', 'order' => 2, 'estimated_duration' => (int) round($totalMinutes * 0.20)],
+                ['name' => 'Assembly', 'order' => 3, 'estimated_duration' => (int) round($totalMinutes * 0.30)],
+                ['name' => 'Sanding & Surface Preparation', 'order' => 4, 'estimated_duration' => (int) round($totalMinutes * 0.15)],
+                ['name' => 'Finishing', 'order' => 5, 'estimated_duration' => (int) round($totalMinutes * 0.20)],
+                ['name' => 'Quality Check & Packaging', 'order' => 6, 'estimated_duration' => (int) round($totalMinutes * 0.05)],
             ];
 
             foreach ($processes as $process) {
@@ -415,13 +556,47 @@ class ProductionController extends Controller
             'notes' => 'nullable|string',
             'materials_used' => 'nullable|array',
             'quality_checks' => 'nullable|array',
+            'force' => 'sometimes|boolean',
         ]);
 
         $process = ProductionProcess::where('production_id', $productionId)
             ->where('id', $processId)
             ->firstOrFail();
 
+        // Prevent manual skipping: only allow valid transitions
+        $originalStatus = $process->status;
+        $nextAllowed = [
+            'pending' => ['in_progress', 'delayed'],
+            'in_progress' => ['completed', 'delayed'],
+            'delayed' => ['in_progress', 'completed'],
+            'completed' => [],
+        ];
+        if (!in_array($data['status'], $nextAllowed[$originalStatus] ?? []) && empty($data['force'])) {
+            return response()->json(['message' => 'Invalid status transition'], 422);
+        }
+
         $process->update($data);
+
+        // Ensure production reflects process state promptly for analytics
+        $production = Production::find($productionId);
+        if ($production) {
+            $active = ProductionProcess::where('production_id', $productionId)
+                ->whereIn('status', ['in_progress', 'pending'])
+                ->orderBy('process_order')
+                ->first();
+            $activeName = $active?->process_name ?? $process->process_name;
+
+            // If any process is in_progress, set production status accordingly
+            $anyInProgress = ProductionProcess::where('production_id', $productionId)
+                ->where('status', 'in_progress')
+                ->exists();
+
+            $production->update([
+                'stage' => $activeName,
+                'current_stage' => $activeName,
+                'status' => $anyInProgress ? 'In Progress' : ($production->status === 'Completed' ? 'Completed' : $production->status),
+            ]);
+        }
 
         // Broadcast process update
         broadcast(new ProductionProcessUpdated($process))->toOthers();
@@ -444,8 +619,16 @@ class ProductionController extends Controller
                 $production = Production::find($productionId);
                 $production->update([
                     'status' => 'Completed',
-                    'stage' => 'Quality Control'
+                    'stage' => 'Ready for Delivery',
+                    'current_stage' => 'Ready for Delivery',
+                    'actual_completion_date' => Carbon::now(),
                 ]);
+
+                // If linked to an order, also mark order ready for delivery
+                if ($production && $production->order_id) {
+                    \App\Models\Order::where('id', $production->order_id)
+                        ->update(['status' => 'ready_for_delivery']);
+                }
 
                 // If linked to an order, mark tracking completed
                 if ($production && $production->order_id) {
@@ -454,11 +637,11 @@ class ProductionController extends Controller
                         'product_id' => $production->product_id,
                     ], [
                         'tracking_type' => 'standard',
-                        'current_stage' => 'Quality Control',
+                        'current_stage' => 'Ready for Delivery',
                         'status' => 'completed',
                     ]);
                     $tracking->update([
-                        'current_stage' => 'Quality Control',
+                        'current_stage' => 'Ready for Delivery',
                         'status' => 'completed',
                         'actual_completion_date' => Carbon::now(),
                     ]);
@@ -492,6 +675,25 @@ class ProductionController extends Controller
             ]);
 
             broadcast(new \App\Events\OrderTrackingUpdated($tracking))->toOthers();
+        }
+
+        // Reflect current active stage back to production and recompute overall progress
+        if ($production) {
+            $active = ProductionProcess::where('production_id', $productionId)
+                ->whereIn('status', ['in_progress', 'pending'])
+                ->orderBy('process_order')
+                ->first();
+            $activeName = $active?->process_name ?? $process->process_name;
+            $production->update([
+                'stage' => $activeName,
+                'current_stage' => $activeName,
+            ]);
+
+            $production->load('processes');
+            $overall = $this->calculateOverallProgress($production);
+            $production->update(['overall_progress' => $overall]);
+
+            broadcast(new ProductionUpdated($production->fresh(['processes'])))->toOthers();
         }
 
         return response()->json($process->load('production'));

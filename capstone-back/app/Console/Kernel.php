@@ -19,6 +19,12 @@ class Kernel extends ConsoleKernel
         // Production tracking automation
         $schedule->command('production:update-stages')->hourly();
         $schedule->command('production:update-stages --force')->dailyAt('23:00');
+        // Auto-advance current processes based on elapsed time
+        if (app()->environment('local', 'development', 'testing')) {
+            $schedule->command('production:auto-advance')->everyMinute();
+        } else {
+            $schedule->command('production:auto-advance')->everyTenMinutes();
+        }
         
         // Automated production reports
         $schedule->command('production:generate-reports --period=daily --save')->dailyAt('06:00');

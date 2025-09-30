@@ -104,6 +104,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/productions/start', [ProductionController::class, 'startProduction']);
     Route::post('/productions/batch', [ProductionController::class, 'createBatch']);
     Route::patch('/productions/{id}', [ProductionController::class, 'update']);
+    Route::post('/productions/{id}/override-stage', [ProductionController::class, 'overrideStage']);
     Route::patch('/productions/{id}/priority', [ProductionController::class, 'updatePriority']);
     Route::patch('/productions/{productionId}/processes/{processId}', [ProductionController::class, 'updateProcess']);
     Route::get('/productions/{id}', [ProductionController::class, 'show']);

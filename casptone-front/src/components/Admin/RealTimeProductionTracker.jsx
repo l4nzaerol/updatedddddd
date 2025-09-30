@@ -260,9 +260,11 @@ const RealTimeProductionTracker = () => {
 
   const handleProcessStatusUpdate = async (productionId, processId, newStatus) => {
     try {
+      const reason = window.prompt('Reason (optional) for this change?');
       await updateProductionProcess(productionId, processId, {
         status: newStatus,
-        notes: `Status updated to ${newStatus} at ${new Date().toLocaleString()}`
+        notes: `Status updated to ${newStatus} at ${new Date().toLocaleString()}${reason ? ' | Reason: ' + reason : ''}`,
+        force: true
       });
       
       // The real-time update will be handled by WebSocket/polling
