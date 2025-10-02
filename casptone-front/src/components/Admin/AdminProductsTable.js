@@ -27,6 +27,12 @@ const AdminProductsTable = () => {
   const [showBulkPicker, setShowBulkPicker] = useState(false);
   const [bulkQuery, setBulkQuery] = useState("");
   const [bulkSelectedIds, setBulkSelectedIds] = useState([]); // number[]
+  
+  // Price Calculator States
+  const [priceCalculation, setPriceCalculation] = useState(null);
+  const [laborPercentage, setLaborPercentage] = useState(30);
+  const [profitMargin, setProfitMargin] = useState(25);
+  const [calculating, setCalculating] = useState(false);
 
   const token = localStorage.getItem("token");
   const headers = {}; // handled by api client
@@ -98,20 +104,84 @@ const AdminProductsTable = () => {
       ids.push(row.inventory_item_id);
     }
     const hasDup = ids.some((id, idx) => ids.indexOf(id) !== idx);
-    if (hasDup) return "Duplicate materials found. Each material can only appear once.";
     return "";
   };
 
   const saveBom = async () => {
     const err = validateBom();
-    setBomError(err);
-    if (err) return;
+    if (err) { setBomError(err); return; }
     try {
-      await api.post(`/products/${selectedProduct.id}/materials`, { items: bom });
+      await api.post(`/products/${selectedProduct.id}/materials`, { materials: bom });
       setShowBomModal(false);
     } catch (e) {
       console.error(e);
-      alert("Failed to save BOM");
+      setBomError("Failed to save BOM");
+    }
+  };
+
+  // Calculate price based on BOM
+  const calculatePrice = async () => {
+    if (bom.length === 0) {
+      setPriceCalculation(null);
+      return;
+    }
+
+    setCalculating(true);
+    try {
+      const materialsForCalc = bom
+        .filter(row => row.inventory_item_id && row.qty_per_unit > 0)
+        .map(row => {
+          const material = materials.find(m => m.id === row.inventory_item_id);
+          return {
+            sku: material?.sku,
+            quantity: row.qty_per_unit
+          };
+        })
+        .filter(m => m.sku);
+
+      if (materialsForCalc.length === 0) {
+        setPriceCalculation(null);
+        return;
+      }
+
+      const response = await api.post('/price-calculator/calculate', {
+        materials: materialsForCalc,
+        labor_percentage: laborPercentage,
+        profit_margin: profitMargin
+      });
+
+      setPriceCalculation(response.data);
+    } catch (error) {
+      console.error('Error calculating price:', error);
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  // Auto-calculate when BOM changes
+  useEffect(() => {
+    if (showBomModal && bom.length > 0) {
+      const timer = setTimeout(() => calculatePrice(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [bom, laborPercentage, profitMargin, showBomModal]);
+
+  // Apply suggested price to product
+  const applySuggestedPrice = async () => {
+    if (!priceCalculation || !selectedProduct) return;
+    
+    const suggestedPrice = Math.round(priceCalculation.suggested_price);
+    
+    try {
+      await api.put(`/products/${selectedProduct.id}`, {
+        ...selectedProduct,
+        price: suggestedPrice
+      });
+      alert(`Price updated to ₱${suggestedPrice}`);
+      fetchProducts();
+    } catch (error) {
+      console.error('Error updating price:', error);
+      alert('Failed to update price');
     }
   };
 
@@ -219,9 +289,24 @@ const AdminProductsTable = () => {
                     {product.description}
                   </p>
                   <p className="fw-bold mb-1">₱{product.price}</p>
-                  <p className="text-secondary small">
-                    Stock: {product.stock}
-                  </p>
+                  <div className="mb-2">
+                    {product.inventory_stock !== null && product.inventory_stock !== undefined ? (
+                      <>
+                        <p className="mb-1">
+                          <span className="badge bg-success">Inventory Stock: {product.inventory_stock}</span>
+                        </p>
+                        {product.inventory_sku && (
+                          <p className="text-muted small mb-0">
+                            SKU: {product.inventory_sku} • {product.inventory_location}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-secondary small mb-0">
+                        Product Stock: {product.stock}
+                      </p>
+                    )}
+                  </div>
                   <div className="mt-auto d-flex justify-content-between gap-2">
                     <button
                       className="btn btn-outline-secondary btn-sm"
@@ -375,97 +460,286 @@ const AdminProductsTable = () => {
                     <button className="btn btn-outline-secondary btn-sm" onClick={()=>setShowBulkPicker(s=>!s)}>
                       {showBulkPicker ? "Close Bulk Add" : "Bulk Add Materials"}
                     </button>
-                    <button className="btn btn-outline-primary btn-sm" onClick={exportBom}>Export CSV</button>
-                    <label className="btn btn-outline-success btn-sm mb-0">
-                      Import CSV
-                      <input type="file" accept=".csv" hidden onChange={(e) => e.target.files?.[0] && importBom(e.target.files[0])} />
-                    </label>
+                    
                   </div>
                 </div>
 
                 {showBulkPicker && (
-                  <div className="border rounded p-2 mb-3" style={{maxHeight: 260, overflowY: 'auto'}}>
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <strong>Select multiple materials</strong>
-                      <div className="input-group input-group-sm" style={{maxWidth: 280}}>
-                        <span className="input-group-text">Filter</span>
-                        <input className="form-control" value={bulkQuery} onChange={(e)=>setBulkQuery(e.target.value)} placeholder="Type to filter..." />
+                  <div className="card mb-3 border-success">
+                    <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                      <strong>Select Materials</strong>
+                      <span className="badge bg-light text-dark">{bulkSelectedIds.length} selected</span>
+                    </div>
+                    <div className="card-body" style={{maxHeight: 300, overflowY: 'auto'}}>
+                      <div className="mb-2">
+                        <input 
+                          className="form-control form-control-sm" 
+                          value={bulkQuery} 
+                          onChange={(e)=>setBulkQuery(e.target.value)} 
+                          placeholder="Search materials..." 
+                        />
+                      </div>
+                      <div className="row">
+                        {materials
+                          .filter(m => !selectedIds.has(m.id))
+                          .filter(m => {
+                            const q = bulkQuery.trim().toLowerCase();
+                            if (!q) return true;
+                            return String(m.sku||"").toLowerCase().includes(q) || String(m.name||"").toLowerCase().includes(q);
+                          })
+                          .map(m => (
+                            <div key={m.id} className="col-md-6 mb-2">
+                              <div className="form-check">
+                                <input 
+                                  className="form-check-input" 
+                                  type="checkbox" 
+                                  id={`m-${m.id}`} 
+                                  checked={bulkSelectedIds.includes(m.id)} 
+                                  onChange={()=>toggleBulkId(m.id)} 
+                                />
+                                <label className="form-check-label" htmlFor={`m-${m.id}`}>
+                                  <strong>{m.name}</strong>
+                                  <div className="small text-muted">{m.sku} - {m.unit}</div>
+                                </label>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     </div>
-                    {materials
-                      .filter(m => !selectedIds.has(m.id))
-                      .filter(m => {
-                        const q = bulkQuery.trim().toLowerCase();
-                        if (!q) return true;
-                        return String(m.sku||"").toLowerCase().includes(q) || String(m.name||"").toLowerCase().includes(q);
-                      })
-                      .map(m => (
-                        <div key={m.id} className="form-check">
-                          <input className="form-check-input" type="checkbox" id={`m-${m.id}`} checked={bulkSelectedIds.includes(m.id)} onChange={()=>toggleBulkId(m.id)} />
-                          <label className="form-check-label" htmlFor={`m-${m.id}`}>
-                            {m.sku} — {m.name}
-                          </label>
-                        </div>
-                      ))}
-                    <div className="mt-2 d-flex gap-2">
-                      <button className="btn btn-sm btn-primary" onClick={bulkAdd} disabled={bulkSelectedIds.length===0}>Add Selected</button>
-                      <button className="btn btn-sm btn-outline-secondary" onClick={()=>{setShowBulkPicker(false); setBulkSelectedIds([]);}}>Cancel</button>
+                    <div className="card-footer d-flex justify-content-end gap-2">
+                      <button 
+                        className="btn btn-sm btn-secondary" 
+                        onClick={()=>{setShowBulkPicker(false); setBulkSelectedIds([]);}}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        className="btn btn-sm btn-success" 
+                        onClick={bulkAdd} 
+                        disabled={bulkSelectedIds.length===0}
+                      >
+                        Add {bulkSelectedIds.length} Material{bulkSelectedIds.length !== 1 ? 's' : ''}
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {bomError && <div className="alert alert-warning py-2">{bomError}</div>}
 
-                <table className="table table-sm align-middle">
-                  <thead>
-                    <tr>
-                      <th>Material</th>
-                      <th style={{ width: 140 }} className="text-end">Qty per Unit</th>
-                      <th style={{ width: 80 }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bom.map((row, idx) => (
-                      <tr key={idx}>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={row.inventory_item_id}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              if (val && selectedIds.has(val) && val !== row.inventory_item_id) {
-                                alert("This material is already selected.");
-                                return;
-                              }
-                              updateBomRow(idx, 'inventory_item_id', val);
-                            }}
-                          >
-                            <option value="">Select material</option>
-                            {filteredMaterials.map((m) => (
-                              <option key={m.id} value={m.id} disabled={selectedIds.has(m.id) && m.id !== row.inventory_item_id}>
-                                {m.sku} — {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="text-end">
-                          <input type="number" className="form-control form-control-sm text-end" min="1" value={row.qty_per_unit}
-                            onChange={(e) => updateBomRow(idx, 'qty_per_unit', Number(e.target.value))} />
-                        </td>
-                        <td>
-                          <button className="btn btn-outline-danger btn-sm" onClick={() => removeBomRow(idx)}>Remove</button>
-                        </td>
+                {bom.length === 0 ? (
+                  <div className="alert alert-light text-center">
+                    <p className="mb-0 text-muted">No materials added. Click "Bulk Add Materials" or "+ Add Material" to start.</p>
+                  </div>
+                ) : (
+                  <table className="table table-bordered table-hover table-sm align-middle mb-3">
+                    <thead className="table-light">
+                      <tr>
+                        <th style={{ width: '60%' }}>Material</th>
+                        <th style={{ width: '30%' }}>Quantity per Unit</th>
+                        <th style={{ width: '10%' }} className="text-center">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {bom.map((row, idx) => {
+                        const material = materials.find(m => m.id === row.inventory_item_id);
+                        return (
+                          <tr key={idx}>
+                            <td className="align-middle">
+                              {material ? (
+                                <>
+                                  <strong>{material.name}</strong>
+                                  <div className="small text-muted">{material.sku} - {material.unit}</div>
+                                </>
+                              ) : (
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={row.inventory_item_id}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    if (val && selectedIds.has(val) && val !== row.inventory_item_id) {
+                                      alert("This material is already selected.");
+                                      return;
+                                    }
+                                    updateBomRow(idx, 'inventory_item_id', val);
+                                  }}
+                                >
+                                  <option value="">-- Select material --</option>
+                                  {filteredMaterials.map((m) => (
+                                    <option key={m.id} value={m.id} disabled={selectedIds.has(m.id) && m.id !== row.inventory_item_id}>
+                                      {m.name} ({m.sku}) - {m.unit}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                            <td className="align-middle">
+                              <input 
+                                type="number" 
+                                className="form-control form-control-sm" 
+                                style={{ maxWidth: '120px' }}
+                                min="1" 
+                                value={row.qty_per_unit}
+                                onChange={(e) => updateBomRow(idx, 'qty_per_unit', Number(e.target.value))} 
+                              />
+                            </td>
+                            <td className="align-middle text-center">
+                              <button 
+                                className="btn btn-outline-danger btn-sm" 
+                                onClick={() => removeBomRow(idx)}
+                                title="Remove material"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+                
                 <div className="d-flex gap-2">
                   <button className="btn btn-outline-secondary btn-sm" onClick={addBomRow}>+ Add Material</button>
                 </div>
+
+                {/* Price Calculator Section */}
+                {bom.length > 0 && (
+                  <div className="mt-4">
+                    <hr />
+                    <h6 className="mb-3">💰 Price Calculator</h6>
+                    
+                    {/* Pricing Controls */}
+                    <div className="row g-2 mb-3">
+                      <div className="col-md-3">
+                        <label className="form-label small">Preset</label>
+                        <select 
+                          className="form-select form-select-sm"
+                          onChange={(e) => {
+                            const presets = {
+                              alkansya: { labor: 25, profit: 30 },
+                              table: { labor: 40, profit: 35 },
+                              chair: { labor: 35, profit: 30 },
+                              custom: { labor: 30, profit: 25 }
+                            };
+                            const preset = presets[e.target.value];
+                            if (preset) {
+                              setLaborPercentage(preset.labor);
+                              setProfitMargin(preset.profit);
+                            }
+                          }}
+                        >
+                          <option value="custom">Custom</option>
+                          <option value="alkansya">Alkansya (25% labor, 30% profit)</option>
+                          <option value="table">Table (40% labor, 35% profit)</option>
+                          <option value="chair">Chair (35% labor, 30% profit)</option>
+                        </select>
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small">Labor %</label>
+                        <input
+                          type="number"
+                          className="form-control form-control-sm"
+                          value={laborPercentage}
+                          onChange={(e) => setLaborPercentage(Number(e.target.value))}
+                          min="0"
+                          max="100"
+                        />
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small">Profit %</label>
+                        <input
+                          type="number"
+                          className="form-control form-control-sm"
+                          value={profitMargin}
+                          onChange={(e) => setProfitMargin(Number(e.target.value))}
+                          min="0"
+                          max="100"
+                        />
+                      </div>
+                      <div className="col-md-3 d-flex align-items-end">
+                        <button 
+                          className="btn btn-primary btn-sm w-100"
+                          onClick={calculatePrice}
+                          disabled={calculating}
+                        >
+                          {calculating ? 'Calculating...' : 'Calculate Price'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Price Breakdown Display */}
+                    {priceCalculation && (
+                      <div className="card border-success">
+                        <div className="card-header bg-success text-white">
+                          <strong>💰 Suggested Pricing</strong>
+                        </div>
+                        <div className="card-body">
+                          <table className="table table-sm mb-0">
+                            <tbody>
+                              <tr>
+                                <td>Material Cost:</td>
+                                <td className="text-end">
+                                  <strong>₱{priceCalculation.material_cost.toFixed(2)}</strong>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td>Labor ({priceCalculation.labor_percentage}%):</td>
+                                <td className="text-end">₱{priceCalculation.labor_cost.toFixed(2)}</td>
+                              </tr>
+                              <tr className="table-active">
+                                <td><strong>Production Cost:</strong></td>
+                                <td className="text-end">
+                                  <strong>₱{priceCalculation.production_cost.toFixed(2)}</strong>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td>Profit ({priceCalculation.profit_margin}%):</td>
+                                <td className="text-end text-success">
+                                  +₱{priceCalculation.profit_amount.toFixed(2)}
+                                </td>
+                              </tr>
+                              <tr className="table-success">
+                                <td><strong>Suggested Selling Price:</strong></td>
+                                <td className="text-end">
+                                  <strong className="fs-5 text-success">
+                                    ₱{Math.round(priceCalculation.suggested_price)}
+                                  </strong>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          
+                          <div className="mt-3 d-flex gap-2">
+                            <button
+                              className="btn btn-success btn-sm flex-grow-1"
+                              onClick={applySuggestedPrice}
+                            >
+                              ✓ Update Product Price to ₱{Math.round(priceCalculation.suggested_price)}
+                            </button>
+                          </div>
+
+                          <div className="mt-2 p-2 bg-light rounded">
+                            <small className="text-muted">
+                              <strong>Break-even:</strong> ₱{priceCalculation.production_cost.toFixed(2)} • 
+                              <strong> Profit Margin:</strong> {((priceCalculation.profit_amount / priceCalculation.production_cost) * 100).toFixed(1)}%
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {calculating && (
+                      <div className="alert alert-info">
+                        <div className="spinner-border spinner-border-sm me-2"></div>
+                        Calculating price...
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setShowBomModal(false)}>Close</button>
-                <button className="btn btn-primary" onClick={saveBom} disabled={!!validateBom()}>Save</button>
+                <button className="btn btn-primary" onClick={saveBom} disabled={!!validateBom()}>Save Materials</button>
               </div>
             </div>
           </div>

@@ -17,6 +17,8 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\ProductionTrackingController;
 use App\Http\Controllers\OrderAcceptanceController;
+use App\Http\Controllers\PriceCalculatorController;
+use App\Http\Controllers\StaffController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -88,6 +90,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/inventory/daily-usage', [InventoryController::class, 'getDailyUsage']);
     Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
     Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
+    
+    // Price Calculator Routes
+    Route::post('/price-calculator/calculate', [PriceCalculatorController::class, 'calculatePrice']);
+    Route::get('/price-calculator/product/{productId}', [PriceCalculatorController::class, 'calculateProductPrice']);
+    Route::get('/price-calculator/presets', [PriceCalculatorController::class, 'getPricingPresets']);
+    Route::post('/price-calculator/bulk', [PriceCalculatorController::class, 'bulkCalculate']);
     
     // Inventory Reports (NEW)
     Route::get('/inventory/report', [InventoryController::class, 'getInventoryReport']);
@@ -178,6 +186,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Admin Overview
     Route::get('/admin/overview', [AdminOverviewController::class, 'index']);
+
+    // Staff Routes (accessible by staff and admin)
+    Route::prefix('staff')->group(function () {
+        Route::get('/dashboard', [StaffController::class, 'getDashboard']);
+        Route::get('/my-tasks', [StaffController::class, 'getMyTasks']);
+        Route::patch('/production-stage/{stageId}', [StaffController::class, 'updateProductionStage']);
+    });
 });
 
 // Webhooks (no auth)

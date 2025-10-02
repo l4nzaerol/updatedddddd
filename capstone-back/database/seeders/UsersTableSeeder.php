@@ -27,5 +27,14 @@ class UsersTableSeeder extends Seeder
                 'role' => 'customer',
             ]
         );
+
+        User::updateOrCreate(
+            ['email' => 'staff@gmail.com'],
+            [
+                'name' => 'Staff User',
+                'password' => Hash::make('staff'),
+                'role' => 'staff',
+            ]
+        );
     }
 }

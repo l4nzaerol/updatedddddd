@@ -37,7 +37,30 @@ class ProductController extends Controller
 
     public function index()
     {
-        return response()->json(Product::all());
+        $products = Product::all();
+        
+        // Enrich each product with inventory stock if it's a finished good
+        $products = $products->map(function($product) {
+            // Try to find matching inventory item by SKU or name
+            $inventoryItem = \App\Models\InventoryItem::where('category', 'like', '%finished%')
+                ->where(function($query) use ($product) {
+                    $query->where('name', 'like', '%' . $product->name . '%')
+                          ->orWhere('description', 'like', '%' . $product->name . '%');
+                })
+                ->first();
+            
+            if ($inventoryItem) {
+                $product->inventory_stock = $inventoryItem->quantity_on_hand;
+                $product->inventory_location = $inventoryItem->location;
+                $product->inventory_sku = $inventoryItem->sku;
+            } else {
+                $product->inventory_stock = null;
+            }
+            
+            return $product;
+        });
+        
+        return response()->json($products);
     }
 
     public function show($id)

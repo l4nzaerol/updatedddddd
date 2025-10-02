@@ -47,7 +47,7 @@ const OrderTable = () => {
   const fetchTracking = async (orderId) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/orders/${orderId}/tracking`, {
+      const res = await axios.get(`${API}/order-tracking/${orderId}/customer`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTracking((prev) => ({ ...prev, [orderId]: res.data }));
@@ -155,7 +155,8 @@ const OrderTable = () => {
                     </div>
 
                     {/* === ACCEPTANCE STATUS === */}
-                    {order.acceptance_status && (
+                    {/* Only show for Table and Chair orders (production tracking type) */}
+                    {order.acceptance_status && track && track.tracking_type === 'production' && (
                       <div className="mt-3">
                         <h6 className="fw-bold">Order Acceptance Status</h6>
                         <div className="alert alert-info">
@@ -182,50 +183,55 @@ const OrderTable = () => {
                     )}
 
                     {/* === ORDER TRACKING DETAILS === */}
-                    {/* Only show production tracking for accepted orders */}
-                    {track.overall && !track.error && order.acceptance_status === 'accepted' && (
+                    {/* Show tracking based on product type */}
+                    {track && !track.error && order.acceptance_status === 'accepted' && (
                       <div className="mt-4">
-                        <h6 className="fw-bold">Production Tracking</h6>
-                        <div className="d-flex justify-content-between small mb-1">
-                          <span>Progress</span>
-                          <span>ETA: {track.overall.eta}</span>
-                        </div>
-                        <ProgressBar
-                          now={track.overall.progress_pct}
-                          label={`${track.overall.progress_pct}%`}
-                        />
+                        {/* Production Tracking for Table and Chair only */}
+                        {track.tracking_type === 'production' && track.data && track.data.overall && (
+                          <div>
+                            <h6 className="fw-bold">Production Tracking</h6>
+                            <div className="d-flex justify-content-between small mb-1">
+                              <span>Progress</span>
+                              <span>ETA: {track.data.overall.eta}</span>
+                            </div>
+                            <ProgressBar
+                              now={track.data.overall.progress_pct}
+                              label={`${track.data.overall.progress_pct}%`}
+                            />
 
-                        <div className="row mt-3">
-                          {track.stage_summary && track.stage_summary.length > 0 ? (
-                            track.stage_summary.map((stage) => (
-                              <div className="col-md-4 mb-2" key={stage.stage}>
-                                <div className="p-2 border rounded bg-light">
-                                  <div className="fw-bold text-primary">{stage.stage}</div>
-                                  <div className="small text-muted">
-                                    <span className="badge bg-warning me-1">Pending: {stage.pending}</span>
+                            <div className="row mt-3">
+                              {track.data.stage_summary && track.data.stage_summary.length > 0 ? (
+                                track.data.stage_summary.map((stage) => (
+                                  <div className="col-md-4 mb-2" key={stage.stage}>
+                                    <div className="p-2 border rounded bg-light">
+                                      <div className="fw-bold text-primary">{stage.stage}</div>
+                                      <div className="small text-muted">
+                                        <span className="badge bg-warning me-1">Pending: {stage.pending}</span>
+                                      </div>
+                                      <div className="small text-muted">
+                                        <span className="badge bg-info me-1">In Progress: {stage.in_progress}</span>
+                                      </div>
+                                      <div className="small text-muted">
+                                        <span className="badge bg-success me-1">Completed: {stage.completed}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="small text-muted">
-                                    <span className="badge bg-info me-1">In Progress: {stage.in_progress}</span>
-                                  </div>
-                                  <div className="small text-muted">
-                                    <span className="badge bg-success me-1">Completed: {stage.completed}</span>
+                                ))
+                              ) : (
+                                <div className="col-12">
+                                  <div className="alert alert-info">
+                                    <FaClock className="me-2" />
+                                    Production tracking will be updated as work progresses.
                                   </div>
                                 </div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="col-12">
-                              <div className="alert alert-info">
-                                <FaClock className="me-2" />
-                                No stage breakdown available yet. Tracking will be updated as production progresses.
-                              </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {track.error && (
+                    {track && track.error && (
                       <p className="text-danger small mt-2">{track.error}</p>
                     )}
                   </Card.Body>

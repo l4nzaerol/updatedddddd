@@ -11,7 +11,19 @@ import Pusher from "pusher-js";
  * - Delete materials
  * - Real-time tracking and analytics
  * - Automated reports and forecasting
+ * - Grouped display: Raw Materials first, then Finished Products
+ * - Modern, engaging dashboard design
  */
+
+// Custom styles for simple, clean design
+const customStyles = `
+  .table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+  .table tbody tr:hover {
+    background-color: #f8f9fa;
+  }
+`;
 
 const DEFAULTS = {
   forecastWindowDays: 14,
@@ -388,7 +400,7 @@ const InventoryPage = () => {
   const [usage, setUsage] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState({ q: "", type: "all" });
+  const [filter, setFilter] = useState({ q: "", type: "all", product: "all" });
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const wsRef = useRef(null);
@@ -624,18 +636,41 @@ const InventoryPage = () => {
     });
   }, [inventory, usage]);
 
-  // Filters
+  // Filters and grouping with product-specific filtering
   const filtered = useMemo(() => {
     const q = filter.q.trim().toLowerCase();
     const type = filter.type;
+    const product = filter.product;
+    
     return enriched.filter((it) => {
-      const matchesQ = !q || [it.name, it.sku, it.location, it.category].join(" ").toLowerCase().includes(q);
+      const matchesQ = !q || [it.name, it.sku, it.location, it.category, it.description].join(" ").toLowerCase().includes(q);
       const matchesType = type === "all" || 
         (type === "raw" && it.category.toLowerCase().includes("raw")) || 
         (type === "finished" && it.category.toLowerCase().includes("finished"));
-      return matchesQ && matchesType;
+      
+      // Product-specific filtering
+      let matchesProduct = true;
+      if (product !== "all") {
+        const itemText = [it.name, it.description, it.sku].join(" ").toLowerCase();
+        if (product === "alkansya") {
+          matchesProduct = itemText.includes("alkansya");
+        } else if (product === "table") {
+          matchesProduct = itemText.includes("table") || itemText.includes("dining");
+        } else if (product === "chair") {
+          matchesProduct = itemText.includes("chair");
+        }
+      }
+      
+      return matchesQ && matchesType && matchesProduct;
     });
   }, [enriched, filter]);
+
+  // Group materials by category - Raw Materials first, then Finished Products
+  const groupedInventory = useMemo(() => {
+    const raw = filtered.filter(item => item.category.toLowerCase().includes("raw"));
+    const finished = filtered.filter(item => item.category.toLowerCase().includes("finished"));
+    return { raw, finished };
+  }, [filtered]);
 
   // Export functions
   const exportStockReport = () => {
@@ -692,6 +727,7 @@ const InventoryPage = () => {
 
   return (
     <AppLayout>
+    <style>{customStyles}</style>
     <div className="container-fluid py-4" role="region" aria-labelledby="inv-heading">
       {/* Navigation Buttons */}
       <div className="d-flex gap-2 mb-3">
@@ -728,30 +764,50 @@ const InventoryPage = () => {
       </div>
 
       {/* Search and Filter */}
-      <div className="card mb-3">
+      <div className="card mb-4 shadow-sm">
         <div className="card-body">
-          <div className="row g-2">
-            <div className="col-md-6">
+          <div className="row g-3">
+            <div className="col-md-4">
+              <label className="form-label small text-muted mb-1">Search</label>
               <input
                 className="form-control"
-                placeholder="Search by name, SKU, location, category"
+                placeholder="Search by name, SKU, location..."
                 value={filter.q}
                 onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
               />
             </div>
             <div className="col-md-3">
+              <label className="form-label small text-muted mb-1">Category</label>
               <select
                 className="form-select"
                 value={filter.type}
                 onChange={(e) => setFilter((f) => ({ ...f, type: e.target.value }))}
               >
-                <option value="all">All Types</option>
+                <option value="all">All Categories</option>
                 <option value="raw">Raw Materials</option>
-                <option value="finished">Finished Goods</option>
+                <option value="finished">Finished Products</option>
               </select>
             </div>
-            <div className="col-md-3 text-md-end text-start">
-              <span className="text-muted small">Real-time: WebSocket with polling fallback</span>
+            <div className="col-md-3">
+              <label className="form-label small text-muted mb-1">Product Filter</label>
+              <select
+                className="form-select"
+                value={filter.product}
+                onChange={(e) => setFilter((f) => ({ ...f, product: e.target.value }))}
+              >
+                <option value="all">All Products</option>
+                <option value="alkansya">Alkansya</option>
+                <option value="table">Dining Table</option>
+                <option value="chair">Chair</option>
+              </select>
+            </div>
+            <div className="col-md-2 d-flex align-items-end">
+              <button 
+                className="btn btn-outline-secondary w-100"
+                onClick={() => setFilter({ q: "", type: "all", product: "all" })}
+              >
+                Clear Filters
+              </button>
             </div>
           </div>
         </div>
@@ -764,127 +820,206 @@ const InventoryPage = () => {
         <div className="alert alert-danger">{error}</div>
       )}
 
-      {/* KPI Summary */}
+      {/* KPI Summary - Simplified */}
       {!loading && (
-        <div className="row g-3 mb-3">
+        <div className="row g-3 mb-4">
           <div className="col-md-3">
-            <div className="card shadow-sm">
+            <div className="card border-0 shadow-sm h-100">
               <div className="card-body">
-                <div className="text-muted small">Total SKUs</div>
-                <div className="h4 mb-0">{enriched.length}</div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card shadow-sm">
-              <div className="card-body">
-                <div className="text-muted small">Reorder Alerts</div>
-                <div className="h4 mb-0 text-danger">{enriched.filter((x) => x.status.variant === "danger").length}</div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card shadow-sm">
-              <div className="card-body">
-                <div className="text-muted small">Overstock</div>
-                <div className="h4 mb-0 text-warning">{enriched.filter((x) => x.status.variant === "warning").length}</div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card shadow-sm">
-              <div className="card-body">
-                <div className="text-muted small">Coverage (median days)</div>
-                <div className="h4 mb-0">
-                  {(() => {
-                    const finite = enriched.map((x) => (typeof x.daysCover === "number" ? x.daysCover : 99999)).sort((a, b) => a - b);
-                    if (finite.length === 0) return 0;
-                    const mid = Math.floor(finite.length / 2);
-                    const med = finite.length % 2 ? finite[mid] : (finite[mid - 1] + finite[mid]) / 2;
-                    return isFinite(med) ? med.toFixed(1) : "∞";
-                  })()}
+                <div className="text-muted small mb-1">Total Items</div>
+                <div className="h3 mb-1 text-primary fw-bold">{enriched.length}</div>
+                <div className="small text-muted">
+                  {groupedInventory.raw.length} materials • {groupedInventory.finished.length} products
                 </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3">
+            <div className="card border-0 shadow-sm h-100">
+              <div className="card-body">
+                <div className="text-muted small mb-1">Reorder Alerts</div>
+                <div className="h3 mb-1 text-danger fw-bold">{enriched.filter((x) => x.status.variant === "danger").length}</div>
+                <div className="small text-muted">
+                  {enriched.filter((x) => x.status.variant === "danger").length > 0 ? "Action required" : "All stocked"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3">
+            <div className="card border-0 shadow-sm h-100">
+              <div className="card-body">
+                <div className="text-muted small mb-1">Low Stock</div>
+                <div className="h3 mb-1 text-warning fw-bold">
+                  {enriched.filter((x) => typeof x.daysCover === 'number' && x.daysCover < 14).length}
+                </div>
+                <div className="small text-muted">Less than 14 days</div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3">
+            <div className="card border-0 shadow-sm h-100">
+              <div className="card-body">
+                <div className="text-muted small mb-1">Showing</div>
+                <div className="h3 mb-1 text-success fw-bold">{filtered.length}</div>
+                <div className="small text-muted">Filtered items</div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Inventory Table */}
-      <div className="card shadow-sm">
-        <div className="table-responsive">
-          <table className="table table-hover mb-0 align-middle">
-            <thead className="table-light">
-              <tr>
-                <th>SKU</th>
-                <th>Item</th>
-                <th>Location</th>
-                <th className="text-end">On Hand</th>
-                <th className="text-end">Avg Daily</th>
-                <th className="text-end">Lead (d)</th>
-                <th className="text-end">Safety</th>
-                <th className="text-end">ROP</th>
-                <th className="text-end">Days Cover</th>
-                <th>Status</th>
-                <th className="text-end">Suggest Order</th>
-                <th>Reorder ETA</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={item.id || item.sku}>
-                  <td className="fw-semibold">{item.sku}</td>
-                  <td>{item.name}</td>
-                  <td>{item.location}</td>
-                  <td className="text-end">{item.onHand}</td>
-                  <td className="text-end">{item.avgDaily}</td>
-                  <td className="text-end">{item.leadTimeDays}</td>
-                  <td className="text-end">{item.safetyStock}</td>
-                  <td className="text-end">{item.rop}</td>
-                  <td className="text-end">{item.daysCover}</td>
-                  <td>
-                    <span className={`badge text-bg-${item.status.variant}`}>{item.status.label}</span>
-                  </td>
-                  <td className="text-end">
-                    {item.suggestedOrderQty > 0 ? (
-                      <strong>{item.suggestedOrderQty}</strong>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                  <td>{item.etaReorderDate}</td>
-                  <td>
-                    <div className="btn-group" role="group">
-                      <button 
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => handleEditMaterial(item)}
-                        title="Edit material"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={() => handleDeleteMaterial(item.id)}
-                        title="Delete material"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={14} className="text-center text-muted py-4">
-                    No items match your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {/* RAW MATERIALS SECTION */}
+      {(filter.type === "all" || filter.type === "raw") && groupedInventory.raw.length > 0 && (
+        <div className="mb-4">
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <h5 className="mb-0">📦 Raw Materials</h5>
+            <span className="badge bg-primary">{groupedInventory.raw.length} items</span>
+          </div>
+          
+          <div className="card shadow-sm">
+            <div className="table-responsive">
+              <table className="table table-hover mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Location</th>
+                    <th className="text-end">Stock</th>
+                    <th className="text-end">Daily Use</th>
+                    <th>Status</th>
+                    <th className="text-end">Reorder Qty</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedInventory.raw.map((item) => (
+                    <tr key={item.id || item.sku}>
+                      <td><code className="small">{item.sku}</code></td>
+                      <td>
+                        <div>{item.name}</div>
+                        {item.description && <small className="text-muted">{item.description.substring(0, 40)}...</small>}
+                      </td>
+                      <td><small>{item.location}</small></td>
+                      <td className="text-end">
+                        <strong>{item.onHand}</strong> <small className="text-muted">{item.unit}</small>
+                      </td>
+                      <td className="text-end">{item.avgDaily}</td>
+                      <td>
+                        <span className={`badge bg-${item.status.variant}`}>
+                          {item.status.label}
+                        </span>
+                      </td>
+                      <td className="text-end">
+                        {item.suggestedOrderQty > 0 ? (
+                          <strong className="text-danger">{item.suggestedOrderQty}</strong>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-outline-primary me-1"
+                          onClick={() => handleEditMaterial(item)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => handleDeleteMaterial(item.id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* FINISHED PRODUCTS SECTION */}
+      {(filter.type === "all" || filter.type === "finished") && groupedInventory.finished.length > 0 && (
+        <div className="mb-4">
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <h5 className="mb-0">✅ Finished Products</h5>
+            <span className="badge bg-success">{groupedInventory.finished.length} items</span>
+          </div>
+          
+          <div className="card shadow-sm">
+            <div className="table-responsive">
+              <table className="table table-hover mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Location</th>
+                    <th className="text-end">Stock</th>
+                    <th className="text-end">Daily Sales</th>
+                    <th>Status</th>
+                    <th className="text-end">Production Needed</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedInventory.finished.map((item) => (
+                    <tr key={item.id || item.sku}>
+                      <td><code className="small">{item.sku}</code></td>
+                      <td>
+                        <div>{item.name}</div>
+                        {item.description && <small className="text-muted">{item.description.substring(0, 40)}...</small>}
+                      </td>
+                      <td><small>{item.location}</small></td>
+                      <td className="text-end">
+                        <strong>{item.onHand}</strong> <small className="text-muted">{item.unit}</small>
+                      </td>
+                      <td className="text-end">{item.avgDaily}</td>
+                      <td>
+                        <span className={`badge bg-${item.status.variant}`}>
+                          {item.status.label}
+                        </span>
+                      </td>
+                      <td className="text-end">
+                        {item.suggestedOrderQty > 0 ? (
+                          <strong className="text-danger">{item.suggestedOrderQty}</strong>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-outline-primary me-1"
+                          onClick={() => handleEditMaterial(item)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => handleDeleteMaterial(item.id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No Results Message */}
+      {filtered.length === 0 && !loading && (
+        <div className="alert alert-info text-center">
+          <h5>No items found</h5>
+          <p className="mb-2">Try adjusting your filters or add new materials</p>
+          <button className="btn btn-primary btn-sm" onClick={handleAddMaterial}>
+            + Add Material
+          </button>
+        </div>
+      )}
 
       {/* Material Management Modal */}
       <MaterialModal

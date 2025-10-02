@@ -87,24 +87,82 @@ class OrderTrackingController extends Controller
      */
     public function getCustomerTracking($orderId)
     {
-        $tracking = OrderTracking::where('order_id', $orderId)
-            ->with(['order', 'product'])
-            ->get()
-            ->map(function($track) {
-                return [
-                    'order_id' => $track->order_id,
-                    'product_name' => $track->product->name,
-                    'current_stage' => $track->current_stage,
-                    'status' => $track->status,
-                    'progress_percentage' => $track->progress_percentage,
-                    'estimated_completion_date' => $track->estimated_completion_date,
-                    'actual_completion_date' => $track->actual_completion_date,
-                    'customer_notes' => $track->customer_notes,
-                    'process_timeline' => $this->formatTimelineForCustomer($track),
-                ];
-            });
+        $order = Order::with('items.product')->findOrFail($orderId);
+        
+        // Check if order contains Table or Chair (products that need production tracking)
+        $needsProductionTracking = false;
+        foreach ($order->items as $item) {
+            $productName = strtolower($item->product->name);
+            if (str_contains($productName, 'table') || str_contains($productName, 'chair')) {
+                $needsProductionTracking = true;
+                break;
+            }
+        }
+        
+        // If order contains Table or Chair, show detailed production tracking
+        if ($needsProductionTracking) {
+            $tracking = OrderTracking::where('order_id', $orderId)
+                ->with(['order', 'product'])
+                ->get()
+                ->map(function($track) {
+                    return [
+                        'order_id' => $track->order_id,
+                        'product_name' => $track->product->name,
+                        'current_stage' => $track->current_stage,
+                        'status' => $track->status,
+                        'progress_percentage' => $track->progress_percentage,
+                        'estimated_completion_date' => $track->estimated_completion_date,
+                        'actual_completion_date' => $track->actual_completion_date,
+                        'customer_notes' => $track->customer_notes,
+                        'process_timeline' => $this->formatTimelineForCustomer($track),
+                    ];
+                });
 
-        return response()->json($tracking);
+            return response()->json([
+                'tracking_type' => 'production',
+                'data' => $tracking
+            ]);
+        } else {
+            // For Alkansya and other products, show simple order status
+            return response()->json([
+                'tracking_type' => 'simple',
+                'data' => [
+                    'order_id' => $order->id,
+                    'status' => $order->status,
+                    'status_label' => $this->getSimpleStatusLabel($order->status),
+                    'created_at' => $order->created_at,
+                    'updated_at' => $order->updated_at,
+                    'products' => $order->items->map(function($item) {
+                        return [
+                            'name' => $item->product->name,
+                            'quantity' => $item->quantity,
+                            'price' => $item->price
+                        ];
+                    })
+                ]
+            ]);
+        }
+    }
+    
+    /**
+     * Get simple status label for customer display
+     */
+    private function getSimpleStatusLabel($status)
+    {
+        $labels = [
+            'pending' => 'Order Pending',
+            'accepted' => 'Processing',
+            'processing' => 'Processing',
+            'in_production' => 'Processing',
+            'ready_for_delivery' => 'Ready for Delivery',
+            'out_for_delivery' => 'Out for Delivery',
+            'delivered' => 'Delivered',
+            'completed' => 'Completed',
+            'cancelled' => 'Cancelled',
+            'rejected' => 'Rejected'
+        ];
+        
+        return $labels[$status] ?? ucfirst($status);
     }
 
     /**
