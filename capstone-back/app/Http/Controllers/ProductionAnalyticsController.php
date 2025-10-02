@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Production;
+use App\Models\ProductionAnalytics;
 use App\Models\OrderTracking;
 use App\Models\Order;
 use App\Models\Product;
@@ -95,16 +96,23 @@ class ProductionAnalyticsController extends Controller
 
     private function getDailyProductionOutputs($startDate, $endDate)
     {
-        return Production::where('status', 'Completed')
-            ->whereBetween('actual_completion_date', [$startDate, $endDate])
+        // Use ProductionAnalytics table which includes Alkansya daily output
+        return ProductionAnalytics::whereBetween('date', [$startDate, $endDate])
             ->select(
-                DB::raw('DATE(actual_completion_date) as date'),
-                DB::raw('COUNT(*) as completed_items'),
-                DB::raw('SUM(quantity) as total_quantity')
+                'date',
+                DB::raw('SUM(actual_output) as total_quantity'),
+                DB::raw('COUNT(DISTINCT product_id) as product_count')
             )
-            ->groupBy(DB::raw('DATE(actual_completion_date)'))
+            ->groupBy('date')
             ->orderBy('date')
-            ->get();
+            ->get()
+            ->map(function($item) {
+                return [
+                    'date' => $item->date,
+                    'quantity' => $item->total_quantity,
+                    'completed_items' => $item->product_count
+                ];
+            });
     }
 
     private function getCapacityUtilization()

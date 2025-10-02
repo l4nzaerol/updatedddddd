@@ -70,27 +70,53 @@ export default function DailyOutputChart({ data }) {
   const series = useMemo(() => aggregate(data || [], timeframe), [data, timeframe]);
 
   return (
-    <div className="p-4 wood-card">
-      <div className="d-flex justify-content-between align-items-center mb-2">
-        <h2 className="text-lg font-semibold mb-0" style={{color:'var(--accent-dark)'}}>{title}</h2>
-        <div className="d-flex gap-2">
-          <select className="form-select form-select-sm" style={{width: 140}} value={timeframe} onChange={(e)=>setTimeframe(e.target.value)}>
+    <div className="card shadow-sm h-100">
+      <div className="card-body p-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h5 className="card-title mb-0 fw-bold" style={{color:'#2c3e50'}}>{title}</h5>
+          <select 
+            className="form-select form-select-sm" 
+            style={{width: 140}} 
+            value={timeframe} 
+            onChange={(e)=>setTimeframe(e.target.value)}
+          >
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
             <option value="yearly">Yearly</option>
           </select>
         </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={series} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+            <XAxis 
+              dataKey="label" 
+              stroke="#666" 
+              style={{ fontSize: '11px' }}
+              angle={-15}
+              textAnchor="end"
+              height={60}
+            />
+            <YAxis stroke="#666" style={{ fontSize: '11px' }} />
+            <Tooltip 
+              contentStyle={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                padding: '10px'
+              }}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="quantity" 
+              stroke="#8b5e34" 
+              strokeWidth={3} 
+              dot={{ r: 4, fill: '#8b5e34', strokeWidth: 2, stroke: '#fff' }}
+              activeDot={{ r: 6 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={series}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(139,94,52,0.25)" />
-          <XAxis dataKey="label" stroke="var(--ink)" />
-          <YAxis stroke="var(--ink)" />
-          <Tooltip />
-          <Line type="monotone" dataKey="quantity" stroke="#8b5e34" strokeWidth={3} dot={{ r: 3, stroke:'#6f4518', strokeWidth:1 }} />
-        </LineChart>
-      </ResponsiveContainer>
     </div>
   );
 }

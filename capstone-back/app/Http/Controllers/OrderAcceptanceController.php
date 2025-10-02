@@ -120,11 +120,13 @@ class OrderAcceptanceController extends Controller
             \Log::info("Accepting order #{$orderId}");
             
             // Update order acceptance status
+            // Order status changes to 'processing' when accepted and production starts
             $order->update([
                 'acceptance_status' => 'accepted',
                 'accepted_by' => $admin->id,
                 'accepted_at' => now(),
                 'admin_notes' => $data['admin_notes'] ?? null,
+                'status' => 'processing', // Changed from 'pending' to 'processing' when accepted
             ]);
             
             \Log::info("Order #{$orderId} status updated to accepted");
@@ -141,6 +143,7 @@ class OrderAcceptanceController extends Controller
                     (str_contains(strtolower($product->name), 'table') ? 'table' : 'chair');
 
                 // Create production record
+                // IMPORTANT: Production starts at 0% progress when order is accepted
                 $production = Production::create([
                     'order_id' => $order->id,
                     'user_id' => $admin->id,
@@ -148,14 +151,14 @@ class OrderAcceptanceController extends Controller
                     'product_name' => $product->name,
                     'date' => now()->format('Y-m-d'),
                     'current_stage' => $isAlkansya ? 'Ready for Delivery' : 'Material Preparation',
-                    'status' => $isAlkansya ? 'Completed' : 'In Progress', // Changed from 'Pending' to 'In Progress'
+                    'status' => $isAlkansya ? 'Completed' : 'In Progress',
                     'quantity' => $item->quantity,
                     'priority' => 'medium',
                     'requires_tracking' => !$isAlkansya,
                     'product_type' => $productType,
                     'production_started_at' => now(), // Set to now when order is accepted
                     'estimated_completion_date' => $isAlkansya ? now() : now()->addWeeks(2),
-                    'overall_progress' => 0,
+                    'overall_progress' => $isAlkansya ? 100 : 0, // Alkansya is instant, others start at 0%
                 ]);
 
                 \Log::info("Production #{$production->id} created successfully");
@@ -177,9 +180,10 @@ class OrderAcceptanceController extends Controller
                     [
                         'tracking_type' => $trackingType,
                         'current_stage' => $isAlkansya ? 'Ready for Delivery' : 'Material Preparation',
-                        'status' => 'pending',
+                        'status' => $isAlkansya ? 'ready_for_delivery' : 'in_production', // Changed from 'pending' to 'in_production'
                         'estimated_start_date' => now(),
                         'estimated_completion_date' => $isAlkansya ? now() : now()->addWeeks(2),
+                        'actual_start_date' => now(), // Production starts now
                         'process_timeline' => $this->generateProcessTimeline($trackingType),
                     ]
                 );

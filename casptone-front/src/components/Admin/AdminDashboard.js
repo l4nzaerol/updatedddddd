@@ -35,121 +35,64 @@ const AdminDashboard = () => {
     fetchOverview();
   }, []); // fetch on mount
 
-  const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
-  };
-
-  const applyFilters = () => {
-    fetchAnalytics();
-  };
-
-  const sortedFilteredForecasts = () => {
-    const rows = [...(overview?.forecasts || [])];
-    const { text, onlyReorder } = forecastFilter;
-    const filtered = rows.filter(r => {
-      const matches = !text || (r.sku?.toLowerCase().includes(text.toLowerCase()) || r.name?.toLowerCase().includes(text.toLowerCase()));
-      const reorder = r.suggested_order > 0;
-      return matches && (!onlyReorder || reorder);
-    });
-    const { key, dir } = forecastSort;
-    filtered.sort((a,b) => {
-      const va = a[key] ?? 0; const vb = b[key] ?? 0;
-      if (typeof va === "string") return dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-      return dir === "asc" ? (va - vb) : (vb - va);
-    });
-    return filtered;
-  };
-
-  const sortBy = (key) => {
-    setForecastSort(prev => ({ key, dir: prev.key === key && prev.dir === "asc" ? "desc" : "asc" }));
-  };
-
-  const badge = (row) => {
-    if (row.max_level && row.on_hand > row.max_level) return <span className="badge bg-warning text-dark">Overstock</span>;
-    if (row.suggested_order > 0) return <span className="badge bg-danger">Reorder now</span>;
-    return <span className="badge bg-success">OK</span>;
-  };
-
   return (
-    <div className="container mt-4 wood-animated">
-      <div className="text-center mb-4 wood-card p-3 wood-header">
-        <h2 style={{ color: "black" }}>UNICK FURNITURE DASHBOARD</h2>
-      </div>
-
-      {/* 🔹 Filters */}
-      <div className="row mb-4 wood-card p-3">
-        <div className="col-md-3">
-          <label>Start Date</label>
-          <input
-            type="date"
-            name="start_date"
-            value={filters.start_date}
-            onChange={handleFilterChange}
-            className="form-control"
-          />
-        </div>
-        <div className="col-md-3">
-          <label>End Date</label>
-          <input
-            type="date"
-            name="end_date"
-            value={filters.end_date}
-            onChange={handleFilterChange}
-            className="form-control"
-          />
-        </div>
-        <div className="col-md-3">
-          <label>Status</label>
-          <select
-            name="status"
-            value={filters.status}
-            onChange={handleFilterChange}
-            className="form-control"
-          >
-            <option value="">All</option>
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="Hold">Hold</option>
-          </select>
-        </div>
-        <div className="col-md-3 d-flex align-items-end">
-          <button onClick={applyFilters} className="btn btn-primary w-100">
-            Apply Filters
-          </button>
+    <div style={{ minHeight: '100vh', backgroundColor: '#faf8f5' }}>
+      {/* Simple Brown Header */}
+      <div style={{ 
+        backgroundColor: '#8b5e34',
+        padding: '1.5rem 0',
+        marginBottom: '2rem'
+      }}>
+        <div className="container" style={{ maxWidth: '1200px' }}>
+          <div className="text-center">
+            <h1 className="fw-bold mb-0" style={{ 
+              fontSize: '2rem',
+              letterSpacing: '1px',
+              color: '#ffffff'
+            }}>
+              UNICK FURNITURE DASHBOARD
+            </h1>
+          </div>
         </div>
       </div>
 
-      {/* 🔹 Analytics */}
-      {!analytics ? (
-        <p className="text-center mt-4">Loading analytics...</p>
-      ) : (
-        <>
-          <KPICards kpis={analytics.kpis} />
-
-          <div className="row mt-4">
-            <div className="col-md-6">
-              <DailyOutputChart data={analytics.daily_output} />
+      {/* Analytics */}
+      <div className="container" style={{ maxWidth: '1200px' }}>
+        {!analytics ? (
+          <div className="text-center py-5">
+            <div className="spinner-border" style={{ color: '#8b5e34' }} role="status">
+              <span className="visually-hidden">Loading...</span>
             </div>
-            <div className="col-md-6">
-              <StagePieChart data={analytics.stage_breakdown} />
-            </div>
+            <div className="mt-3" style={{ fontSize: '0.9rem', color: '#6b4423' }}>Loading analytics...</div>
           </div>
+        ) : (
+          <>
+            {/* KPI Cards */}
+            <KPICards kpis={analytics?.kpis || {}} />
 
-          <div className="row mt-4">
-            <div className="col-md-6">
-              <TopProductsChart data={analytics.top_products} />
+            {/* Main Charts Row */}
+            <div className="row mt-4">
+              {/* Production Stage Breakdown - Full Width */}
+              <div className="col-12 mb-4">
+                <StagePieChart data={analytics?.stage_breakdown || []} />
+              </div>
             </div>
-            <div className="col-md-6">
-              <TopUsersChart data={analytics.top_users} />
-            </div>
-          </div>
-        </>
-      )}
 
-      
-        
-    
+            {/* Secondary Charts Row */}
+            <div className="row mb-4">
+              <div className="col-lg-4 mb-4">
+                <DailyOutputChart data={analytics?.daily_output || []} />
+              </div>
+              <div className="col-lg-4 mb-4">
+                <TopProductsChart data={analytics?.top_products || []} />
+              </div>
+              <div className="col-lg-4 mb-4">
+                <TopUsersChart data={analytics?.top_users || []} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };

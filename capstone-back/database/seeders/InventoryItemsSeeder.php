@@ -239,19 +239,19 @@ class InventoryItemsSeeder extends Seeder
 
         // Assign specific quantities for some items
         $qtyMap = [
-            // Alkansya materials
-            'PW-1x4x8' => 120,
-            'PLY-4.2-4x8' => 80,
-            'ACR-1.5-4x8' => 60,
-            'PN-F30' => 500,
-            'BS-1.5' => 400,
-            'STKW-250' => 75,
+            // Alkansya materials - Enough for 1 month production (~1,200 units)
+            // Based on BOM: 0.5 piece, 0.25 sheet, 0.1 sheet, 20 pieces, 4 pieces, 0.1 tube per unit
+            'PW-1x4x8' => 800,      // 0.5 × 1200 = 600 needed + buffer
+            'PLY-4.2-4x8' => 400,   // 0.25 × 1200 = 300 needed + buffer
+            'ACR-1.5-4x8' => 200,   // 0.1 × 1200 = 120 needed + buffer
+            'PN-F30' => 30000,      // 20 × 1200 = 24,000 needed + buffer
+            'BS-1.5' => 6000,       // 4 × 1200 = 4,800 needed + buffer
+            'STKW-250' => 200,      // 0.1 × 1200 = 120 needed + buffer
             'GRP-4-120' => 150,
             'STK-24-W' => 200,
             'STK-24-B' => 180,
             'TFT-24' => 90,
             'TAPE-2-300' => 300,
-            'FRAG-2-300' => 220,
             'BWRAP-40-100' => 50,
             'INS-8-40-100' => 45,
             
@@ -299,6 +299,27 @@ class InventoryItemsSeeder extends Seeder
                 ]
             );
         }
+
+        // Add Alkansya as Finished Good
+        $this->command->info('Adding Alkansya as finished good inventory...');
+        InventoryItem::updateOrCreate(
+            ['sku' => 'FG-ALKANSYA'],
+            [
+                'name' => 'Alkansya (Finished Good)',
+                'category' => 'finished',
+                'location' => 'Finished Goods Warehouse',
+                'unit' => 'piece',
+                'unit_cost' => 150.00,
+                'supplier' => 'In-House Production',
+                'description' => 'Completed Alkansya ready for sale',
+                'quantity_on_hand' => 0, // Will be updated by production
+                'safety_stock' => 50,
+                'reorder_point' => 100,
+                'max_level' => 500,
+                'lead_time_days' => 7,
+            ]
+        );
+        $this->command->info('✓ Alkansya finished good added to inventory!');
     }
 }
 

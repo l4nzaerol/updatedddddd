@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppLayout from '../Header';
+import DailyOutputChart from './Analytics/DailyOutputChart';
 import {
   BarChart,
   Bar,
@@ -30,6 +31,7 @@ import {
   getDashboardData,
   exportProductionCsv
 } from '../../api/productionApi';
+import { getAdminAnalytics } from '../../api/inventoryApi';
 import './ProductionReports.css';
 
 const ProductionReports = () => {
@@ -42,6 +44,7 @@ const ProductionReports = () => {
   const [capacityReport, setCapacityReport] = useState(null);
   const [performanceReport, setPerformanceReport] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [analyticsData, setAnalyticsData] = useState(null);
   
   // Filter states
   const [dateRange, setDateRange] = useState({
@@ -60,17 +63,19 @@ const ProductionReports = () => {
       setLoading(true);
       setError('');
 
-      const [efficiency, capacity, performance, dashboard] = await Promise.all([
+      const [efficiency, capacity, performance, dashboard, analytics] = await Promise.all([
         getEfficiencyReport(dateRange.startDate, dateRange.endDate),
         getCapacityUtilization(30),
         getPerformanceMetrics(selectedPeriod),
-        getDashboardData({ date_range: 30 })
+        getDashboardData({ date_range: 30 }),
+        getAdminAnalytics() // Load analytics data for daily output
       ]);
 
       setEfficiencyReport(efficiency);
       setCapacityReport(capacity);
       setPerformanceReport(performance);
       setDashboardData(dashboard);
+      setAnalyticsData(analytics);
     } catch (err) {
       console.error('Failed to load reports:', err);
       setError('Failed to load report data');
@@ -649,6 +654,13 @@ const ProductionReports = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Daily Output Chart with Timeframe Filters */}
+          {analyticsData && (
+            <div className="col-12">
+              <DailyOutputChart data={analyticsData?.daily_output || []} />
             </div>
           )}
 

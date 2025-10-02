@@ -43,7 +43,11 @@ class ProductionTrackingController extends Controller
             'user',
             'stageLogs.productionStage',
             'stageLogs.assignedWorker'
-        ]);
+        ])
+        // IMPORTANT: Only show productions for accepted orders
+        ->whereHas('order', function($q) {
+            $q->where('acceptance_status', 'accepted');
+        });
 
         // Filter by product type
         if ($request->has('product_type') && $request->product_type !== 'all') {

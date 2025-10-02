@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
+import StageBreakdownCards from "./Analytics/StageBreakdownCards";
 
 import {
   BarChart,
@@ -280,23 +281,30 @@ export default function ProductionTrackingSystem() {
   }, [analyticsData.stage_breakdown, productions]);
 
   const dailyOutput = useMemo(() => {
-    // Use analytics data if available, otherwise fallback to local data
-    if (analyticsData.daily_output && analyticsData.daily_output.length > 0) {
-      return analyticsData.daily_output.map(item => ({
-        date: item.date,
-        quantity: item.quantity
-      }));
-    }
-    
-    // Fallback to local productions data
+    // Group production by date and product (Wooden Chair and Dining Table only)
     const map = {};
-    productions.forEach((p) => {
-      const d = p.date ? new Date(p.date).toISOString().split("T")[0] : "unknown";
-      map[d] = map[d] || { date: d, quantity: 0 };
-      map[d].quantity += Number(p.quantity || 0);
-    });
+    
+    productions
+      .filter(p => p.product_name === 'Wooden Chair' || p.product_name === 'Dining Table')
+      .forEach((p) => {
+        const d = p.date ? new Date(p.date).toISOString().split("T")[0] : "unknown";
+        if (!map[d]) {
+          map[d] = { 
+            date: d, 
+            'Wooden Chair': 0, 
+            'Dining Table': 0 
+          };
+        }
+        
+        if (p.product_name === 'Wooden Chair') {
+          map[d]['Wooden Chair'] += Number(p.quantity || 0);
+        } else if (p.product_name === 'Dining Table') {
+          map[d]['Dining Table'] += Number(p.quantity || 0);
+        }
+      });
+    
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
-  }, [analyticsData.daily_output, productions]);
+  }, [productions]);
 
   // Suggest resource allocation based on actual production data
   const computeSuggestions = () => {
@@ -550,7 +558,12 @@ export default function ProductionTrackingSystem() {
                           </div>
                           <div className="h6 mb-1">{prod.product_name}</div>
                           <div className="small text-muted">
-                            Qty: <strong>{prod.quantity || 0}</strong> • ID: <strong>{prod.id}</strong>
+                            Qty: <strong>{prod.quantity || 0}</strong> • Prod ID: <strong>{prod.id}</strong>
+                            {prod.order_id && (
+                              <>
+                                {' '}• <span className="text-primary fw-bold">Order #{prod.order_id}</span>
+                              </>
+                            )}
                             {prod.order?.user?.name && (
                               <>
                                 {' '}• Customer: <strong>{prod.order.user.name}</strong>
@@ -761,109 +774,37 @@ export default function ProductionTrackingSystem() {
           {/* Charts */}
           <div className="card mb-4 shadow-sm">
             <div className="card-header bg-success text-white">
-              <h5 className="card-title mb-0">
-                Analytics Dashboard
-              </h5>
+              <h5 className="card-title mb-0">Analytics Dashboard</h5>
             </div>
             <div className="card-body">
               <div className="row">
-                <div className="col-lg-8">
-                  <h6>Daily Output</h6>
-                  <div style={{ width: "100%", height: 260 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={dailyOutput} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="quantity" fill="#3498db" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                {/* Work Progression Chart */}
+                <div className="col-lg-6 mb-4">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body">
+                      <h6>Work Progression (Wooden Chair & Dining Table)</h6>
+                      <div style={{ width: "100%", height: 260 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dailyOutput} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                            <XAxis dataKey="date" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="Wooden Chair" fill="#8b5e34" name="Wooden Chair" />
+                            <Bar dataKey="Dining Table" fill="#d4a574" name="Dining Table" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="col-lg-4">
-                  <h6 className="mb-3 text-center fw-bold">Stage Breakdown</h6>
-                  <div style={{ width: "100%", height: 340, position: 'relative' }}>
-                    {stageData && stageData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie 
-                            data={stageData} 
-                            dataKey="value" 
-                            nameKey="name" 
-                            cx="50%" 
-                            cy="50%" 
-                            outerRadius={110}
-                            innerRadius={0}
-                            label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
-                              const RADIAN = Math.PI / 180;
-                              const radius = outerRadius + 35;
-                              const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                              const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                              
-                              // Shorten stage names for display
-                              const shortName = name
-                                .replace('Material Preparation', 'Material Prep')
-                                .replace('Cutting & Shaping', 'Cutting')
-                                .replace('Sanding & Surface Preparation', 'Sanding')
-                                .replace('Quality Check & Packaging', 'Quality Check');
-                              
-                              return (
-                                <text 
-                                  x={x} 
-                                  y={y} 
-                                  fill="#333"
-                                  textAnchor={x > cx ? 'start' : 'end'} 
-                                  dominantBaseline="central"
-                                  style={{ 
-                                    fontSize: '13px', 
-                                    fontWeight: '600',
-                                    textShadow: '0 0 3px white, 0 0 3px white'
-                                  }}
-                                >
-                                  {shortName}
-                                </text>
-                              );
-                            }}
-                            labelLine={{
-                              stroke: '#666',
-                              strokeWidth: 1.5
-                            }}
-                          >
-                            {stageData.map((entry, index) => (
-                              <Cell 
-                                key={entry.name} 
-                                fill={COLORS[index % COLORS.length]}
-                                stroke="#fff"
-                                strokeWidth={2}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            formatter={(value, name) => [`${value} order${value !== 1 ? 's' : ''}`, name]}
-                            contentStyle={{ 
-                              backgroundColor: 'rgba(255, 255, 255, 0.98)', 
-                              border: '2px solid #ddd',
-                              borderRadius: '8px',
-                              padding: '10px',
-                              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                            }}
-                            labelStyle={{
-                              fontWeight: 'bold',
-                              color: '#333'
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="d-flex align-items-center justify-content-center h-100">
-                        <div className="text-center text-muted">
-                          <i className="fas fa-chart-pie fa-3x mb-3 opacity-25"></i>
-                          <div className="mb-2 fw-bold">No Active Production Stages</div>
-                          <small>Start production to see stage breakdown</small>
-                        </div>
-                      </div>
-                    )}
+                
+                {/* Stage Breakdown Cards */}
+                <div className="col-lg-6 mb-4">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body">
+                      <StageBreakdownCards stageData={stageData} />
+                    </div>
                   </div>
                 </div>
               </div>

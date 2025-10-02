@@ -25,6 +25,7 @@ const EnhancedOrdersManagement = () => {
   // Status options with colors
   const statusOptions = [
     { value: "pending", label: "Pending", color: "warning", icon: "⏳" },
+    { value: "processing", label: "Processing", color: "primary", icon: "⚙️" },
     { value: "ready_for_delivery", label: "Ready for Delivery", color: "info", icon: "📦" },
     { value: "delivered", label: "Delivered", color: "success", icon: "✅" },
     { value: "completed", label: "Completed", color: "success", icon: "🎉" },
@@ -159,8 +160,7 @@ const EnhancedOrdersManagement = () => {
   const getPaymentMethodBadge = (method) => {
     const methodInfo = {
       cod: { label: "Cash on Delivery", color: "secondary", icon: "💵" },
-      maya: { label: "Maya", color: "primary", icon: "💳" },
-      gcash: { label: "GCash", color: "info", icon: "💳" }
+      maya: { label: "Maya", color: "primary", icon: "💳" }
     };
     const info = methodInfo[method] || { label: method?.toUpperCase(), color: "dark", icon: "💳" };
     return (
@@ -277,7 +277,6 @@ const EnhancedOrdersManagement = () => {
                   <option value="">All Payment</option>
                   <option value="cod">💵 COD</option>
                   <option value="maya">💳 Maya</option>
-                  <option value="gcash">💳 GCash</option>
                 </select>
 
                 <select
@@ -636,7 +635,8 @@ const EnhancedOrdersManagement = () => {
                         <div>
                           <div className="fw-semibold">{status.label}</div>
                           <small className="text-muted">
-                            {status.value === 'pending' && 'Order is awaiting processing'}
+                            {status.value === 'pending' && 'Order is awaiting acceptance'}
+                            {status.value === 'processing' && 'Order is accepted and in production'}
                             {status.value === 'ready_for_delivery' && 'Order is ready to be delivered'}
                             {status.value === 'delivered' && 'Order has been delivered to customer'}
                             {status.value === 'completed' && 'Order is fully completed'}

@@ -154,8 +154,36 @@ const OrderTable = () => {
                       </p>
                     </div>
 
+                    {/* === ACCEPTANCE STATUS === */}
+                    {order.acceptance_status && (
+                      <div className="mt-3">
+                        <h6 className="fw-bold">Order Acceptance Status</h6>
+                        <div className="alert alert-info">
+                          {order.acceptance_status === 'pending' && (
+                            <>
+                              <FaClock className="me-2" />
+                              Your order is <strong>pending acceptance</strong> by our team. Production will start once accepted.
+                            </>
+                          )}
+                          {order.acceptance_status === 'accepted' && (
+                            <>
+                              <FaCheckCircle className="me-2 text-success" />
+                              Your order has been <strong>accepted</strong> and is now in production!
+                            </>
+                          )}
+                          {order.acceptance_status === 'rejected' && (
+                            <>
+                              ❌ Your order has been <strong>rejected</strong>.
+                              {order.rejection_reason && <div className="mt-2">Reason: {order.rejection_reason}</div>}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* === ORDER TRACKING DETAILS === */}
-                    {track.overall && !track.error && (
+                    {/* Only show production tracking for accepted orders */}
+                    {track.overall && !track.error && order.acceptance_status === 'accepted' && (
                       <div className="mt-4">
                         <h6 className="fw-bold">Production Tracking</h6>
                         <div className="d-flex justify-content-between small mb-1">
@@ -229,9 +257,9 @@ const getStatusVariant = (status) => {
 };
 
 const renderStatusSteps = (status) => {
-  const steps = ["Pending", "Processing", "Completed"];
+  const steps = ["Pending", "Processing", "Ready for Delivery", "Delivered"];
   const statusIndex = steps.findIndex(
-    (s) => s.toLowerCase() === status.toLowerCase()
+    (s) => s.toLowerCase() === status.toLowerCase().replace('_', ' ')
   );
 
   return steps.map((step, idx) => (

@@ -686,7 +686,7 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'status' => 'required|in:pending,ready_for_delivery,delivered,completed,cancelled'
+            'status' => 'required|in:pending,processing,ready_for_delivery,delivered,completed,cancelled'
         ]);
 
         $order = Order::with(['items.product', 'user'])->find($id);
@@ -709,6 +709,14 @@ class OrderController extends Controller
                 $notificationData = null;
                 
                 switch ($newStatus) {
+                    case 'processing':
+                        $notificationData = [
+                            'type' => 'processing',
+                            'title' => '⚙️ Order In Production!',
+                            'message' => "Your order #{$order->id} ({$productNames}) has been accepted and is now in production. We'll keep you updated on the progress!",
+                        ];
+                        break;
+                        
                     case 'ready_for_delivery':
                         $notificationData = [
                             'type' => 'ready_for_delivery',

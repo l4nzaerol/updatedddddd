@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/client";
 import AppLayout from "../Header";
+import DailyOutputChart from "./Analytics/DailyOutputChart.js";
 import { downloadStockCsv, downloadUsageCsv, downloadReplenishmentCsv } from "../../api/inventoryApi";
 import { exportProductionCsv } from "../../api/productionApi";
 import { 
@@ -1306,23 +1307,7 @@ const Report = () => {
                                             </div>
                                         </div>
                                         
-                                        <div className="card shadow-sm">
-                                            <div className="card-header bg-white border-bottom">
-                                                <h5 className="mb-0 fw-bold">📈 Daily Output Trend</h5>
-                                            </div>
-                                            <div className="card-body">
-                                                <ResponsiveContainer width="100%" height={350}>
-                                                    <LineChart data={productionPerformance.daily_output || []}>
-                                                        <CartesianGrid strokeDasharray="3 3" />
-                                                        <XAxis dataKey="date" />
-                                                        <YAxis />
-                                                        <Tooltip />
-                                                        <Legend />
-                                                        <Line type="monotone" dataKey="quantity" stroke="#0d6efd" strokeWidth={3} name="Daily Output" />
-                                                    </LineChart>
-                                                </ResponsiveContainer>
-                                            </div>
-                                        </div>
+                                        <DailyOutputChart data={productionPerformance.daily_output || []} />
                                     </div>
                                 )}
                             </div>

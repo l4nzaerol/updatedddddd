@@ -27,7 +27,11 @@ class ProductionController extends Controller
         try {
             \Log::info('Productions index called');
             
-            $query = Production::with(['user', 'product', 'processes', 'order']); // eager load relationships including order status
+            $query = Production::with(['user', 'product', 'processes', 'order'])
+                // IMPORTANT: Only show productions for accepted orders
+                ->whereHas('order', function($q) {
+                    $q->where('acceptance_status', 'accepted');
+                });
 
             if ($request->has('status')) {
                 $query->where('status', $request->status);
@@ -293,9 +297,27 @@ class ProductionController extends Controller
                 $production->current_stage = $normalizedStage;
 
                 // If moved to Completed or Ready for Delivery, also update status accordingly
-                if ($normalizedStage === 'Completed' || ($normalizedStage === 'Ready for Delivery' && !$production->requires_tracking)) {
+                if ($normalizedStage === 'Completed' || $normalizedStage === 'Ready for Delivery') {
                     $production->status = 'Completed';
                     $production->actual_completion_date = now();
+                    $production->overall_progress = 100;
+                    
+                    // Update order status to 'ready_for_delivery' when production is done
+                    if ($production->order_id) {
+                        $order = Order::find($production->order_id);
+                        if ($order && $order->status === 'processing') {
+                            $order->status = 'ready_for_delivery';
+                            $order->save();
+                            \Log::info("Order #{$order->id} status updated to 'ready_for_delivery' because production reached Ready for Delivery");
+                            
+                            // Update order tracking status
+                            OrderTracking::where('order_id', $order->id)->update([
+                                'status' => 'ready_for_delivery',
+                                'current_stage' => 'Ready for Delivery',
+                                'progress_percentage' => 100,
+                            ]);
+                        }
+                    }
                 } elseif (!in_array($production->status, ['Hold'])) {
                     // Keep as in progress unless explicitly set otherwise
                     $production->status = $production->status ?? 'In Progress';
@@ -389,19 +411,42 @@ class ProductionController extends Controller
 
         $productionData = $productionQuery->get();
 
-        // KPIs from Production data
+        // Get Order data for additional metrics
+        // Note: For order counts, we want to show ALL orders regardless of date filters
+        // because pending orders are important to see at all times
+        $allOrders = Order::all();
+        
+        // But if date filters are applied, also get filtered orders for other metrics
+        $orderQuery = Order::query();
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $orderQuery->whereBetween('created_at', [$request->start_date, $request->end_date]);
+        }
+        $orderData = $orderQuery->get();
+
+        // KPIs from Production data + Order data
+        // Use allOrders for pending/completed counts to show current state
         $kpis = [
             'total'       => $productionData->count(),
             'in_progress' => $productionData->where('status', 'In Progress')->count(),
             'completed'   => $productionData->where('status', 'Completed')->count(),
             'hold'        => $productionData->where('status', 'Hold')->count(),
+            'pending_orders' => $allOrders->where('acceptance_status', 'pending')->count(),
+            'completed_orders' => $allOrders->where('status', 'completed')->count(),
+            'completed_productions' => $productionData->where('status', 'Completed')->count(),
         ];
 
-        // Daily output from Production data
-        $daily = $productionData->groupBy(fn($p) => optional($p->date)->format('Y-m-d'))
+        // Daily output from ProductionAnalytics (includes Alkansya and other products)
+        $analyticsQuery = ProductionAnalytics::query();
+        
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $analyticsQuery->whereBetween('date', [$request->start_date, $request->end_date]);
+        }
+        
+        $daily = $analyticsQuery->get()
+            ->groupBy('date')
             ->map(fn($items, $date) => [
                 'date'     => $date,
-                'quantity' => $items->sum('quantity'),
+                'quantity' => $items->sum('actual_output'),
             ])
             ->values()
             ->sortBy('date')
@@ -482,17 +527,19 @@ class ProductionController extends Controller
             ->take(5)
             ->values();
 
-        // Get top users from Production data
-        $topUsers = $productionData->groupBy('user_id')
-            ->map(function($productions, $userId) {
-                $user = \App\Models\User::find($userId);
+        // Get top customers (users with most orders)
+        $topUsers = Order::with('user')
+            ->select('user_id', DB::raw('COUNT(*) as order_count'), DB::raw('SUM(total_price) as total_spent'))
+            ->groupBy('user_id')
+            ->orderByDesc('order_count')
+            ->limit(5)
+            ->get()
+            ->map(function($order) {
                 return [
-                    'name' => $user ? $user->name : 'Unknown User',
-                    'quantity' => $productions->sum('quantity'),
+                    'name' => $order->user ? $order->user->name : 'Unknown Customer',
+                    'quantity' => $order->order_count,
                 ];
             })
-            ->sortByDesc('quantity')
-            ->take(5)
             ->values();
 
         return response()->json([

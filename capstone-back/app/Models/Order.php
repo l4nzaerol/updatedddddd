@@ -70,4 +70,10 @@ class Order extends Model
     {
         return $this->acceptance_status === 'rejected';
     }
+
+    // An order can have multiple productions
+    public function productions()
+    {
+        return $this->hasMany(Production::class);
+    }
 }

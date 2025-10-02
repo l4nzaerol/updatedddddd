@@ -100,9 +100,6 @@ const Sidebar = () => {
                     <button style={styles.navItem} onClick={() => navigate("/orders")}>
                         <ClipboardList size={20} /> Orders
                     </button>
-                    <button style={styles.navItem} onClick={() => navigate("/order-acceptance")}>
-                        <CheckCircle size={20} /> Order Acceptance
-                    </button>
                     <button style={styles.navItem} onClick={() => navigate("/inventory")}>
                         <Boxes size={20} /> Inventory
                     </button>

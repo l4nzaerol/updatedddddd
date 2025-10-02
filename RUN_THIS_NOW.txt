@@ -1,0 +1,62 @@
+================================================================================
+                    🚨 RUN THIS COMMAND NOW 🚨
+================================================================================
+
+YOU MUST RUN THIS COMMAND TO FIX THE ISSUE:
+
+cd capstone-back
+php artisan db:seed --class=CleanupAndReseedOrders
+
+================================================================================
+
+WHY YOU'RE SEEING THE PROBLEM:
+
+Your database has OLD DATA from previous seeder runs. The seeder code is 
+CORRECT, but your database still has the wrong data.
+
+The command above will:
+1. DELETE all old orders and productions
+2. CREATE fresh, accurate data
+3. VERIFY everything is correct
+
+================================================================================
+
+WHAT YOU'LL SEE AFTER RUNNING:
+
+For Orders 1 & 2 (pending):
+   ✓ Order #1 | Dining Table x1
+     Order Status: pending | Acceptance: ⏳ PENDING
+     🏭 Production: NOT CREATED (order not accepted)
+        Will show in production tracking: NO ❌
+
+For Orders 7 & 10 (accepted):
+   ✓ Order #7 | Dining Table x2
+     Order Status: processing | Acceptance: ✅ ACCEPTED
+     🏭 Production: #5 CREATED
+        Stage: Sanding & Surface Preparation | Progress: 80%
+        Will show in production tracking: YES ✅
+
+   ✓ Order #10 | Alkansya x5
+     Order Status: processing | Acceptance: ✅ ACCEPTED
+     🏭 Production: #8 CREATED
+        Stage: Cutting & Shaping | Progress: 50%
+        Will show in production tracking: YES ✅
+
+================================================================================
+
+VERIFICATION:
+
+Total Orders: 10
+Pending Orders: 2 (should be 2)
+Accepted Orders: 8 (should be 8)
+Total Productions: 8 (should be 8)
+✓ No productions for pending orders (correct!)
+
+================================================================================
+
+THEN REFRESH YOUR BROWSER!
+
+Customer Orders Page: Should see 10 orders
+Production Tracking Page: Should see 8 productions (NOT orders 1 & 2)
+
+================================================================================

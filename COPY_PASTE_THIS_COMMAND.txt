@@ -1,0 +1,1 @@
+cd capstone-back && php artisan db:seed --class=CleanupAndReseedOrders
