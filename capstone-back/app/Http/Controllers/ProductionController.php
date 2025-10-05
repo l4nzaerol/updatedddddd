@@ -512,6 +512,7 @@ class ProductionController extends Controller
         $currentProcess = $processes->firstWhere('status', 'in_progress');
         
         if ($currentProcess) {
+            // If there's a process in progress, that's the current stage
             $production->current_stage = $currentProcess->process_name;
             $production->status = 'In Progress';
         } else {
@@ -519,6 +520,7 @@ class ProductionController extends Controller
             $completedCount = $processes->where('status', 'completed')->count();
             
             if ($completedCount === $processes->count()) {
+                // All processes completed - production is done
                 $production->current_stage = 'Completed';
                 $production->status = 'Completed';
                 $production->overall_progress = 100;
@@ -527,10 +529,19 @@ class ProductionController extends Controller
                 // DO NOT auto-update order status to ready_for_delivery
                 // Admin must manually mark as ready for delivery from the "Ready (Furniture)" tab
             } else {
-                // Find next pending process
-                $nextProcess = $processes->where('status', 'pending')->first();
+                // Find the next process that should be started
+                // Look for the first process that's not completed
+                $nextProcess = $processes->where('status', '!=', 'completed')->first();
                 if ($nextProcess) {
                     $production->current_stage = $nextProcess->process_name;
+                    $production->status = 'In Progress';
+                } else {
+                    // Fallback: find next pending process
+                    $nextProcess = $processes->where('status', 'pending')->first();
+                    if ($nextProcess) {
+                        $production->current_stage = $nextProcess->process_name;
+                        $production->status = 'Pending';
+                    }
                 }
             }
         }

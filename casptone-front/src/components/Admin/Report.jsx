@@ -3,8 +3,14 @@ import { useNavigate } from "react-router-dom";
 import api from "../../api/client";
 import AppLayout from "../Header";
 import DailyOutputChart from "./Analytics/DailyOutputChart.js";
+import SalesDashboard from "./Analytics/SalesDashboard.jsx";
+import SalesProcessAnalytics from "./Analytics/SalesProcessAnalytics.jsx";
+import ProductPerformance from "./Analytics/ProductPerformance.jsx";
+import SalesReport from "./Analytics/SalesReport.jsx";
+import SalesDebug from "./Analytics/SalesDebug.jsx";
 import { downloadStockCsv, downloadUsageCsv, downloadReplenishmentCsv } from "../../api/inventoryApi";
 import { exportProductionCsv } from "../../api/productionApi";
+import { clearRequestCache } from "../../utils/apiRetry";
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
@@ -15,8 +21,9 @@ const Report = () => {
     const [windowDays, setWindowDays] = useState(30);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [mainTab, setMainTab] = useState("inventory"); // Main category: inventory or production
+    const [mainTab, setMainTab] = useState("inventory"); // Main category: inventory, production, or sales
     const [activeTab, setActiveTab] = useState("overview"); // Sub-tab within category
+    const [refreshKey, setRefreshKey] = useState(0); // Key to force component refresh
     
     // Inventory report data states
     const [dashboardData, setDashboardData] = useState(null);
@@ -67,7 +74,7 @@ const Report = () => {
                 console.error("Dashboard load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load inventory report
             try {
@@ -83,7 +90,7 @@ const Report = () => {
                 console.error("Inventory report load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load forecast report
             try {
@@ -96,7 +103,7 @@ const Report = () => {
                 console.error("Forecast report load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load replenishment schedule
             try {
@@ -107,7 +114,7 @@ const Report = () => {
                 console.error("Replenishment schedule load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load consumption trends
             try {
@@ -120,7 +127,7 @@ const Report = () => {
                 console.error("Consumption trends load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load daily usage
             try {
@@ -133,7 +140,7 @@ const Report = () => {
                 console.error("Daily usage load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load production analytics
             try {
@@ -145,7 +152,7 @@ const Report = () => {
                 console.error("Production analytics load failed:", e);
             }
             
-            await delay(150);
+            await delay(500);
             
             // Load advanced analytics
             try {
@@ -234,6 +241,14 @@ const Report = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleGlobalRefresh = () => {
+        console.log('🔄 Global refresh triggered');
+        clearRequestCache();
+        setRefreshKey(prev => prev + 1); // Force component refresh
+        console.log('🔄 Refresh key updated to:', refreshKey + 1);
+        fetchAllReports();
     };
     
     const getStartDate = (days) => {
@@ -343,12 +358,23 @@ const Report = () => {
                         </h2>
                         
                     </div>
-                    <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
-                        ← Back to Dashboard
-                    </button>
+                    <div className="d-flex gap-2">
+                        <button 
+                            className="btn btn-outline-primary" 
+                            onClick={handleGlobalRefresh}
+                            disabled={loading}
+                            title="Refresh all data"
+                        >
+                            <i className="fas fa-sync-alt me-1"></i>
+                            Refresh Data
+                        </button>
+                        <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
+                            ← Back to Dashboard
+                        </button>
+                    </div>
                 </div>
                 
-                {/* Main Category Tabs - Production vs Inventory */}
+                {/* Main Category Tabs - Inventory, Production, and Sales */}
                 <ul className="nav nav-pills nav-fill mb-4 shadow-sm" style={{ backgroundColor: '#f8f9fa', borderRadius: '12px', padding: '12px' }}>
                     <li className="nav-item">
                         <button 
@@ -390,6 +416,27 @@ const Report = () => {
                             }}
                         >
                             🏭 Production Reports
+                        </button>
+                    </li>
+                    <li className="nav-item">
+                        <button 
+                            className={`nav-link ${mainTab === "sales" ? "active" : ""}`}
+                            style={{
+                                borderRadius: '10px',
+                                fontWeight: '600',
+                                fontSize: '16px',
+                                padding: '12px 24px',
+                                backgroundColor: mainTab === "sales" ? '#0d6efd' : 'transparent',
+                                color: mainTab === "sales" ? 'white' : '#6c757d',
+                                border: 'none',
+                                transition: 'all 0.3s ease'
+                            }}
+                            onClick={() => {
+                                setMainTab("sales");
+                                setActiveTab("dashboard");
+                            }}
+                        >
+                            💰 Sales Analytics
                         </button>
                     </li>
                 </ul>
@@ -536,6 +583,37 @@ const Report = () => {
                     </li>
                 </ul>
                 )}
+
+                        {/* Sales Sub-tabs */}
+                        {mainTab === "sales" && (
+                        <ul className="nav nav-tabs mb-4">
+                            <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "dashboard" ? "active" : ""}`} onClick={() => setActiveTab("dashboard")}>
+                                    📊 Sales Dashboard
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "process" ? "active" : ""}`} onClick={() => setActiveTab("process")}>
+                                    🔄 Sales Process
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "products" ? "active" : ""}`} onClick={() => setActiveTab("products")}>
+                                    📦 Product Performance
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
+                                    📋 Detailed Reports
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "debug" ? "active" : ""}`} onClick={() => setActiveTab("debug")}>
+                                    🔍 Debug Data
+                                </button>
+                            </li>
+                        </ul>
+                        )}
                 
                 {/* CSV Export Buttons */}
                 <div className="card shadow-sm mb-4">
@@ -833,85 +911,492 @@ const Report = () => {
                             )
                         )}
                         
-                        {/* Replenishment Tab */}
-                        {activeTab === "replenishment" && (
-                            replenishmentSchedule ? (
-                            <div className="card shadow-sm mb-4">
-                                <div className="card-header d-flex justify-content-between align-items-center">
-                                    <h5 className="mb-0">Replenishment Schedule</h5>
-                                    <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("replenishment_schedule", replenishmentSchedule.schedule)}>
-                                        📥 Export CSV
-                                    </button>
-                                </div>
-                                <div className="card-body">
-                                    <div className="row mb-3">
-                                        <div className="col-md-3">
-                                            <div className="text-muted small">Immediate Reorders</div>
-                                            <div className="h4 text-danger">{replenishmentSchedule.summary.immediate_reorders}</div>
-                                        </div>
-                                        <div className="col-md-3">
-                                            <div className="text-muted small">High Priority</div>
-                                            <div className="h4 text-warning">{replenishmentSchedule.summary.high_priority}</div>
-                                        </div>
-                                        <div className="col-md-3">
-                                            <div className="text-muted small">Medium Priority</div>
-                                            <div className="h4 text-info">{replenishmentSchedule.summary.medium_priority}</div>
-                                        </div>
-                                        <div className="col-md-3">
-                                            <div className="text-muted small">Total Reorder Value</div>
-                                            <div className="h4">{replenishmentSchedule.summary.total_reorder_value}</div>
-                                        </div>
+                        {/* Replenishment Tab - ENHANCED VERSION */}
+            {activeTab === "replenishment" && (
+            replenishmentSchedule ? (
+            <div>
+        {/* Summary Cards */}
+        <div className="row mb-4">
+            <div className="col-md-3">
+                <div className="card border-danger shadow-sm h-100">
+                    <div className="card-body text-center">
+                        <div className="text-danger mb-2">
+                            <i className="fas fa-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h3 className="text-danger mb-1">{replenishmentSchedule.summary.immediate_reorders}</h3>
+                        <p className="text-muted small mb-0">Immediate Reorders</p>
+                        <span className="badge bg-danger mt-2">Urgent Action Required</span>
+                    </div>
+                </div>
+            </div>
+            <div className="col-md-3">
+                <div className="card border-warning shadow-sm h-100">
+                    <div className="card-body text-center">
+                        <div className="text-warning mb-2">
+                            <i className="fas fa-clock" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h3 className="text-warning mb-1">{replenishmentSchedule.summary.high_priority}</h3>
+                        <p className="text-muted small mb-0">High Priority</p>
+                        <span className="badge bg-warning text-dark mt-2">Within 7 Days</span>
+                    </div>
+                </div>
+            </div>
+            <div className="col-md-3">
+                <div className="card border-info shadow-sm h-100">
+                    <div className="card-body text-center">
+                        <div className="text-info mb-2">
+                            <i className="fas fa-calendar-check" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h3 className="text-info mb-1">{replenishmentSchedule.summary.medium_priority}</h3>
+                        <p className="text-muted small mb-0">Medium Priority</p>
+                        <span className="badge bg-info mt-2">Within 14 Days</span>
+                    </div>
+                </div>
+            </div>
+            <div className="col-md-3">
+                <div className="card border-success shadow-sm h-100">
+                    <div className="card-body text-center">
+                        <div className="text-success mb-2">
+                            <i className="fas fa-peso-sign" style={{ fontSize: '2rem' }}></i>
+                        </div>
+                        <h3 className="text-success mb-1">{replenishmentSchedule.summary.total_reorder_value}</h3>
+                        <p className="text-muted small mb-0">Total Reorder Value</p>
+                        <span className="badge bg-success mt-2">Estimated Cost</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+                {/* Visual Analytics Row - ENHANCED */}
+                <div className="row g-4 mb-4">
+            {/* Priority Distribution Pie Chart */}
+            <div className="col-lg-6">
+                <div className="card shadow-sm h-100 border-0">
+                    <div className="card-header bg-gradient text-white" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                        <h5 className="mb-0 fw-bold d-flex align-items-center">
+                            <i className="fas fa-chart-pie me-2"></i>
+                            Priority Distribution
+                        </h5>
+                        <small className="text-white-50">Reorder urgency breakdown</small>
+                    </div>
+                    <div className="card-body d-flex flex-column">
+                        {/* Legend with counts */}
+                        <div className="row mb-3">
+                            <div className="col-4 text-center">
+                                <div className="p-2 rounded" style={{ backgroundColor: '#ffe5e5' }}>
+                                    <div className="fw-bold text-danger" style={{ fontSize: '1.5rem' }}>
+                                        {replenishmentSchedule.summary.immediate_reorders}
                                     </div>
-                                    
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Priority</th>
-                                                    <th>SKU</th>
-                                                    <th>Name</th>
-                                                    <th className="text-end">Current Stock</th>
-                                                    <th className="text-end">Reorder Point</th>
-                                                    <th>Estimated Reorder Date</th>
-                                                    <th className="text-end">Recommended Qty</th>
-                                                    <th>Supplier</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {replenishmentSchedule.schedule && replenishmentSchedule.schedule.length > 0 ? (
-                                                    replenishmentSchedule.schedule.slice(0, 20).map((item, idx) => (
-                                                        <tr key={idx} className={item.needs_immediate_reorder ? 'table-danger' : ''}>
-                                                            <td>
-                                                                <span className="badge" style={{ backgroundColor: PRIORITY_COLORS[item.priority] || '#6c757d' }}>
-                                                                    {item.priority}
-                                                                </span>
-                                                            </td>
-                                                            <td className="fw-semibold">{item.sku}</td>
-                                                            <td>{item.name}</td>
-                                                            <td className="text-end">{item.current_stock}</td>
-                                                            <td className="text-end">{item.reorder_point}</td>
-                                                            <td>{item.estimated_reorder_date}</td>
-                                                            <td className="text-end fw-bold">{item.recommended_order_qty}</td>
-                                                            <td>{item.supplier || '-'}</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="8" className="text-center text-muted">No replenishment needed at this time.</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
+                                    <small className="text-muted d-block">Immediate</small>
+                                    <div className="mt-1">
+                                        <span className="badge bg-danger">Urgent</span>
                                     </div>
                                 </div>
                             </div>
-                            ) : (
-                                <div className="alert alert-warning">
-                                    <strong>No Replenishment Data Available</strong><br/>
-                                    Data is being loaded or unavailable.
+                            <div className="col-4 text-center">
+                                <div className="p-2 rounded" style={{ backgroundColor: '#fff8e1' }}>
+                                    <div className="fw-bold text-warning" style={{ fontSize: '1.5rem' }}>
+                                        {replenishmentSchedule.summary.high_priority}
+                                    </div>
+                                    <small className="text-muted d-block">High Priority</small>
+                                    <div className="mt-1">
+                                        <span className="badge bg-warning text-dark">≤7 Days</span>
+                                    </div>
                                 </div>
-                            )
-                        )}
+                            </div>
+                            <div className="col-4 text-center">
+                                <div className="p-2 rounded" style={{ backgroundColor: '#e0f7fa' }}>
+                                    <div className="fw-bold text-info" style={{ fontSize: '1.5rem' }}>
+                                        {replenishmentSchedule.summary.medium_priority}
+                                    </div>
+                                    <small className="text-muted d-block">Medium</small>
+                                    <div className="mt-1">
+                                        <span className="badge bg-info">≤14 Days</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Pie Chart */}
+                        <div className="flex-grow-1">
+                            <ResponsiveContainer width="100%" height={280}>
+                                <PieChart>
+                                    <Pie
+                                        data={[
+                                            { name: 'Immediate', value: replenishmentSchedule.summary.immediate_reorders, color: '#dc3545' },
+                                            { name: 'High Priority', value: replenishmentSchedule.summary.high_priority, color: '#ffc107' },
+                                            { name: 'Medium Priority', value: replenishmentSchedule.summary.medium_priority, color: '#17a2b8' }
+                                        ]}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={false}
+                                        label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                                        outerRadius={90}
+                                        fill="#8884d8"
+                                        dataKey="value"
+                                    >
+                                        {[
+                                            { name: 'Immediate', value: replenishmentSchedule.summary.immediate_reorders, color: '#dc3545' },
+                                            { name: 'High Priority', value: replenishmentSchedule.summary.high_priority, color: '#ffc107' },
+                                            { name: 'Medium Priority', value: replenishmentSchedule.summary.medium_priority, color: '#17a2b8' }
+                                        ].map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip 
+                                        contentStyle={{ 
+                                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                            border: '2px solid #667eea',
+                                            borderRadius: '8px',
+                                            padding: '10px'
+                                        }}
+                                    />
+                                    <Legend 
+                                        verticalAlign="bottom" 
+                                        height={36}
+                                        formatter={(value, entry) => `${value}: ${entry.payload.value} items`}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Stock Levels Bar Chart */}
+            <div className="col-lg-6">
+                <div className="card shadow-sm h-100 border-0">
+                    <div className="card-header bg-gradient text-white" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+                        <h5 className="mb-0 fw-bold d-flex align-items-center">
+                            <i className="fas fa-chart-bar me-2"></i>
+                            Current Stock vs. Reorder Point
+                        </h5>
+                        <small className="text-white-50">Top 5 materials requiring attention</small>
+                    </div>
+                    <div className="card-body d-flex flex-column">
+                        {/* Color Legend */}
+                        <div className="d-flex justify-content-center gap-3 mb-3 flex-wrap">
+                            <div className="d-flex align-items-center">
+                                <div style={{ width: '20px', height: '20px', backgroundColor: '#17a2b8', borderRadius: '4px', marginRight: '8px' }}></div>
+                                <small className="fw-semibold">Current Stock</small>
+                            </div>
+                            <div className="d-flex align-items-center">
+                                <div style={{ width: '20px', height: '20px', backgroundColor: '#ffc107', borderRadius: '4px', marginRight: '8px' }}></div>
+                                <small className="fw-semibold">Reorder Point</small>
+                            </div>
+                            <div className="d-flex align-items-center">
+                                <div style={{ width: '20px', height: '20px', backgroundColor: '#28a745', borderRadius: '4px', marginRight: '8px' }}></div>
+                                <small className="fw-semibold">Recommended Qty</small>
+                            </div>
+                        </div>
+                        
+                        {/* Bar Chart */}
+                        <div className="flex-grow-1">
+                            <ResponsiveContainer width="100%" height={280}>
+                                <BarChart 
+                                    data={replenishmentSchedule.schedule?.slice(0, 5).map(item => ({
+                                        name: item.sku,
+                                        'Current Stock': item.current_stock,
+                                        'Reorder Point': item.reorder_point,
+                                        'Recommended Qty': item.recommended_order_qty
+                                    }))}
+                                    margin={{ top: 10, right: 30, left: 20, bottom: 60 }}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                                    <XAxis 
+                                        dataKey="name" 
+                                        angle={-25} 
+                                        textAnchor="end" 
+                                        height={60}
+                                        interval={0}
+                                        tick={{ fontSize: 12, fontWeight: 600 }}
+                                        stroke="#666"
+                                    />
+                                    <YAxis 
+                                        tick={{ fontSize: 12 }}
+                                        stroke="#666"
+                                        label={{ value: 'Quantity', angle: -90, position: 'insideLeft', style: { fontWeight: 600 } }}
+                                    />
+                                    <Tooltip 
+                                        contentStyle={{ 
+                                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                            border: '2px solid #f5576c',
+                                            borderRadius: '8px',
+                                            padding: '10px'
+                                        }}
+                                        cursor={{ fill: 'rgba(245, 87, 108, 0.1)' }}
+                                    />
+                                    <Legend 
+                                        wrapperStyle={{ paddingTop: '10px' }}
+                                        iconType="rect"
+                                    />
+                                    <Bar dataKey="Current Stock" fill="#17a2b8" radius={[8, 8, 0, 0]} />
+                                    <Bar dataKey="Reorder Point" fill="#ffc107" radius={[8, 8, 0, 0]} />
+                                    <Bar dataKey="Recommended Qty" fill="#28a745" radius={[8, 8, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                        
+                        {/* Status indicator */}
+                        <div className="alert alert-warning mb-0 mt-2 py-2" role="alert">
+                            <small className="mb-0">
+                                <i className="fas fa-info-circle me-2"></i>
+                                <strong>Note:</strong> Materials shown have current stock below or near reorder point
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+                {/* Detailed Replenishment Schedule - MINIMALIST DESIGN */}
+                <div className="card border-0 shadow-sm mb-4">
+            <div className="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+                <div>
+                    <h5 className="mb-1 fw-bold text-dark">
+                        <i className="fas fa-table me-2 text-primary"></i>
+                        Detailed Replenishment Schedule
+                    </h5>
+                    <small className="text-muted">Materials requiring reorder with priority levels and accurate stock status</small>
+                </div>
+                <button 
+                    className="btn btn-dark btn-sm" 
+                    onClick={() => exportReport("replenishment_schedule", replenishmentSchedule.schedule)}
+                >
+                    Export CSV
+                </button>
+            </div>
+            
+            <div className="card-body p-0">
+                <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.9rem' }}>
+                        <thead style={{ backgroundColor: '#f8f9fa' }}>
+                            <tr>
+                                <th className="py-3 px-4 text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Priority
+                                </th>
+                                <th className="py-3 px-4 text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    SKU
+                                </th>
+                                <th className="py-3 px-4 text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Material Name
+                                </th>
+                                <th className="py-3 px-4 text-center text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Current<br/>Stock
+                                </th>
+                                <th className="py-3 px-4 text-center text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Reorder<br/>Point
+                                </th>
+                                <th className="py-3 px-4 text-center text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d', minWidth: '180px' }}>
+                                    Stock Status
+                                </th>
+                                <th className="py-3 px-4 text-center text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Estimated<br/>Reorder Date
+                                </th>
+                                <th className="py-3 px-4 text-center text-uppercase fw-semibold" style={{ fontSize: '0.75rem', letterSpacing: '0.5px', color: '#6c757d' }}>
+                                    Recommended<br/>Qty
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {replenishmentSchedule.schedule && replenishmentSchedule.schedule.length > 0 ? (
+                                replenishmentSchedule.schedule.slice(0, 20).map((item, idx) => {
+                                    // Calculate accurate stock percentage - CAPPED AT 100%
+                                    const rawPercentage = (item.current_stock / item.reorder_point) * 100;
+                                    const stockPercentage = Math.min(Math.max(rawPercentage, 0), 100);
+                                    
+                                    return (
+                                        <tr 
+                                            key={idx} 
+                                            style={{ 
+                                                backgroundColor: idx % 2 === 0 ? '#ffffff' : '#fafbfc',
+                                                borderLeft: item.needs_immediate_reorder ? '3px solid #dc3545' : '3px solid transparent'
+                                            }}
+                                        >
+                                            {/* Priority */}
+                                            <td className="py-3 px-4">
+                                                <span 
+                                                    className="badge text-white" 
+                                                    style={{ 
+                                                        backgroundColor: PRIORITY_COLORS[item.priority] || '#6c757d',
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 600,
+                                                        textTransform: 'lowercase',
+                                                        padding: '0.4rem 0.8rem',
+                                                        borderRadius: '4px'
+                                                    }}
+                                                >
+                                                    {item.priority}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* SKU */}
+                                            <td className="py-3 px-4">
+                                                <span className="font-monospace fw-semibold" style={{ fontSize: '0.85rem', color: '#495057' }}>
+                                                    {item.sku}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Material Name */}
+                                            <td className="py-3 px-4">
+                                                <span style={{ color: '#212529' }}>
+                                                    {item.name}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Current Stock */}
+                                            <td className="py-3 px-4 text-center">
+                                                <span 
+                                                    className="fw-bold"
+                                                    style={{ 
+                                                        color: item.current_stock <= item.reorder_point ? '#dc3545' : '#28a745',
+                                                        fontSize: '1rem'
+                                                    }}
+                                                >
+                                                    {item.current_stock}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Reorder Point */}
+                                            <td className="py-3 px-4 text-center">
+                                                <span className="text-muted fw-semibold">
+                                                    {item.reorder_point}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Stock Status - ACCURATE PERCENTAGE (MAX 100%) */}
+                                            <td className="py-3 px-4">
+                                                <div className="d-flex flex-column">
+                                                    <div className="progress" style={{ height: '24px', backgroundColor: '#e9ecef', borderRadius: '4px' }}>
+                                                        <div 
+                                                            className={`progress-bar ${
+                                                                stockPercentage <= 30 ? 'bg-danger' :
+                                                                stockPercentage <= 60 ? 'bg-warning' :
+                                                                'bg-success'
+                                                            }`}
+                                                            role="progressbar" 
+                                                            style={{ 
+                                                                width: `${stockPercentage}%`,
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 600,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                            aria-valuenow={stockPercentage} 
+                                                            aria-valuemin="0" 
+                                                            aria-valuemax="100"
+                                                        >
+                                                            {stockPercentage > 15 && `${stockPercentage.toFixed(0)}%`}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            
+                                            {/* Estimated Reorder Date */}
+                                            <td className="py-3 px-4 text-center">
+                                                <span className="text-dark" style={{ fontSize: '0.85rem' }}>
+                                                    {item.estimated_reorder_date}
+                                                </span>
+                                            </td>
+                                            
+                                            {/* Recommended Quantity */}
+                                            <td className="py-3 px-4 text-center">
+                                                <span className="badge bg-success text-white fw-bold" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                                                    {item.recommended_order_qty}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan="8" className="text-center py-5">
+                                        <div className="py-4">
+                                            <i className="fas fa-check-circle text-success mb-3" style={{ fontSize: '3rem' }}></i>
+                                            <h5 className="text-success fw-bold mb-2">All Stock Levels Are Healthy</h5>
+                                            <p className="text-muted mb-0">No replenishment needed at this time.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                
+                {/* Footer */}
+                {replenishmentSchedule.schedule && replenishmentSchedule.schedule.length > 0 && (
+                    <div className="border-top py-3 px-4 bg-light">
+                        <div className="row align-items-center">
+                            <div className="col-md-6">
+                                <small className="text-muted">
+                                    <strong>Status Guide:</strong>
+                                    <span className="ms-3">
+                                        <span className="badge bg-danger me-1" style={{ width: '12px', height: '12px', display: 'inline-block' }}></span>
+                                        Critical (≤30%)
+                                    </span>
+                                    <span className="ms-2">
+                                        <span className="badge bg-warning me-1" style={{ width: '12px', height: '12px', display: 'inline-block' }}></span>
+                                        Low (31-60%)
+                                    </span>
+                                    <span className="ms-2">
+                                        <span className="badge bg-success me-1" style={{ width: '12px', height: '12px', display: 'inline-block' }}></span>
+                                        Healthy ({'>'}60%)
+                                    </span>
+                                </small>
+                            </div>
+                            <div className="col-md-6 text-end">
+                                <small className="text-muted">
+                                    Showing <strong>{Math.min(20, replenishmentSchedule.schedule.length)}</strong> of <strong>{replenishmentSchedule.schedule.length}</strong> items
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+
+        {/* Quick Actions Panel */}
+        <div className="card shadow-sm border-info">
+            <div className="card-header bg-info text-white">
+                <h6 className="mb-0 fw-bold">
+                    <i className="fas fa-lightbulb me-2"></i>Quick Actions & Recommendations
+                </h6>
+            </div>
+            <div className="card-body">
+                <div className="row">
+                    <div className="col-md-6">
+                        <h6 className="fw-bold">📋 Action Items:</h6>
+                        <ul className="small mb-0">
+                            <li>Review and approve {replenishmentSchedule.summary.immediate_reorders} immediate reorders</li>
+                            <li>Contact suppliers for {replenishmentSchedule.summary.high_priority} high-priority items</li>
+                            <li>Schedule orders for {replenishmentSchedule.summary.medium_priority} medium-priority materials</li>
+                        </ul>
+                    </div>
+                    <div className="col-md-6">
+                        <h6 className="fw-bold">💡 Best Practices:</h6>
+                        <ul className="small mb-0">
+                            <li>Order materials 1-2 weeks before reorder date</li>
+                            <li>Consider bulk discounts for frequently used items</li>
+                            <li>Maintain safety stock buffer of 20-30%</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    ) : (
+        <div className="alert alert-warning shadow-sm">
+            <div className="d-flex align-items-center">
+                <i className="fas fa-exclamation-triangle me-3" style={{ fontSize: '2rem' }}></i>
+                <div>
+                    <strong>No Replenishment Data Available</strong><br/>
+                    <small>Data is being loaded or unavailable. Please refresh the page.</small>
+                </div>
+            </div>
+        </div>
+    )
+)}
                         
                         {/* Forecast Tab */}
                         {activeTab === "forecast" && (
@@ -1659,56 +2144,189 @@ const Report = () => {
                                                 </div>
                                             </div>
                                             
-                                            {/* Line Chart - Production Trends */}
-                                            <h6 className="fw-bold mb-3">📊 Production Output Trends</h6>
-                                            <ResponsiveContainer width="100%" height={400}>
-                                                <LineChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                                                    <XAxis 
-                                                        dataKey="period" 
-                                                        stroke="#666"
-                                                        angle={-15}
-                                                        textAnchor="end"
-                                                        height={80}
-                                                    />
-                                                    <YAxis stroke="#666" />
-                                                    <Tooltip 
-                                                        contentStyle={{ 
-                                                            backgroundColor: 'rgba(255, 255, 255, 0.98)',
-                                                            border: '2px solid #8b5e34',
-                                                            borderRadius: '8px',
-                                                        }}
-                                                    />
-                                                    <Legend />
-                                                    <Line 
-                                                        data={productionOutput.products.table.output_trend} 
-                                                        type="monotone" 
-                                                        dataKey="output" 
-                                                        stroke="#8b5e34"
-                                                        strokeWidth={3}
-                                                        name="🪑 Dining Table"
-                                                        dot={{ r: 4, fill: '#8b5e34' }}
-                                                    />
-                                                    <Line 
-                                                        data={productionOutput.products.chair.output_trend} 
-                                                        type="monotone" 
-                                                        dataKey="output" 
-                                                        stroke="#d4a574"
-                                                        strokeWidth={3}
-                                                        name="🪑 Wooden Chair"
-                                                        dot={{ r: 4, fill: '#d4a574' }}
-                                                    />
-                                                    <Line 
-                                                        data={productionOutput.products.alkansya.output_trend} 
-                                                        type="monotone" 
-                                                        dataKey="output" 
-                                                        stroke="#17a2b8"
-                                                        strokeWidth={3}
-                                                        name="🐷 Alkansya"
-                                                        dot={{ r: 4, fill: '#17a2b8' }}
-                                                    />
-                                                </LineChart>
-                                            </ResponsiveContainer>
+                                        {/* Line Chart - Production Trends - ENHANCED VERSION */}
+<h6 className="fw-bold mb-3">📊 Production Output Trends</h6>
+<p className="text-muted small mb-3">
+    Comparison of production patterns: Regular manufacturing vs. Made-to-order fulfillment
+</p>
+
+{/* Enhanced Alert with Clear Analytics */}
+<div className="alert alert-info mb-3">
+    <strong>📊 Understanding the Data:</strong>
+    <div className="row mt-2">
+        <div className="col-md-6">
+            <strong className="text-info">🐷 Alkansya (Regular Production)</strong>
+            <ul className="small mb-0 mt-1">
+                <li>Manufactured daily (Mon-Sat)</li>
+                <li>~78 production days over 3 months</li>
+                <li>Output: 25-50 units/day</li>
+                <li><strong>Total: {productionOutput.products.alkansya.totals.total_output} units</strong></li>
+            </ul>
+        </div>
+        <div className="col-md-6">
+            <strong style={{ color: '#8b5e34' }}>🪑 Tables & Chairs (Made-to-Order)</strong>
+            <ul className="small mb-0 mt-1">
+                <li>Produced only when customer orders</li>
+                <li>Sparse data points (not daily)</li>
+                <li>Tables: {productionOutput.products.table.totals.total_output} unit(s)</li>
+                <li>Chairs: {productionOutput.products.chair.totals.total_output} unit(s)</li>
+            </ul>
+        </div>
+    </div>
+    <div className="alert alert-warning mt-2 mb-0 small">
+        <strong>💡 Note:</strong> Tables and Chairs appear as individual points because they're made-to-order products. 
+        Alkansya shows a continuous trend because it's manufactured daily.
+    </div>
+</div>
+
+{/* Summary Cards Before Chart */}
+<div className="row mb-3">
+    <div className="col-md-4">
+        <div className="card border-info">
+            <div className="card-body text-center">
+                <h6 className="text-info mb-1">🐷 Alkansya</h6>
+                <h4 className="mb-0">{productionOutput.products.alkansya.totals.total_output}</h4>
+                <small className="text-muted">units | {productionOutput.products.alkansya.totals.total_productions} production days</small>
+                <div className="mt-2">
+                    <span className="badge bg-info">Regular Production</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div className="col-md-4">
+        <div className="card border-secondary">
+            <div className="card-body text-center">
+                <h6 className="text-secondary mb-1">🪑 Dining Table</h6>
+                <h4 className="mb-0">{productionOutput.products.table.totals.total_output}</h4>
+                <small className="text-muted">unit(s) | {productionOutput.products.table.totals.total_productions} order(s)</small>
+                <div className="mt-2">
+                    <span className="badge bg-secondary">Made-to-Order</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div className="col-md-4">
+        <div className="card border-warning">
+            <div className="card-body text-center">
+                <h6 className="text-warning mb-1">🪑 Wooden Chair</h6>
+                <h4 className="mb-0">{productionOutput.products.chair.totals.total_output}</h4>
+                <small className="text-muted">unit(s) | {productionOutput.products.chair.totals.total_productions} order(s)</small>
+                <div className="mt-2">
+                    <span className="badge bg-warning text-dark">Made-to-Order</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{/* Enhanced Chart */}
+<ResponsiveContainer width="100%" height={400}>
+    <LineChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+        <XAxis 
+            dataKey="period" 
+            stroke="#666"
+            angle={-15}
+            textAnchor="end"
+            height={80}
+        />
+        <YAxis stroke="#666" label={{ value: 'Units Produced', angle: -90, position: 'insideLeft' }} />
+        <Tooltip 
+            contentStyle={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                border: '2px solid #17a2b8',
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}
+            formatter={(value, name) => {
+                if (name.includes('Alkansya')) {
+                    return [`${value} units (Daily Production)`, name];
+                } else {
+                    return [`${value} unit(s) (Customer Order)`, name];
+                }
+            }}
+        />
+        <Legend 
+            wrapperStyle={{ paddingTop: '20px' }}
+            formatter={(value) => {
+                if (value.includes('Alkansya')) return value + ' ⚡ Continuous';
+                if (value.includes('Table')) return value + ' 📦 On-Demand';
+                if (value.includes('Chair')) return value + ' 📦 On-Demand';
+                return value;
+            }}
+        />
+        
+        {/* Alkansya - Daily Production (Continuous Line) */}
+        <Line 
+            data={productionOutput.products.alkansya.output_trend} 
+            type="monotone" 
+            dataKey="output" 
+            stroke="#17a2b8"
+            strokeWidth={2}
+            name="🐷 Alkansya"
+            dot={{ r: 3, fill: '#17a2b8', strokeWidth: 1 }}
+            activeDot={{ r: 6 }}
+        />
+        
+        {/* Dining Table - Made-to-Order (Scatter Points) */}
+        {productionOutput.products.table.output_trend?.length > 3 && (            <Line 
+                data={productionOutput.products.table.output_trend} 
+                type="monotone" 
+                dataKey="output" 
+                stroke="#8b5e34"
+                strokeWidth={0}
+                name="🪑 Dining Table"
+                dot={{ r: 8, fill: '#8b5e34', strokeWidth: 2, stroke: '#fff' }}
+                activeDot={{ r: 10 }}
+                connectNulls={false}
+            />
+        )}
+        
+        {/* Wooden Chair - Made-to-Order (Scatter Points) */}
+        {productionOutput.products.chair.output_trend?.length > 3 && (          <Line 
+                data={productionOutput.products.chair.output_trend} 
+                type="monotone" 
+                dataKey="output" 
+                stroke="#d4a574"
+                strokeWidth={0}
+                name="🪑 Wooden Chair"
+                dot={{ r: 8, fill: '#d4a574', strokeWidth: 2, stroke: '#fff' }}
+                activeDot={{ r: 10 }}
+                connectNulls={false}
+            />
+        )}
+    </LineChart>
+</ResponsiveContainer>
+
+{/* Additional Analytics Below Chart */}
+<div className="row mt-4">
+    <div className="col-md-6">
+        <div className="card bg-light">
+            <div className="card-body">
+                <h6 className="fw-bold text-info">📈 Regular Production Analytics</h6>
+                <p className="small mb-2">Alkansya is manufactured daily with consistent output:</p>
+                <ul className="small mb-0">
+                    <li>Average: <strong>{productionOutput.products.alkansya.totals.avg_per_period} units/day</strong></li>
+                    <li>Efficiency: <strong>{productionOutput.top_performing.find(p => p.product === 'Alkansya')?.efficiency.toFixed(2)}%</strong></li>
+                    <li>Production Days: <strong>{productionOutput.products.alkansya.totals.total_productions} days</strong></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div className="col-md-6">
+        <div className="card bg-light">
+            <div className="card-body">
+                <h6 className="fw-bold text-secondary">📦 Made-to-Order Analytics</h6>
+                <p className="small mb-2">Tables and Chairs are produced only when ordered:</p>
+                <ul className="small mb-0">
+                    <li>Dining Tables: <strong>{productionOutput.products.table.totals.total_productions} order(s)</strong> completed</li>
+                    <li>Wooden Chairs: <strong>{productionOutput.products.chair.totals.total_productions} order(s)</strong> completed</li>
+                    <li>These appear as individual points on the chart</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
                                         </div>
                                     </div>
                                 )}
@@ -2286,6 +2904,45 @@ const Report = () => {
                     </div>
                 )}
             </div>
+                        {/* Sales Analytics Content */}
+                        {mainTab === "sales" && (
+                            <div>
+                                {/* Sales Dashboard Tab */}
+                                {activeTab === "dashboard" && (
+                                    <div className="mb-4" key={`sales-dashboard-${refreshKey}`}>
+                                        <SalesDashboard />
+                                    </div>
+                                )}
+
+                                {/* Sales Process Tab */}
+                                {activeTab === "process" && (
+                                    <div className="mb-4" key={`sales-process-${refreshKey}`}>
+                                        <SalesProcessAnalytics />
+                                    </div>
+                                )}
+
+                                {/* Product Performance Tab */}
+                                {activeTab === "products" && (
+                                    <div className="mb-4" key={`product-performance-${refreshKey}`}>
+                                        <ProductPerformance />
+                                    </div>
+                                )}
+
+                                {/* Detailed Reports Tab */}
+                                {activeTab === "reports" && (
+                                    <div className="mb-4" key={`sales-report-${refreshKey}`}>
+                                        <SalesReport />
+                                    </div>
+                                )}
+
+                                {/* Debug Tab */}
+                                {activeTab === "debug" && (
+                                    <div className="mb-4" key={`sales-debug-${refreshKey}`}>
+                                        <SalesDebug />
+                                    </div>
+                                )}
+                            </div>
+                        )}
         </AppLayout>
     );
 };

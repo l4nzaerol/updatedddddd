@@ -18,7 +18,7 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
      * Comprehensive Inventory Usage Seeder
      * Creates accurate inventory usage data from TWO sources:
      * 1. Customer Orders (Tables, Chairs, Alkansya) - from Production records
-     * 2. Daily Alkansya Production (3 months) - from ProductionAnalytics records
+     * 2. Daily Alkansya Production (3 months, excluding Sundays) - from ProductionAnalytics records
      */
     public function run(): void
     {
@@ -27,10 +27,11 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info('╚════════════════════════════════════════════════════════════╝');
         $this->command->info('');
 
-        // Clear existing inventory usage data
-        $this->command->info('🗑️  Clearing existing inventory usage data...');
+        // Clear existing data
+        $this->command->info('🗑️  Clearing existing data...');
         InventoryUsage::truncate();
-        $this->command->info('✓ Cleared');
+        ProductionAnalytics::truncate();
+        $this->command->info('✓ Cleared inventory usage and production analytics');
         $this->command->info('');
 
         // Part 1: Process Customer Orders
@@ -156,7 +157,8 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
     }
 
     /**
-     * Process daily Alkansya production from analytics
+     * Process daily Alkansya production (3 months, excluding Sundays)
+     * Saves total output to finished goods inventory
      */
     private function processDailyAlkansyaProduction(): array
     {
@@ -192,12 +194,12 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info("📋 Materials in BOM: {$materials->count()}");
         $this->command->info('');
 
-        // Generate 3 months of daily production
+        // Generate EXACTLY 3 months of daily production (excluding Sundays)
         $startDate = Carbon::now()->subMonths(3)->startOfDay();
         $endDate = Carbon::now()->subDay(); // Up to yesterday
         
         $this->command->info("📅 Date Range: {$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')}");
-        $this->command->info('🔄 Generating daily production data (excluding Sundays)...');
+        $this->command->info('🔄 Generating daily production data (NO production on Sundays)...');
         $this->command->info('');
 
         $stats = [
@@ -211,7 +213,7 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $dayCount = 0;
 
         while ($currentDate->lte($endDate)) {
-            // Skip Sundays
+            // Skip Sundays (dayOfWeek === 0)
             if ($currentDate->dayOfWeek === 0) {
                 $currentDate->addDay();
                 continue;
@@ -274,11 +276,28 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
             $currentDate->addDay();
         }
 
+        // Update Alkansya finished goods inventory
+        $this->command->info('');
+        $this->command->info('📦 Updating Finished Goods Inventory...');
+        
+        $alkansyaFinishedGood = InventoryItem::where('sku', 'FG-ALKANSYA')->first();
+        
+        if ($alkansyaFinishedGood) {
+            $alkansyaFinishedGood->update([
+                'quantity_on_hand' => $stats['total_output']
+            ]);
+            $this->command->info("✓ Updated Alkansya finished goods (SKU: FG-ALKANSYA)");
+            $this->command->info("  → Quantity: " . number_format($stats['total_output']) . " units");
+        } else {
+            $this->command->warn('⚠️  Alkansya finished goods item (FG-ALKANSYA) not found in inventory');
+            $this->command->warn('   Please ensure the inventory seeder creates this item');
+        }
+
         // Display summary for this part
         $this->command->info('');
         $this->command->info('─────────────────────────────────────────────────────────');
         $this->command->info('📊 Daily Alkansya Production Summary:');
-        $this->command->info("   • Total days processed: {$stats['total_days']} days");
+        $this->command->info("   • Total days processed: {$stats['total_days']} days (Sundays excluded)");
         $this->command->info("   • Total Alkansya produced: " . number_format($stats['total_output']) . " units");
         $this->command->info("   • Average per day: " . round($stats['total_output'] / max(1, $stats['total_days']), 1) . " units");
         $this->command->info("   • Total usage records created: {$stats['total_usage_records']}");
@@ -289,6 +308,7 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
 
     /**
      * Get daily output based on day of week (realistic patterns)
+     * Sunday = 0 (no production)
      */
     private function getDailyOutput($date): int
     {
@@ -362,15 +382,17 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
             $endDate = Carbon::now()->subDay()->format('Y-m-d');
             $this->command->info('📅 DATA COVERAGE:');
             $this->command->info("   • Date Range: {$startDate} to {$endDate}");
-            $this->command->info("   • Total Days: {$dailyStats['total_days']} days (excluding Sundays)");
+            $this->command->info("   • Total Days: {$dailyStats['total_days']} days (Sundays excluded)");
         }
         $this->command->info('');
 
         // Database verification
         $actualCount = InventoryUsage::count();
+        $actualAnalytics = ProductionAnalytics::count();
         $this->command->info('✅ DATABASE VERIFICATION:');
-        $this->command->info("   • Expected records: " . number_format($totalRecords));
-        $this->command->info("   • Actual records in DB: " . number_format($actualCount));
+        $this->command->info("   • Expected usage records: " . number_format($totalRecords));
+        $this->command->info("   • Actual usage records in DB: " . number_format($actualCount));
+        $this->command->info("   • Production analytics records: " . number_format($actualAnalytics));
         
         if ($actualCount === $totalRecords) {
             $this->command->info('   • Status: ✓ MATCH - All records created successfully!');
@@ -382,9 +404,14 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info('╔════════════════════════════════════════════════════════════╗');
         $this->command->info('║  ✓ INVENTORY USAGE SEEDING COMPLETE!                      ║');
         $this->command->info('║                                                            ║');
-        $this->command->info('║  You can now view Material Usage reports in:              ║');
+        $this->command->info('║  ✓ Alkansya finished goods updated in inventory           ║');
+        $this->command->info('║  ✓ 3 months of daily production data created              ║');
+        $this->command->info('║  ✓ Sundays excluded (no production)                       ║');
+        $this->command->info('║                                                            ║');
+        $this->command->info('║  You can now view data in:                                ║');
+        $this->command->info('║  • Admin Dashboard → Daily Output                         ║');
         $this->command->info('║  • Inventory → Material Usage tab                         ║');
-        $this->command->info('║  • Production → Resource Utilization tab                  ║');
+        $this->command->info('║  • Production → Output Analytics                          ║');
         $this->command->info('╚════════════════════════════════════════════════════════════╝');
     }
 }

@@ -276,7 +276,7 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Calculate dates
         $productionStartedAt = $isAccepted ? now()->subDays($daysAgoAccepted) : null;
         $estimatedCompletion = $isAccepted ? $productionStartedAt->copy()->addDays($totalProductionDays) : null;
-        $actualCompletion = ($isAccepted && ($progress >= 100 || $isAlkansyaReady)) ? now() : null;
+        $actualCompletion = ($isAccepted && ($progress >= 100 || $isAlkansyaReady)) ? $productionStartedAt->copy()->addDays($totalProductionDays): null;
 
         // Create production if accepted
         $production = null;

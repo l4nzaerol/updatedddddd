@@ -40,6 +40,8 @@ class AdvancedAnalyticsController extends Controller
         // Get Alkansya from ProductionAnalytics
         $alkansyaProductions = ProductionAnalytics::whereBetween('date', [$startDate, $endDate])
             ->get();
+        // Get ALL Alkansya production for accurate total (matching dashboard/inventory)
+        $allAlkansyaProductions = ProductionAnalytics::all();    
 
         // Aggregate by timeframe
         $tableOutput = $this->aggregateByTimeframe($tableProductions, 'actual_completion_date', $timeframe);
@@ -60,14 +62,14 @@ class AdvancedAnalyticsController extends Controller
         ];
 
         $alkansyaTotals = [
-            'total_output' => $alkansyaProductions->sum('actual_output'),
-            'total_productions' => $alkansyaProductions->count(),
+            'total_output' => $allAlkansyaProductions->sum('actual_output'),  // Changed from $alkansyaProductions
+            'total_productions' => $allAlkansyaProductions->count(),  // Changed from $alkansyaProductions
             'avg_per_period' => $alkansyaOutput->isNotEmpty() ? round($alkansyaProductions->sum('actual_output') / $alkansyaOutput->count(), 2) : 0,
         ];
 
         // Top performing products
         $topPerforming = [
-            ['product' => 'Alkansya', 'output' => $alkansyaTotals['total_output'], 'efficiency' => $alkansyaProductions->avg('efficiency_percentage') ?? 0],
+            ['product' => 'Alkansya', 'output' => $alkansyaTotals['total_output'], 'efficiency' => $allAlkansyaProductions->avg('efficiency_percentage') ?? 0],
             ['product' => 'Dining Table', 'output' => $tableTotals['total_output'], 'efficiency' => $this->calculateEfficiency($tableProductions)],
             ['product' => 'Wooden Chair', 'output' => $chairTotals['total_output'], 'efficiency' => $this->calculateEfficiency($chairProductions)],
         ];

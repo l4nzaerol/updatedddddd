@@ -19,6 +19,7 @@ use App\Http\Controllers\ProductionTrackingController;
 use App\Http\Controllers\OrderAcceptanceController;
 use App\Http\Controllers\PriceCalculatorController;
 use App\Http\Controllers\StaffController;
+use App\Http\Controllers\SalesAnalyticsController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,13 @@ Route::get('/analytics/production-performance', [\App\Http\Controllers\AdvancedA
 Route::get('/analytics/predictive', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getPredictiveAnalytics']);
 Route::get('/analytics/material-usage-trends', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getMaterialUsageTrends']);
 Route::get('/analytics/automated-stock-report', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getAutomatedStockReport']);
+
+// Sales Analytics Routes
+Route::get('/analytics/sales-dashboard', [SalesAnalyticsController::class, 'getSalesDashboard']);
+Route::get('/analytics/sales-report', [SalesAnalyticsController::class, 'getSalesReport']);
+Route::get('/analytics/sales-process', [SalesAnalyticsController::class, 'getSalesProcessAnalytics']);
+Route::get('/analytics/product-performance', [SalesAnalyticsController::class, 'getProductPerformance']);
+Route::get('/analytics/sales-export', [SalesAnalyticsController::class, 'exportSalesData']);
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);

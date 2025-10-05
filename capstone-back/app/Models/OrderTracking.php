@@ -87,6 +87,9 @@ class OrderTracking extends Model
             ->first();
         
         if ($production) {
+            // Force update the production stage from processes first
+            $this->updateProductionStageFromProcesses($production);
+            
             // Use the actual current stage from production (set by admin when completing processes)
             $this->current_stage = $production->current_stage;
             $this->status = $production->status === 'Completed' ? 'completed' : 
@@ -98,5 +101,60 @@ class OrderTracking extends Model
             }
         }
         // If no production exists, don't change anything - keep current stage as is
+    }
+    
+    /**
+     * Update production stage and status based on current processes
+     * This is a copy of the method from ProductionController to ensure consistency
+     */
+    private function updateProductionStageFromProcesses($production)
+    {
+        $processes = $production->processes()->orderBy('process_order')->get();
+        
+        if ($processes->isEmpty()) {
+            return;
+        }
+
+        // Find current in-progress process
+        $currentProcess = $processes->firstWhere('status', 'in_progress');
+        
+        if ($currentProcess) {
+            // If there's a process in progress, that's the current stage
+            $production->current_stage = $currentProcess->process_name;
+            $production->status = 'In Progress';
+        } else {
+            // Check if all completed
+            $completedCount = $processes->where('status', 'completed')->count();
+            
+            if ($completedCount === $processes->count()) {
+                // All processes completed - production is done
+                $production->current_stage = 'Completed';
+                $production->status = 'Completed';
+                $production->overall_progress = 100;
+                $production->actual_completion_date = now();
+            } else {
+                // Find the next process that should be started
+                // Look for the first process that's not completed
+                $nextProcess = $processes->where('status', '!=', 'completed')->first();
+                if ($nextProcess) {
+                    $production->current_stage = $nextProcess->process_name;
+                    $production->status = 'In Progress';
+                } else {
+                    // Fallback: find next pending process
+                    $nextProcess = $processes->where('status', 'pending')->first();
+                    if ($nextProcess) {
+                        $production->current_stage = $nextProcess->process_name;
+                        $production->status = 'Pending';
+                    }
+                }
+            }
+        }
+
+        // Calculate overall progress
+        $completedCount = $processes->where('status', 'completed')->count();
+        $totalCount = $processes->count();
+        $production->overall_progress = ($completedCount / $totalCount) * 100;
+
+        $production->save();
     }
 }
