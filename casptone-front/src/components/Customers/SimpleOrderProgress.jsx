@@ -99,7 +99,9 @@ const SimpleOrderProgress = () => {
       return {
         status: order.status,
         progress: order.status === 'completed' ? 100 : 0,
-        message: order.status === 'completed' ? 'Order completed' : 'Order processing'
+        message: order.status === 'completed' ? 'Order completed' : 
+                 order.status === 'pending' ? 'Awaiting acceptance - Production tracking will be available once your order is accepted' :
+                 'Order processing - Production tracking will be available soon'
       };
     }
 
@@ -217,15 +219,24 @@ const SimpleOrderProgress = () => {
                               <div className="me-3">
                                 {orderStatus.status === 'in_progress' ? (
                                   <FaSpinner className="text-primary fa-spin" style={{ fontSize: '1.5rem' }} />
+                                ) : !order.tracking || !order.tracking.overall ? (
+                                  <FaClock className="text-warning" style={{ fontSize: '1.5rem' }} />
                                 ) : (
                                   getStageIcon(currentStage.stage)
                                 )}
                               </div>
                               <div>
-                                <h5 className="mb-1">Currently: {currentStage.stage}</h5>
+                                <h5 className="mb-1">
+                                  {!order.tracking || !order.tracking.overall ? 
+                                    'Awaiting Production Start' : 
+                                    `Currently: ${currentStage.stage}`
+                                  }
+                                </h5>
                                 <p className="text-muted mb-0">
-                                  {order.tracking?.overall?.eta && (
+                                  {order.tracking?.overall?.eta ? (
                                     <>Estimated completion: {order.tracking.overall.eta}</>
+                                  ) : (
+                                    <>Production tracking will be available once your order is accepted by our team</>
                                   )}
                                 </p>
                               </div>

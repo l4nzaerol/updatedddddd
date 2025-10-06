@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
 } from "recharts";
 import { useNavigate } from "react-router-dom";
+import "./InventoryReportsDashboard.css";
 
 /**
  * Comprehensive Inventory Reports Dashboard
@@ -513,87 +514,245 @@ export default function InventoryReportsDashboard() {
             </div>
           )}
 
-          {/* Material Forecast Tab */}
+          {/* Enhanced Material Forecast Tab */}
           {activeTab === "forecast" && forecastReport && (
             <div>
-              <div className="card mb-4">
-                <div className="card-header d-flex justify-content-between align-items-center">
-                  <h5 className="mb-0">Material Usage Forecast ({forecastReport.forecast_period_days} days ahead)</h5>
-                  <div className="d-flex gap-2 align-items-center">
-                    <label className="mb-0">Forecast Days:</label>
-                    <input 
-                      type="number" 
-                      className="form-control form-control-sm" 
-                      style={{ width: 80 }} 
-                      value={forecastDays} 
-                      onChange={(e) => setForecastDays(Number(e.target.value) || 30)} 
-                    />
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
-                      Export CSV
-                    </button>
+              {/* Enhanced Header with Analytics */}
+              <div className="card mb-4 border-0 shadow-sm">
+                <div className="card-header bg-gradient-primary text-white">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h4 className="mb-1">🔮 Advanced Material Forecasting</h4>
+                      <p className="mb-0 opacity-75">Predictive analytics for inventory planning ({forecastReport.forecast_period_days} days ahead)</p>
+                    </div>
+                    <div className="d-flex gap-2 align-items-center">
+                      <div className="d-flex align-items-center gap-2">
+                        <label className="mb-0 text-white">Forecast Period:</label>
+                        <select 
+                          className="form-select form-select-sm" 
+                          style={{ width: 120 }} 
+                          value={forecastDays} 
+                          onChange={(e) => setForecastDays(Number(e.target.value))}
+                        >
+                          <option value={7}>7 days</option>
+                          <option value={14}>14 days</option>
+                          <option value={30}>30 days</option>
+                          <option value={60}>60 days</option>
+                          <option value={90}>90 days</option>
+                        </select>
+                      </div>
+                      <button className="btn btn-light btn-sm" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
+                        📊 Export Data
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="card-body">
-                  <div className="row mb-3">
-                    <div className="col-md-4">
-                      <div className="text-muted small">Items Will Need Reorder</div>
-                      <div className="h4 text-danger">{forecastReport.summary.items_will_need_reorder}</div>
+                
+                <div className="card-body p-4">
+                  {/* Enhanced Analytics Dashboard */}
+                  <div className="row g-4 mb-4">
+                    <div className="col-lg-3 col-md-6">
+                      <div className="card border-0 bg-danger bg-opacity-10 analytics-card fade-in">
+                        <div className="card-body text-center">
+                          <div className="display-6 text-danger mb-2">⚠️</div>
+                          <h3 className="text-danger mb-1 metric-value">{forecastReport.summary.items_will_need_reorder}</h3>
+                          <p className="text-muted mb-0 metric-label">Items Need Reorder</p>
+                          <small className="text-danger">Critical for operations</small>
+                        </div>
+                      </div>
                     </div>
-                    <div className="col-md-4">
-                      <div className="text-muted small">Total Forecasted Usage</div>
-                      <div className="h4">{forecastReport.summary.total_forecasted_usage}</div>
+                    
+                    <div className="col-lg-3 col-md-6">
+                      <div className="card border-0 bg-warning bg-opacity-10 analytics-card slide-in-left">
+                        <div className="card-body text-center">
+                          <div className="display-6 text-warning mb-2">⏰</div>
+                          <h3 className="text-warning mb-1 metric-value">{forecastReport.summary.items_critical}</h3>
+                          <p className="text-muted mb-0 metric-label">Critical Items</p>
+                          <small className="text-warning">&lt; 7 days stockout risk</small>
+                        </div>
+                      </div>
                     </div>
-                    <div className="col-md-4">
-                      <div className="text-muted small">Critical Items (&lt; 7 days)</div>
-                      <div className="h4 text-warning">{forecastReport.summary.items_critical}</div>
+                    
+                    <div className="col-lg-3 col-md-6">
+                      <div className="card border-0 bg-info bg-opacity-10 analytics-card slide-in-right">
+                        <div className="card-body text-center">
+                          <div className="display-6 text-info mb-2">📈</div>
+                          <h3 className="text-info mb-1 metric-value">{forecastReport.summary.total_forecasted_usage.toLocaleString()}</h3>
+                          <p className="text-muted mb-0 metric-label">Total Forecasted Usage</p>
+                          <small className="text-info">Units to be consumed</small>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="col-lg-3 col-md-6">
+                      <div className="card border-0 bg-success bg-opacity-10 analytics-card fade-in">
+                        <div className="card-body text-center">
+                          <div className="display-6 text-success mb-2">✅</div>
+                          <h3 className="text-success mb-1 metric-value">
+                            {forecastReport.forecasts.filter(f => !f.will_need_reorder).length}
+                          </h3>
+                          <p className="text-muted mb-0 metric-label">Items Safe</p>
+                          <small className="text-success">No immediate reorder needed</small>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Forecast Chart */}
-                  <div className="mb-4">
-                    <h6>Projected Stock Levels (Items Needing Reorder)</h6>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={forecastReport.forecasts.filter(f => f.will_need_reorder).slice(0, 15)}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="sku" angle={-45} textAnchor="end" height={100} />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="current_stock" fill="#82ca9d" name="Current Stock" />
-                        <Bar dataKey="projected_stock" fill="#ff7c7c" name="Projected Stock" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* Enhanced Charts Section */}
+                  <div className="row g-4 mb-4">
+                    {/* Stock Level Forecast Chart */}
+                    <div className="col-lg-8">
+                      <div className="card border-0 shadow-sm chart-container">
+                        <div className="card-header bg-light">
+                          <h6 className="mb-0 forecast-title">📊 Stock Level Projections</h6>
+                          <small className="text-muted">Current vs Projected stock levels for items needing reorder</small>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={350}>
+                            <BarChart data={forecastReport.forecasts.filter(f => f.will_need_reorder).slice(0, 12)}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                              <XAxis 
+                                dataKey="sku" 
+                                angle={-45} 
+                                textAnchor="end" 
+                                height={80}
+                                fontSize={12}
+                                tick={{ fill: '#666' }}
+                              />
+                              <YAxis 
+                                fontSize={12}
+                                tick={{ fill: '#666' }}
+                              />
+                              <Tooltip 
+                                contentStyle={{
+                                  backgroundColor: '#fff',
+                                  border: '1px solid #ccc',
+                                  borderRadius: '8px',
+                                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                }}
+                              />
+                              <Legend />
+                              <Bar dataKey="current_stock" fill="#28a745" name="Current Stock" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="projected_stock" fill="#dc3545" name="Projected Stock" radius={[2, 2, 0, 0]} />
+                              <Bar dataKey="reorder_point" fill="#ffc107" name="Reorder Point" radius={[2, 2, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Risk Assessment Pie Chart */}
+                    <div className="col-lg-4">
+                      <div className="card border-0 shadow-sm chart-container">
+                        <div className="card-header bg-light">
+                          <h6 className="mb-0 forecast-title">🎯 Risk Assessment</h6>
+                          <small className="text-muted">Inventory risk distribution</small>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { name: 'Critical Risk', value: forecastReport.summary.items_critical, fill: '#dc3545' },
+                                  { name: 'Medium Risk', value: forecastReport.summary.items_will_need_reorder - forecastReport.summary.items_critical, fill: '#ffc107' },
+                                  { name: 'Low Risk', value: forecastReport.forecasts.filter(f => !f.will_need_reorder).length, fill: '#28a745' }
+                                ]}
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                dataKey="value"
+                                label={({ name, value }) => `${name}: ${value}`}
+                              >
+                                {[0, 1, 2].map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={['#dc3545', '#ffc107', '#28a745'][index]} />
+                                ))}
+                              </Pie>
+                              <Tooltip />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="table-responsive">
-                    <table className="table table-sm table-hover">
-                      <thead>
-                        <tr>
-                          <th>SKU</th>
-                          <th>Name</th>
-                          <th className="text-end">Current Stock</th>
-                          <th className="text-end">Avg Daily Usage</th>
-                          <th className="text-end">Forecasted Usage</th>
-                          <th className="text-end">Projected Stock</th>
-                          <th className="text-end">Days Until Stockout</th>
-                          <th className="text-end">Recommended Order Qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {forecastReport.forecasts.map((item, idx) => (
-                          <tr key={idx} className={item.will_need_reorder ? 'table-warning' : ''}>
-                            <td className="fw-semibold">{item.sku}</td>
-                            <td>{item.name}</td>
-                            <td className="text-end">{item.current_stock}</td>
-                            <td className="text-end">{item.avg_daily_usage}</td>
-                            <td className="text-end">{item[`forecasted_usage_${forecastDays}_days`]}</td>
-                            <td className="text-end">{item.projected_stock}</td>
-                            <td className="text-end">{item.days_until_stockout}</td>
-                            <td className="text-end fw-bold">{item.recommended_order_qty}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  {/* Enhanced Data Table */}
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-header bg-light d-flex justify-content-between align-items-center">
+                      <div>
+                        <h6 className="mb-0 forecast-title">📋 Detailed Forecast Analysis</h6>
+                        <small className="text-muted">Comprehensive forecasting data with actionable insights</small>
+                      </div>
+                      <div className="d-flex gap-2">
+                        <button className="btn btn-sm btn-outline-primary btn-enhanced">
+                          🔍 Filter Critical
+                        </button>
+                        <button className="btn btn-sm btn-outline-success btn-enhanced">
+                          📋 Generate Orders
+                        </button>
+                      </div>
+                    </div>
+                    <div className="card-body p-0">
+                      <div className="table-responsive">
+                        <table className="table table-hover mb-0 table-enhanced">
+                          <thead className="table-light">
+                            <tr>
+                              <th className="border-0">📦 SKU</th>
+                              <th className="border-0">📝 Material</th>
+                              <th className="border-0 text-end">📊 Current</th>
+                              <th className="border-0 text-end">📈 Daily Avg</th>
+                              <th className="border-0 text-end">🔮 Forecasted</th>
+                              <th className="border-0 text-end">📉 Projected</th>
+                              <th className="border-0 text-end">⏰ Days Left</th>
+                              <th className="border-0 text-end">🛒 Order Qty</th>
+                              <th className="border-0 text-center">⚠️ Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {forecastReport.forecasts.map((item, idx) => {
+                              const isCritical = item.days_until_stockout < 7;
+                              const needsReorder = item.will_need_reorder;
+                              const statusColor = isCritical ? 'danger' : needsReorder ? 'warning' : 'success';
+                              const statusIcon = isCritical ? '🚨' : needsReorder ? '⚠️' : '✅';
+                              
+                              return (
+                                <tr key={idx} className={`${isCritical ? 'table-danger' : needsReorder ? 'table-warning' : ''}`}>
+                                  <td className="fw-bold">{item.sku}</td>
+                                  <td>
+                                    <div className="d-flex align-items-center">
+                                      <span className="me-2">{item.name}</span>
+                                      {isCritical && <span className="badge bg-danger">CRITICAL</span>}
+                                    </div>
+                                  </td>
+                                  <td className="text-end fw-bold">{item.current_stock}</td>
+                                  <td className="text-end">{item.avg_daily_usage}</td>
+                                  <td className="text-end">{item[`forecasted_usage_${forecastDays}_days`]}</td>
+                                  <td className="text-end">
+                                    <span className={`fw-bold ${item.projected_stock < 0 ? 'text-danger' : 'text-warning'}`}>
+                                      {item.projected_stock}
+                                    </span>
+                                  </td>
+                                  <td className="text-end">
+                                    <span className={`badge bg-${statusColor} ${isCritical ? 'pulse' : ''}`}>
+                                      {item.days_until_stockout} days
+                                    </span>
+                                  </td>
+                                  <td className="text-end">
+                                    {item.recommended_order_qty > 0 && (
+                                      <span className="badge bg-primary">
+                                        {item.recommended_order_qty}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="text-center">
+                                    <span className="fs-5">{statusIcon}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,54 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
-  ScatterChart, Scatter, ComposedChart
+  ScatterChart, Scatter
 } from 'recharts';
 import api from '../../../api/client';
-import { deduplicateRequest, forceRefresh, clearRequestCache } from '../../../utils/apiRetry';
 
-const ProductPerformance = () => {
-  const [performanceData, setPerformanceData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
-  });
+const ProductPerformance = ({ performanceData, loading, error, onRefresh }) => {
+  // Removed unused dateRange state since we use pre-loaded data
 
-  useEffect(() => {
-    fetchPerformanceData();
-  }, [dateRange]);
+  // Use props data if available, otherwise fetch
+  const [localPerformanceData, setLocalPerformanceData] = useState(performanceData);
+  const [localLoading, setLocalLoading] = useState(loading);
+  const [localError, setLocalError] = useState(error);
 
-  const fetchPerformanceData = async (force = false) => {
-    setLoading(true);
-    setError('');
+  const fetchPerformanceData = useCallback(async (force = false) => {
+    setLocalLoading(true);
+    setLocalError('');
     try {
       // Always fetch fresh data with timestamp to prevent caching
       const timestamp = Date.now();
       const response = await api.get('/analytics/product-performance', {
         params: {
-          start_date: dateRange.start,
-          end_date: dateRange.end,
+          start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
           _t: timestamp, // Add timestamp to prevent caching
           _force: 'true' // Force fresh data
         }
       });
-      setPerformanceData(response.data);
+      setLocalPerformanceData(response.data);
       console.log('Product Performance - Fresh data loaded:', response.data);
       console.log('Product Performance - Total products from API:', response.data.product_performance?.length);
     } catch (err) {
-      setError('Failed to load product performance data');
+      setLocalError('Failed to load product performance data');
       console.error('Product performance data error:', err);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
-  };
+  }, []);
 
-  const handleRefresh = () => {
-    clearRequestCache();
-    fetchPerformanceData(true);
-  };
+  useEffect(() => {
+    if (performanceData) {
+      setLocalPerformanceData(performanceData);
+      setLocalLoading(false);
+      setLocalError('');
+    } else {
+      fetchPerformanceData();
+    }
+  }, [performanceData, fetchPerformanceData]);
+
+  // Removed unused handleRefresh function since we use onRefresh prop
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-PH', {
@@ -61,7 +62,7 @@ const ProductPerformance = () => {
     return new Intl.NumberFormat('en-PH').format(num);
   };
 
-  if (loading) {
+  if (localLoading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -71,28 +72,31 @@ const ProductPerformance = () => {
     );
   }
 
-  if (error) {
+  if (localError) {
     return (
       <div className="alert alert-danger">
         <h4>Error Loading Product Performance Data</h4>
-        <p>{error}</p>
-        <button className="btn btn-primary" onClick={fetchPerformanceData}>
+        <p>{localError}</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchPerformanceData}>
           Retry
         </button>
       </div>
     );
   }
 
-  if (!performanceData) {
+  if (!localPerformanceData) {
     return (
       <div className="alert alert-info">
         <h4>No Product Performance Data Available</h4>
         <p>No product performance data found for the selected date range.</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchPerformanceData}>
+          Refresh Data
+        </button>
       </div>
     );
   }
 
-  const { product_performance, category_analysis } = performanceData;
+  const { product_performance, category_analysis } = localPerformanceData;
 
   // Prepare data for charts
   const topProductsChart = product_performance.slice(0, 10).map(product => ({
@@ -113,79 +117,46 @@ const ProductPerformance = () => {
 
   return (
     <div className="product-performance">
-      {/* Header Controls */}
-      <div className="row mb-4">
-        <div className="col-md-6">
-          <h2 className="text-primary mb-3">
-            <i className="fas fa-chart-bar me-2"></i>
-            Product Performance Analytics
-          </h2>
-        </div>
-        <div className="col-md-6">
-          <div className="d-flex gap-2 justify-content-end">
-            <button 
-              className="btn btn-outline-primary"
-              onClick={handleRefresh}
-              disabled={loading}
-              title="Refresh data"
-            >
-              <i className="fas fa-sync-alt"></i>
-            </button>
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-          </div>
-        </div>
-      </div>
+      {/* Header */}
+      
 
-      {/* Summary Cards */}
-      <div className="row mb-4">
+      {/* Summary Cards - Production Style */}
+      <div className="row g-3 mb-4">
         <div className="col-md-3">
-          <div className="card bg-primary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(product_performance.length)}</h3>
-              <p className="card-text">Products Sold</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Products Sold</div>
+              <div className="h3 mb-0 text-primary">{formatNumber(product_performance.length)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-success text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Revenue</div>
+              <div className="h3 mb-0 text-success">
                 {formatCurrency(product_performance.reduce((sum, p) => sum + parseFloat(p.total_revenue), 0))}
-              </h3>
-              <p className="card-text">Total Revenue</p>
+              </div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-info text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #17a2b8' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Units Sold</div>
+              <div className="h3 mb-0 text-info">
                 {formatNumber(product_performance.reduce((sum, p) => sum + parseInt(p.total_sold), 0))}
-              </h3>
-              <p className="card-text">Total Units Sold</p>
+              </div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-warning text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Categories</div>
+              <div className="h3 mb-0 text-warning">
                 {formatNumber(category_analysis.length)}
-              </h3>
-              <p className="card-text">Categories</p>
+              </div>
             </div>
           </div>
         </div>

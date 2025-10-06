@@ -1,55 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
   AreaChart, Area
 } from 'recharts';
 import api from '../../../api/client';
-import { deduplicateRequest, forceRefresh, clearRequestCache } from '../../../utils/apiRetry';
+import { clearRequestCache } from '../../../utils/apiRetry';
 
-const SalesDashboard = () => {
-  const [salesData, setSalesData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [timeframe, setTimeframe] = useState('daily');
-  const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
-  });
+const SalesDashboard = ({ salesData, loading, error, onRefresh }) => {
+  // Removed unused timeframe and dateRange state since we use pre-loaded data
 
-  useEffect(() => {
-    fetchSalesData();
-  }, [timeframe, dateRange]);
+  // Use props data if available, otherwise fetch
+  const [localSalesData, setLocalSalesData] = useState(salesData);
+  const [localLoading, setLocalLoading] = useState(loading);
+  const [localError, setLocalError] = useState(error);
 
-  const fetchSalesData = async (force = false) => {
-    setLoading(true);
-    setError('');
+  const fetchSalesData = useCallback(async (force = false) => {
+    setLocalLoading(true);
+    setLocalError('');
     try {
       // Always fetch fresh data with timestamp to prevent caching
       const timestamp = Date.now();
       const response = await api.get('/analytics/sales-dashboard', {
         params: {
-          start_date: dateRange.start,
-          end_date: dateRange.end,
-          timeframe: timeframe,
+          start_date: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
+          timeframe: 'daily',
           _t: timestamp, // Add timestamp to prevent caching
           _force: 'true' // Force fresh data
         }
       });
-      setSalesData(response.data);
+      setLocalSalesData(response.data);
       console.log('Sales Dashboard - Fresh data loaded:', response.data);
       console.log('Sales Dashboard - Total orders from API:', response.data.overview?.total_orders);
     } catch (err) {
-      setError('Failed to load sales data');
+      setLocalError('Failed to load sales data');
       console.error('Sales data error:', err);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (salesData) {
+      setLocalSalesData(salesData);
+      setLocalLoading(false);
+      setLocalError('');
+    } else {
+      fetchSalesData();
+    }
+  }, [salesData, fetchSalesData]);
 
   const handleRefresh = () => {
-    clearRequestCache();
-    fetchSalesData(true);
+    if (onRefresh) {
+      onRefresh();
+    } else {
+      clearRequestCache();
+      fetchSalesData(true);
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -63,7 +71,7 @@ const SalesDashboard = () => {
     return new Intl.NumberFormat('en-PH').format(num);
   };
 
-  if (loading) {
+  if (localLoading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -73,124 +81,82 @@ const SalesDashboard = () => {
     );
   }
 
-  if (error) {
+  if (localError) {
     return (
       <div className="alert alert-danger">
         <h4>Error Loading Sales Data</h4>
-        <p>{error}</p>
-        <button className="btn btn-primary" onClick={fetchSalesData}>
+        <p>{localError}</p>
+        <button className="btn btn-primary" onClick={handleRefresh}>
           Retry
         </button>
       </div>
     );
   }
 
-  if (!salesData) {
+  if (!localSalesData) {
     return (
       <div className="alert alert-info">
         <h4>No Sales Data Available</h4>
         <p>No sales data found for the selected date range.</p>
+        <button className="btn btn-primary" onClick={handleRefresh}>
+          Refresh Data
+        </button>
       </div>
     );
   }
 
-  const { overview, revenue_trends, top_products, sales_by_status, payment_method_analysis, customer_analysis, monthly_comparison } = salesData;
+  const { overview, revenue_trends, top_products, sales_by_status, payment_method_analysis, customer_analysis, monthly_comparison } = localSalesData;
 
   return (
     <div className="sales-dashboard">
-      {/* Header Controls */}
-      <div className="row mb-4">
-        <div className="col-md-6">
-          <h2 className="text-primary mb-3">
-            <i className="fas fa-chart-line me-2"></i>
-            Sales Dashboard
-          </h2>
-        </div>
-        <div className="col-md-6">
-          <div className="d-flex gap-2 justify-content-end">
-            <button 
-              className="btn btn-outline-primary"
-              onClick={handleRefresh}
-              disabled={loading}
-              title="Refresh data"
-            >
-              <i className="fas fa-sync-alt"></i>
-            </button>
-            <select 
-              className="form-select" 
-              value={timeframe} 
-              onChange={(e) => setTimeframe(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Overview Cards */}
-      <div className="row mb-4">
+    
+      {/* Overview Cards - Production Style */}
+      <div className="row g-3 mb-4">
         <div className="col-md-2">
-          <div className="card bg-primary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatCurrency(parseFloat(overview.total_revenue))}</h3>
-              <p className="card-text">Total Revenue</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Revenue</div>
+              <div className="h3 mb-0 text-primary">{formatCurrency(parseFloat(overview.total_revenue))}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-success text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(overview.total_orders)}</h3>
-              <p className="card-text">Total Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Orders</div>
+              <div className="h3 mb-0 text-success">{formatNumber(overview.total_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-info text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(overview.paid_orders)}</h3>
-              <p className="card-text">Paid Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #17a2b8' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Paid Orders</div>
+              <div className="h3 mb-0 text-info">{formatNumber(overview.paid_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-warning text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(overview.pending_orders)}</h3>
-              <p className="card-text">Pending Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Pending Orders</div>
+              <div className="h3 mb-0 text-warning">{formatNumber(overview.pending_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-secondary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatCurrency(parseFloat(overview.average_order_value))}</h3>
-              <p className="card-text">Avg Order Value</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #6c757d' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Avg Order Value</div>
+              <div className="h3 mb-0 text-secondary">{formatCurrency(parseFloat(overview.average_order_value))}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-dark text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{overview.conversion_rate}%</h3>
-              <p className="card-text">Conversion Rate</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #343a40' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Conversion Rate</div>
+              <div className="h3 mb-0 text-dark">{overview.conversion_rate}%</div>
             </div>
           </div>
         </div>

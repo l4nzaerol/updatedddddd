@@ -6,21 +6,29 @@ import {
 } from 'recharts';
 import api from '../../../api/client';
 
-const SalesProcessAnalytics = () => {
-  const [processData, setProcessData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+const SalesProcessAnalytics = ({ processData, loading, error, onRefresh }) => {
   const [dateRange, setDateRange] = useState({
     start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
 
+  // Use props data if available, otherwise fetch
+  const [localProcessData, setLocalProcessData] = useState(processData);
+  const [localLoading, setLocalLoading] = useState(loading);
+  const [localError, setLocalError] = useState(error);
+
   useEffect(() => {
-    fetchProcessData();
-  }, [dateRange]);
+    if (processData) {
+      setLocalProcessData(processData);
+      setLocalLoading(false);
+      setLocalError('');
+    } else {
+      fetchProcessData();
+    }
+  }, [processData]);
 
   const fetchProcessData = async () => {
-    setLoading(true);
+    setLocalLoading(true);
     try {
       const timestamp = Date.now();
       const response = await api.get('/analytics/sales-process', {
@@ -31,13 +39,13 @@ const SalesProcessAnalytics = () => {
           _force: 'true' // Force fresh data
         }
       });
-      setProcessData(response.data);
+      setLocalProcessData(response.data);
       console.log('Sales Process - Fresh data loaded:', response.data);
     } catch (err) {
-      setError('Failed to load sales process data');
+      setLocalError('Failed to load sales process data');
       console.error('Sales process data error:', err);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -59,7 +67,7 @@ const SalesProcessAnalytics = () => {
     return `${Math.round(days)} days`;
   };
 
-  if (loading) {
+  if (localLoading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -69,28 +77,31 @@ const SalesProcessAnalytics = () => {
     );
   }
 
-  if (error) {
+  if (localError) {
     return (
       <div className="alert alert-danger">
         <h4>Error Loading Sales Process Data</h4>
-        <p>{error}</p>
-        <button className="btn btn-primary" onClick={fetchProcessData}>
+        <p>{localError}</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchProcessData}>
           Retry
         </button>
       </div>
     );
   }
 
-  if (!processData) {
+  if (!localProcessData) {
     return (
       <div className="alert alert-info">
         <h4>No Sales Process Data Available</h4>
         <p>No sales process data found for the selected date range.</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchProcessData}>
+          Refresh Data
+        </button>
       </div>
     );
   }
 
-  const { order_funnel, payment_funnel, time_to_payment, completion_time } = processData;
+  const { order_funnel, payment_funnel, time_to_payment, completion_time } = localProcessData;
 
   // Prepare funnel data for visualization
   const orderFunnelData = [
@@ -109,65 +120,39 @@ const SalesProcessAnalytics = () => {
 
   return (
     <div className="sales-process-analytics">
-      {/* Header Controls */}
-      <div className="row mb-4">
-        <div className="col-md-6">
-          <h2 className="text-primary mb-3">
-            <i className="fas fa-sitemap me-2"></i>
-            Sales Process Analytics
-          </h2>
-        </div>
-        <div className="col-md-6">
-          <div className="d-flex gap-2 justify-content-end">
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-            <input
-              type="date"
-              className="form-control"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-          </div>
-        </div>
-      </div>
+      {/* Header */}
 
-      {/* Key Metrics */}
-      <div className="row mb-4">
+      {/* Key Metrics - Production Style */}
+      <div className="row g-3 mb-4">
         <div className="col-md-3">
-          <div className="card bg-primary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(order_funnel.total_orders)}</h3>
-              <p className="card-text">Total Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Orders</div>
+              <div className="h3 mb-0 text-primary">{formatNumber(order_funnel.total_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-success text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(payment_funnel.paid_orders)}</h3>
-              <p className="card-text">Paid Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Paid Orders</div>
+              <div className="h3 mb-0 text-success">{formatNumber(payment_funnel.paid_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-info text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatHours(time_to_payment)}</h3>
-              <p className="card-text">Avg Time to Payment</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #17a2b8' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Avg Time to Payment</div>
+              <div className="h3 mb-0 text-info">{formatHours(time_to_payment)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-3">
-          <div className="card bg-warning text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatDays(completion_time)}</h3>
-              <p className="card-text">Avg Completion Time</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Avg Completion Time</div>
+              <div className="h3 mb-0 text-warning">{formatDays(completion_time)}</div>
             </div>
           </div>
         </div>

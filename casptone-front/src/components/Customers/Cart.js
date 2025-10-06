@@ -16,7 +16,7 @@ const Cart = () => {
     if (payment && provider && orderId) {
       // Stay on cart tab and show a small notice
       if (payment === 'success') {
-        alert('Payment successful. We are confirming your order now.');
+        alert('✅ Payment successful!\n\n📋 Your order is being confirmed.\n\n📱 You can track your order progress in the "My Orders" tab.\n\n📧 You will receive email notifications for all updates.');
         // Ask backend to confirm in case webhook is delayed
         import('../../api/client').then(({ default: api }) => {
           api.post('/payments/confirm', { order_id: Number(orderId), provider })

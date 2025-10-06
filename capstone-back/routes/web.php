@@ -16,3 +16,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+// Add a simple login route to prevent route not found errors
+Route::get('/login', function () {
+    return response()->json(['message' => 'Please login via the API'], 401);
+})->name('login');

@@ -1,4 +1,4 @@
- import React, { useState, useEffect } from "react";
+ import React, { useState, useEffect, memo } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Spinner } from "react-bootstrap";
@@ -19,18 +19,52 @@ const CustomerDashboard = () => {
     const fetchProducts = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem("token"); // ✅ Get token from storage
+            const token = localStorage.getItem("token");
+            
+            // Check if we have cached products (valid for 5 minutes)
+            const cachedProducts = localStorage.getItem('cached_products');
+            const cacheTimestamp = localStorage.getItem('products_cache_timestamp');
+            const now = Date.now();
+            const cacheValid = cacheTimestamp && (now - parseInt(cacheTimestamp)) < 300000; // 5 minutes
+            
+            if (cachedProducts && cacheValid) {
+                console.log("Using cached products for faster loading");
+                setProducts(JSON.parse(cachedProducts));
+                setLoading(false);
+                return;
+            }
     
             const response = await axios.get("http://localhost:8000/api/products", {
                 headers: {
-                    Authorization: `Bearer ${token}`, // ✅ Send it with the request
+                    Authorization: `Bearer ${token}`,
                 },
+                timeout: 10000, // 10 second timeout
             });
     
-            console.log("Fetched products:", response.data); // Optional: Debug
+            console.log("Fetched products:", response.data);
             setProducts(response.data);
+            
+            // Cache the products for faster future loads
+            localStorage.setItem('cached_products', JSON.stringify(response.data));
+            localStorage.setItem('products_cache_timestamp', now.toString());
+            
         } catch (error) {
             console.error("Error fetching products:", error.response || error);
+            
+            // Try to use cached data if available, even if expired
+            const cachedProducts = localStorage.getItem('cached_products');
+            if (cachedProducts) {
+                console.log("Using expired cache as fallback");
+                setProducts(JSON.parse(cachedProducts));
+            }
+            
+            // If we get rate limited, show a message and retry later
+            if (error.response?.status === 429) {
+                console.warn("Rate limited - will retry products fetch later");
+                setTimeout(() => {
+                    fetchProducts();
+                }, 5000);
+            }
         } finally {
             setLoading(false);
         }
@@ -95,4 +129,5 @@ const CustomerDashboard = () => {
     );
 };
 
-export default CustomerDashboard;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(CustomerDashboard);

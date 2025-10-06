@@ -21,35 +21,39 @@ class SalesAnalyticsController extends Controller
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
         $timeframe = $request->get('timeframe', 'daily'); // daily, weekly, monthly
 
+        // Convert date strings to proper datetime for inclusive range
+        $startDateTime = Carbon::parse($startDate)->startOfDay();
+        $endDateTime = Carbon::parse($endDate)->endOfDay();
+
         // Overall sales metrics - include all orders for comprehensive reporting
-        $totalRevenue = Order::whereBetween('checkout_date', [$startDate, $endDate])
+        $totalRevenue = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
             ->sum('total_price');
 
-        $totalOrders = Order::whereBetween('checkout_date', [$startDate, $endDate])->count();
-        $paidOrders = Order::whereBetween('checkout_date', [$startDate, $endDate])
+        $totalOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])->count();
+        $paidOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
             ->where('payment_status', 'paid')
             ->count();
-        $pendingOrders = Order::whereBetween('checkout_date', [$startDate, $endDate])
-            ->whereIn('payment_status', ['cod_pending', 'pending'])
+        $pendingOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
+            ->where('status', 'pending')
             ->count();
 
         // Average order value - calculate based on all orders
         $averageOrderValue = $totalOrders > 0 ? $totalRevenue / $totalOrders : 0;
 
         // Revenue trends
-        $revenueTrends = $this->getRevenueTrends($startDate, $endDate, $timeframe);
+        $revenueTrends = $this->getRevenueTrends($startDateTime, $endDateTime, $timeframe);
 
         // Top selling products
-        $topProducts = $this->getTopSellingProducts($startDate, $endDate);
+        $topProducts = $this->getTopSellingProducts($startDateTime, $endDateTime);
 
         // Sales by status
-        $salesByStatus = $this->getSalesByStatus($startDate, $endDate);
+        $salesByStatus = $this->getSalesByStatus($startDateTime, $endDateTime);
 
         // Payment method analysis
-        $paymentMethodAnalysis = $this->getPaymentMethodAnalysis($startDate, $endDate);
+        $paymentMethodAnalysis = $this->getPaymentMethodAnalysis($startDateTime, $endDateTime);
 
         // Customer analysis
-        $customerAnalysis = $this->getCustomerAnalysis($startDate, $endDate);
+        $customerAnalysis = $this->getCustomerAnalysis($startDateTime, $endDateTime);
 
         // Monthly comparison
         $monthlyComparison = $this->getMonthlyComparison();
@@ -270,8 +274,12 @@ class SalesAnalyticsController extends Controller
         $status = $request->get('status', 'all');
         $paymentStatus = $request->get('payment_status', 'all');
 
+        // Convert date strings to proper datetime for inclusive range
+        $startDateTime = Carbon::parse($startDate)->startOfDay();
+        $endDateTime = Carbon::parse($endDate)->endOfDay();
+
         $query = Order::with(['user', 'items.product'])
-            ->whereBetween('checkout_date', [$startDate, $endDate]);
+            ->whereBetween('checkout_date', [$startDateTime, $endDateTime]);
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -288,7 +296,7 @@ class SalesAnalyticsController extends Controller
             'total_orders' => $orders->count(),
             'total_revenue' => $orders->sum('total_price'),
             'paid_orders' => $orders->where('payment_status', 'paid')->count(),
-            'pending_orders' => $orders->whereIn('payment_status', ['cod_pending', 'pending'])->count(),
+            'pending_orders' => $orders->where('status', 'pending')->count(),
             'average_order_value' => $orders->avg('total_price') ?? 0
         ];
 
@@ -312,33 +320,37 @@ class SalesAnalyticsController extends Controller
         $startDate = $request->get('start_date', Carbon::now()->subMonths(3)->format('Y-m-d'));
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
 
+        // Convert date strings to proper datetime for inclusive range
+        $startDateTime = Carbon::parse($startDate)->startOfDay();
+        $endDateTime = Carbon::parse($endDate)->endOfDay();
+
         // Order funnel analysis
         $orderFunnel = [
-            'total_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])->count(),
-            'pending_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'total_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])->count(),
+            'pending_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('status', 'pending')->count(),
-            'processing_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'processing_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('status', 'processing')->count(),
-            'completed_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'completed_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('status', 'completed')->count(),
-            'delivered_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'delivered_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('status', 'delivered')->count()
         ];
 
         // Payment funnel analysis
         $paymentFunnel = [
-            'unpaid_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'unpaid_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('payment_status', 'unpaid')->count(),
-            'paid_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'paid_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('payment_status', 'paid')->count(),
-            'cod_pending_orders' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'cod_pending_orders' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('payment_status', 'cod_pending')->count(),
-            'failed_payments' => Order::whereBetween('checkout_date', [$startDate, $endDate])
+            'failed_payments' => Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
                 ->where('payment_status', 'failed')->count()
         ];
 
         // Time to payment analysis
-        $timeToPayment = Order::whereBetween('checkout_date', [$startDate, $endDate])
+        $timeToPayment = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
             ->where('payment_status', 'paid')
             ->whereNotNull('accepted_at')
             ->select(
@@ -347,7 +359,7 @@ class SalesAnalyticsController extends Controller
             ->first();
 
         // Order completion time analysis
-        $completionTime = Order::whereBetween('checkout_date', [$startDate, $endDate])
+        $completionTime = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
             ->where('status', 'completed')
             ->whereNotNull('accepted_at')
             ->select(
@@ -376,6 +388,10 @@ class SalesAnalyticsController extends Controller
             $startDate = $request->get('start_date', Carbon::now()->subMonths(3)->format('Y-m-d'));
             $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
 
+            // Convert date strings to proper datetime for inclusive range
+            $startDateTime = Carbon::parse($startDate)->startOfDay();
+            $endDateTime = Carbon::parse($endDate)->endOfDay();
+
             $productPerformance = OrderItem::select(
                     'products.id',
                     'products.name',
@@ -387,7 +403,7 @@ class SalesAnalyticsController extends Controller
                 )
                 ->join('orders', 'order_items.order_id', '=', 'orders.id')
                 ->join('products', 'order_items.product_id', '=', 'products.id')
-                ->whereBetween('orders.checkout_date', [$startDate, $endDate])
+                ->whereBetween('orders.checkout_date', [$startDateTime, $endDateTime])
                 ->groupBy('products.id', 'products.name', 'products.price')
                 ->orderBy('total_revenue', 'desc')
                 ->get();
@@ -433,8 +449,12 @@ class SalesAnalyticsController extends Controller
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
         $format = $request->get('format', 'csv');
 
+        // Convert date strings to proper datetime for inclusive range
+        $startDateTime = Carbon::parse($startDate)->startOfDay();
+        $endDateTime = Carbon::parse($endDate)->endOfDay();
+
         $orders = Order::with(['user', 'items.product'])
-            ->whereBetween('checkout_date', [$startDate, $endDate])
+            ->whereBetween('checkout_date', [$startDateTime, $endDateTime])
             ->orderBy('checkout_date', 'desc')
             ->get();
 

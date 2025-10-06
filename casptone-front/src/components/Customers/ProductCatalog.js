@@ -1,5 +1,5 @@
 // src/components/ProductCatalog.js
-import React, { useState } from "react";
+import React, { useState, memo } from "react";
 import { Modal, Button, Form } from "react-bootstrap";
 import axios from "axios";
 import { motion } from "framer-motion";
@@ -73,6 +73,10 @@ const ProductCatalog = ({ products }) => {
                 alt={product.name}
                 className="product-main-image"
                 onClick={() => handleShowModal(product)}
+                loading="lazy"
+                onError={(e) => {
+                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
+                }}
               />
             </div>
             <div className="product-info">
@@ -153,4 +157,5 @@ const ProductCatalog = ({ products }) => {
   );
 };
 
-export default ProductCatalog;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(ProductCatalog);

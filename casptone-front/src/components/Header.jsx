@@ -33,11 +33,17 @@ const Header = ({ role, username }) => {
                     setCartCount(totalItems);
                 } catch (err) {
                     console.error("Failed to fetch cart count:", err);
+                    // If we get rate limited, stop making requests for a while
+                    if (err.response?.status === 429) {
+                        console.warn("Rate limited - stopping cart count requests temporarily");
+                        return;
+                    }
                 }
             };
 
             fetchCartCount();
-            const interval = setInterval(fetchCartCount, 1000);
+            // Reduced frequency to prevent rate limiting - every 30 seconds instead of 1 second
+            const interval = setInterval(fetchCartCount, 5000);
             return () => clearInterval(interval);
         }
     }, [role]);

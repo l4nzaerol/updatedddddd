@@ -86,18 +86,18 @@ class ComprehensiveOrdersSeeder extends Seeder
 
         $this->command->info("\n--- Creating Sample Orders with Delays ---\n");
 
-        // Order 1: PENDING Alkansya - Just placed, awaiting acceptance
+        // Order 1: PENDING Alkansya - Just placed, awaiting acceptance (OLDEST ORDER)
         $this->command->info("1. Creating PENDING Alkansya order (awaiting acceptance)");
         $this->createOrder($customer, $admin, $staff, $alkansya, 3, [
-            'days_ago_placed' => 0,
+            'days_ago_placed' => 20,
             'is_accepted' => false,
         ]);
 
         // Order 2: READY TO DELIVER Alkansya - Completed and ready
         $this->command->info("2. Creating READY TO DELIVER Alkansya order");
         $this->createOrder($customer, $admin, $staff, $alkansya, 5, [
-            'days_ago_placed' => 8,
-            'days_ago_accepted' => 7,
+            'days_ago_placed' => 18,
+            'days_ago_accepted' => 17,
             'is_accepted' => true,
             'progress' => 100,
             'is_alkansya_ready' => true,
@@ -106,8 +106,8 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 3: PROCESSING - Wooden Chair with delays (20% complete)
         $this->command->info("3. Creating PROCESSING Wooden Chair with early delay");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
-            'days_ago_placed' => 4,
-            'days_ago_accepted' => 3,
+            'days_ago_placed' => 16,
+            'days_ago_accepted' => 15,
             'is_accepted' => true,
             'progress' => 20,
             'has_delays' => true,
@@ -122,8 +122,8 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 4: PROCESSING - Dining Table with multiple delays (45% complete)
         $this->command->info("4. Creating PROCESSING Dining Table with multiple delays");
         $this->createOrder($customer, $admin, $staff, $diningTable, 2, [
-            'days_ago_placed' => 8,
-            'days_ago_accepted' => 7,
+            'days_ago_placed' => 14,
+            'days_ago_accepted' => 13,
             'is_accepted' => true,
             'progress' => 45,
             'has_delays' => true,
@@ -142,8 +142,8 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 5: PROCESSING - Wooden Chair mid-production (60% complete)
         $this->command->info("5. Creating PROCESSING Wooden Chair at 60% (no delays)");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 2, [
-            'days_ago_placed' => 10,
-            'days_ago_accepted' => 9,
+            'days_ago_placed' => 12,
+            'days_ago_accepted' => 11,
             'is_accepted' => true,
             'progress' => 60,
         ]);
@@ -151,8 +151,8 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 6: PROCESSING - Dining Table with delay (75% complete)
         $this->command->info("6. Creating PROCESSING Dining Table with assembly delay");
         $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
-            'days_ago_placed' => 13,
-            'days_ago_accepted' => 12,
+            'days_ago_placed' => 10,
+            'days_ago_accepted' => 9,
             'is_accepted' => true,
             'progress' => 75,
             'has_delays' => true,
@@ -167,8 +167,8 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 7: PROCESSING - Wooden Chair near completion with delays (90% complete)
         $this->command->info("7. Creating PROCESSING Wooden Chair with finishing delay");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
-            'days_ago_placed' => 16,
-            'days_ago_accepted' => 15,
+            'days_ago_placed' => 8,
+            'days_ago_accepted' => 7,
             'is_accepted' => true,
             'progress' => 90,
             'has_delays' => true,
@@ -183,13 +183,13 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 8: COMPLETED - Dining Table ready for delivery (100% complete)
         $this->command->info("8. Creating COMPLETED Dining Table (ready for delivery)");
         $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
-            'days_ago_placed' => 18,
-            'days_ago_accepted' => 17,
+            'days_ago_placed' => 6,
+            'days_ago_accepted' => 5,
             'is_accepted' => true,
             'progress' => 100,
         ]);
 
-        // Order 9: PENDING - Regular furniture awaiting acceptance
+        // Order 9: PENDING - Regular furniture awaiting acceptance (NEWEST ORDER)
         $this->command->info("9. Creating PENDING Wooden Chair order");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
             'days_ago_placed' => 1,

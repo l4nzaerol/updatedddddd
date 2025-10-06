@@ -98,64 +98,6 @@ const CartTable = () => {
     }
   };
 
-  const createProductionsForOrder = async (orderResponse) => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.warn("No token available for production creation");
-      return { success: false, error: "Authentication required" };
-    }
-
-    try {
-      const headers = undefined;
-      const orderId = orderResponse?.data?.order?.id || orderResponse?.data?.id || null;
-      const today = new Date().toISOString().slice(0, 10);
-      const stageStart = "Design";
-      
-      // Create production payloads
-      const payloads = cartItems.map((item) => ({
-        product_name: item.product?.name || item.name || "Product",
-        date: today,
-        stage: stageStart,
-        status: "Pending",
-        quantity: item.quantity || 0,
-        resources_used: {
-          materials: item.product?.materials || "",
-          workers: 0,
-        },
-        notes: orderId ? `From order #${orderId}` : "From checkout",
-      }));
-
-      // Create all production records
-      const productionResults = await Promise.allSettled(
-          payloads.map((payload) =>
-            api.post("/productions", payload)
-          )
-      );
-
-      // Check results
-      const successful = productionResults.filter(result => result.status === 'fulfilled');
-      const failed = productionResults.filter(result => result.status === 'rejected');
-
-      if (failed.length > 0) {
-        console.error("Some production records failed:", failed.map(f => f.reason));
-        return { 
-          success: successful.length > 0, 
-          error: `${failed.length} of ${payloads.length} production records failed`,
-          partial: true
-        };
-      }
-
-      console.log(`Successfully created ${successful.length} production records`);
-      return { success: true, count: successful.length };
-
-    } catch (error) {
-      console.error("Failed to create production records:", error);
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message || "Unknown error" 
-      };
-    }
-  };
 
   const handleCheckout = async () => {
     try {
@@ -165,19 +107,10 @@ const CartTable = () => {
         contact_phone: phone,
       });
 
-      // Try to create production records
-      const productionResult = await createProductionsForOrder(response);
-
-      // Show appropriate success message
-      if (productionResult.success) {
-        if (productionResult.partial) {
-          alert(`Order placed successfully!\n\nProduction tracking: ${productionResult.error}`);
-        } else {
-          alert(`Order placed successfully!\n\n✅ ${productionResult.count || cartItems.length} items added to production tracking.`);
-        }
-      } else {
-        alert(`Order placed successfully!\n\n⚠️ Production tracking setup failed: ${productionResult.error}\n\nPlease contact support if production tracking is not visible.`);
-      }
+      // Show success message with clear instructions
+      const orderId = response.data?.order?.id || response.data?.id;
+      console.log("🎉 CHECKOUT SUCCESS - Showing NEW message!");
+      alert(`🎉 ORDER PLACED SUCCESSFULLY!\n\n📋 Order ID: #${orderId}\n\n `);
 
       // Clear cart on successful checkout
       setCartItems([]);

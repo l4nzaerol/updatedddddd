@@ -37,17 +37,22 @@ class ProductController extends Controller
 
     public function index()
     {
+        // Optimized: Get all products and inventory items in 2 queries instead of N+1
         $products = Product::all();
         
-        // Enrich each product with inventory stock if it's a finished good
-        $products = $products->map(function($product) {
-            // Try to find matching inventory item by SKU or name
-            $inventoryItem = \App\Models\InventoryItem::where('category', 'like', '%finished%')
-                ->where(function($query) use ($product) {
-                    $query->where('name', 'like', '%' . $product->name . '%')
-                          ->orWhere('description', 'like', '%' . $product->name . '%');
-                })
-                ->first();
+        // Get all finished goods inventory items in one query
+        $inventoryItems = \App\Models\InventoryItem::where('category', 'like', '%finished%')
+            ->get()
+            ->keyBy(function($item) {
+                // Create a key for matching
+                return strtolower($item->name);
+            });
+        
+        // Enrich products with inventory data efficiently
+        $products = $products->map(function($product) use ($inventoryItems) {
+            // Try to find matching inventory item by name (case-insensitive)
+            $productName = strtolower($product->name);
+            $inventoryItem = $inventoryItems->get($productName);
             
             if ($inventoryItem) {
                 $product->inventory_stock = $inventoryItem->quantity_on_hand;
@@ -55,6 +60,8 @@ class ProductController extends Controller
                 $product->inventory_sku = $inventoryItem->sku;
             } else {
                 $product->inventory_stock = null;
+                $product->inventory_location = null;
+                $product->inventory_sku = null;
             }
             
             return $product;

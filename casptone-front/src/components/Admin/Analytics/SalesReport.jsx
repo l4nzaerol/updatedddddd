@@ -6,10 +6,7 @@ import {
 } from 'recharts';
 import api from '../../../api/client';
 
-const SalesReport = () => {
-  const [reportData, setReportData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+const SalesReport = ({ reportData, loading, error, onRefresh }) => {
   const [filters, setFilters] = useState({
     start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
@@ -17,12 +14,29 @@ const SalesReport = () => {
     payment_status: 'all'
   });
 
+  // Use props data if available, otherwise fetch
+  const [localReportData, setLocalReportData] = useState(reportData);
+  const [localLoading, setLocalLoading] = useState(loading);
+  const [localError, setLocalError] = useState(error);
+
   useEffect(() => {
-    fetchReportData();
+    if (reportData) {
+      setLocalReportData(reportData);
+      setLocalLoading(false);
+      setLocalError('');
+    } else {
+      fetchReportData();
+    }
+  }, [reportData]);
+
+  useEffect(() => {
+    if (!reportData) {
+      fetchReportData();
+    }
   }, [filters]);
 
   const fetchReportData = async () => {
-    setLoading(true);
+    setLocalLoading(true);
     try {
       const timestamp = Date.now();
       const response = await api.get('/analytics/sales-report', {
@@ -32,14 +46,14 @@ const SalesReport = () => {
           _force: 'true' // Force fresh data
         }
       });
-      setReportData(response.data);
+      setLocalReportData(response.data);
       console.log('Sales Report - Fresh data loaded:', response.data);
       console.log('Sales Report - Total orders from API:', response.data.summary?.total_orders);
     } catch (err) {
-      setError('Failed to load sales report data');
+      setLocalError('Failed to load sales report data');
       console.error('Sales report data error:', err);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -78,7 +92,7 @@ const SalesReport = () => {
     }
   };
 
-  if (loading) {
+  if (localLoading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -88,28 +102,31 @@ const SalesReport = () => {
     );
   }
 
-  if (error) {
+  if (localError) {
     return (
       <div className="alert alert-danger">
         <h4>Error Loading Sales Report Data</h4>
-        <p>{error}</p>
-        <button className="btn btn-primary" onClick={fetchReportData}>
+        <p>{localError}</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchReportData}>
           Retry
         </button>
       </div>
     );
   }
 
-  if (!reportData) {
+  if (!localReportData) {
     return (
       <div className="alert alert-info">
         <h4>No Sales Report Data Available</h4>
         <p>No sales report data found for the selected filters.</p>
+        <button className="btn btn-primary" onClick={onRefresh || fetchReportData}>
+          Refresh Data
+        </button>
       </div>
     );
   }
 
-  const { orders, summary, filters: appliedFilters } = reportData;
+  const { orders, summary, filters: appliedFilters } = localReportData;
 
   // Prepare data for charts
   const ordersByDate = orders.reduce((acc, order) => {
@@ -154,110 +171,58 @@ const SalesReport = () => {
 
   return (
     <div className="sales-report">
-      {/* Header Controls */}
-      <div className="row mb-4">
-        <div className="col-md-6">
-          <h2 className="text-primary mb-3">
-            <i className="fas fa-file-alt me-2"></i>
-            Sales Report
-          </h2>
-        </div>
-        <div className="col-md-6">
-          <div className="d-flex gap-2 justify-content-end">
-            <input
-              type="date"
-              className="form-control"
-              value={filters.start_date}
-              onChange={(e) => setFilters({...filters, start_date: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-            <input
-              type="date"
-              className="form-control"
-              value={filters.end_date}
-              onChange={(e) => setFilters({...filters, end_date: e.target.value})}
-              style={{ width: 'auto' }}
-            />
-            <select
-              className="form-select"
-              value={filters.status}
-              onChange={(e) => setFilters({...filters, status: e.target.value})}
-              style={{ width: 'auto' }}
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="delivered">Delivered</option>
-            </select>
-            <select
-              className="form-select"
-              value={filters.payment_status}
-              onChange={(e) => setFilters({...filters, payment_status: e.target.value})}
-              style={{ width: 'auto' }}
-            >
-              <option value="all">All Payment</option>
-              <option value="paid">Paid</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="failed">Failed</option>
-            </select>
-            <button className="btn btn-success" onClick={exportToCSV}>
-              <i className="fas fa-download me-1"></i>
-              Export CSV
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Header */}
+  
 
-      {/* Summary Cards */}
-      <div className="row mb-4">
+      {/* Summary Cards - Production Style */}
+      <div className="row g-3 mb-4">
         <div className="col-md-2">
-          <div className="card bg-primary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(summary.total_orders)}</h3>
-              <p className="card-text">Total Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Orders</div>
+              <div className="h3 mb-0 text-primary">{formatNumber(summary.total_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-success text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatCurrency(summary.total_revenue)}</h3>
-              <p className="card-text">Total Revenue</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Revenue</div>
+              <div className="h3 mb-0 text-success">{formatCurrency(summary.total_revenue)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-info text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(summary.paid_orders)}</h3>
-              <p className="card-text">Paid Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #17a2b8' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Paid Orders</div>
+              <div className="h3 mb-0 text-info">{formatNumber(summary.paid_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-warning text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatNumber(summary.pending_orders)}</h3>
-              <p className="card-text">Pending Orders</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Pending Orders</div>
+              <div className="h3 mb-0 text-warning">{formatNumber(summary.pending_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-secondary text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">{formatCurrency(summary.average_order_value)}</h3>
-              <p className="card-text">Avg Order Value</p>
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #6c757d' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Avg Order Value</div>
+              <div className="h3 mb-0 text-secondary">{formatCurrency(summary.average_order_value)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card bg-dark text-white">
-            <div className="card-body text-center">
-              <h3 className="card-title">
+          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #343a40' }}>
+            <div className="card-body">
+              <div className="text-muted small mb-1">Payment Rate</div>
+              <div className="h3 mb-0 text-dark">
                 {summary.total_orders > 0 ? Math.round((summary.paid_orders / summary.total_orders) * 100) : 0}%
-              </h3>
-              <p className="card-text">Payment Rate</p>
+              </div>
             </div>
           </div>
         </div>

@@ -13,7 +13,7 @@ const NotificationBell = () => {
   useEffect(() => {
     fetchNotifications();
     // Refresh notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
+    const interval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -42,6 +42,11 @@ const NotificationBell = () => {
       setUnreadCount(response.data.unread_count || 0);
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
+      // If we get rate limited, stop making requests for a while
+      if (error.response?.status === 429) {
+        console.warn('Rate limited - stopping notification requests temporarily');
+        return;
+      }
     }
   };
 

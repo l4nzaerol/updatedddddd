@@ -7,7 +7,6 @@ import SalesDashboard from "./Analytics/SalesDashboard.jsx";
 import SalesProcessAnalytics from "./Analytics/SalesProcessAnalytics.jsx";
 import ProductPerformance from "./Analytics/ProductPerformance.jsx";
 import SalesReport from "./Analytics/SalesReport.jsx";
-import SalesDebug from "./Analytics/SalesDebug.jsx";
 import { downloadStockCsv, downloadUsageCsv, downloadReplenishmentCsv } from "../../api/inventoryApi";
 import { exportProductionCsv } from "../../api/productionApi";
 import { clearRequestCache } from "../../utils/apiRetry";
@@ -15,6 +14,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
 } from "recharts";
+import "./InventoryReportsDashboard.css";
 
 const Report = () => {
     const navigate = useNavigate();
@@ -45,6 +45,12 @@ const Report = () => {
     const [predictiveAnalytics, setPredictiveAnalytics] = useState(null);
     const [materialTrends, setMaterialTrends] = useState(null);
     const [stockReport, setStockReport] = useState(null);
+    
+    // Sales analytics data states
+    const [salesDashboardData, setSalesDashboardData] = useState(null);
+    const [salesProcessData, setSalesProcessData] = useState(null);
+    const [productPerformanceData, setProductPerformanceData] = useState(null);
+    const [salesReportData, setSalesReportData] = useState(null);
 
     useEffect(() => {
         fetchAllReports();
@@ -231,6 +237,40 @@ const Report = () => {
                 console.log(`📊 Advanced analytics: ${successCount}/${results.length} endpoints loaded successfully`);
             } catch (e) {
                 console.error("Advanced analytics load failed:", e);
+            }
+            
+            // Load Sales Analytics Data
+            try {
+                console.log("🛒 Loading Sales Analytics...");
+                const salesEndpoints = [
+                    { url: '/analytics/sales-dashboard', setter: setSalesDashboardData, name: 'Sales Dashboard' },
+                    { url: '/analytics/sales-process', setter: setSalesProcessData, name: 'Sales Process' },
+                    { url: '/analytics/product-performance', setter: setProductPerformanceData, name: 'Product Performance' },
+                    { url: '/analytics/sales-report', setter: setSalesReportData, name: 'Sales Report' }
+                ];
+                
+                const salesPromises = salesEndpoints.map(endpoint => 
+                    api.get(endpoint.url, {
+                        params: {
+                            start_date: getStartDate(windowDays),
+                            end_date: new Date().toISOString().split('T')[0]
+                        }
+                    }).then(response => {
+                        endpoint.setter(response.data);
+                        console.log(`✅ ${endpoint.name} loaded:`, response.data);
+                        return { status: 'fulfilled', value: response };
+                    }).catch(error => {
+                        console.error(`❌ ${endpoint.name} failed:`, error);
+                        return { status: 'rejected', reason: error };
+                    })
+                );
+                
+                const salesResults = await Promise.allSettled(salesPromises);
+                const salesSuccessCount = salesResults.filter(r => r.status === 'fulfilled').length;
+                console.log(`🛒 Sales Analytics: ${salesSuccessCount}/${salesResults.length} endpoints loaded successfully`);
+                
+            } catch (e) {
+                console.error("Sales analytics load failed:", e);
             }
             
             console.log("All reports loaded successfully!");
@@ -479,43 +519,7 @@ const Report = () => {
                     </div>
                 )}
                 
-                {/* Summary Cards - Production */}
-                {mainTab === "production" && productionAnalytics && productionAnalytics.kpis && (
-                    <div className="row g-3 mb-4">
-                        <div className="col-md-3">
-                            <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
-                                <div className="card-body">
-                                    <div className="text-muted small mb-1">Total Productions</div>
-                                    <div className="h3 mb-0 text-primary">{productionAnalytics.kpis.total || 0}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-md-3">
-                            <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
-                                <div className="card-body">
-                                    <div className="text-muted small mb-1">Completed</div>
-                                    <div className="h3 mb-0 text-success">{productionAnalytics.kpis.completed || 0}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-md-3">
-                            <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
-                                <div className="card-body">
-                                    <div className="text-muted small mb-1">In Progress</div>
-                                    <div className="h3 mb-0 text-warning">{productionAnalytics.kpis.in_progress || 0}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-md-3">
-                            <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #dc3545' }}>
-                                <div className="card-body">
-                                    <div className="text-muted small mb-1">On Hold</div>
-                                    <div className="h3 mb-0 text-danger">{productionAnalytics.kpis.hold || 0}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                
                 
                 {/* Sub-tabs Navigation - Conditional based on main tab */}
                 {mainTab === "inventory" && (
@@ -547,7 +551,7 @@ const Report = () => {
                     </li>
                     <li className="nav-item">
                         <button className={`nav-link ${activeTab === "forecast" ? "active" : ""}`} onClick={() => setActiveTab("forecast")}>
-                            🔮 Forecast
+                            🔮 Material Forecasting
                         </button>
                     </li>
                     <li className="nav-item">
@@ -598,20 +602,17 @@ const Report = () => {
                                 </button>
                             </li>
                             <li className="nav-item">
+                                <button className={`nav-link ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
+                                    📋 Sales Reports
+                                </button>
+                            </li>
+                            <li className="nav-item">
                                 <button className={`nav-link ${activeTab === "products" ? "active" : ""}`} onClick={() => setActiveTab("products")}>
                                     📦 Product Performance
                                 </button>
                             </li>
-                            <li className="nav-item">
-                                <button className={`nav-link ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
-                                    📋 Detailed Reports
-                                </button>
-                            </li>
-                            <li className="nav-item">
-                                <button className={`nav-link ${activeTab === "debug" ? "active" : ""}`} onClick={() => setActiveTab("debug")}>
-                                    🔍 Debug Data
-                                </button>
-                            </li>
+                            
+                            
                         </ul>
                         )}
                 
@@ -810,7 +811,7 @@ const Report = () => {
                             inventoryReport ? (
                             <div className="card shadow-sm mb-4">
                                 <div className="card-header d-flex justify-content-between align-items-center">
-                                    <h5 className="mb-0">Inventory Status Report</h5>
+                                    <h5 className="mb-1 fw-bold">Inventory Status Report</h5>
                                     <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("inventory_status", inventoryReport.items)}>
                                         📥 Export CSV
                                     </button>
@@ -1398,67 +1399,176 @@ const Report = () => {
     )
 )}
                         
-                        {/* Forecast Tab */}
+                        {/* Enhanced Forecast Tab */}
                         {activeTab === "forecast" && (
                             forecastReport ? (
-                            <div className="card shadow-sm mb-4">
-                                <div className="card-header d-flex justify-content-between align-items-center">
-                                    <h5 className="mb-0">Material Usage Forecast</h5>
-                                    <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
-                                        📥 Export CSV
-                                    </button>
-                                </div>
-                                <div className="card-body">
-                                    <div className="row mb-3">
-                                        <div className="col-md-4">
-                                            <div className="text-muted small">Items Will Need Reorder</div>
-                                            <div className="h4 text-danger">{forecastReport.summary.items_will_need_reorder}</div>
-                                        </div>
-                                        <div className="col-md-4">
-                                            <div className="text-muted small">Total Forecasted Usage</div>
-                                            <div className="h4">{forecastReport.summary.total_forecasted_usage}</div>
-                                        </div>
-                                        <div className="col-md-4">
-                                            <div className="text-muted small">Critical Items (&lt; 7 days)</div>
-                                            <div className="h4 text-warning">{forecastReport.summary.items_critical}</div>
+                            <div>
+                                {/* Enhanced Header with Analytics */}
+                                <div className="card shadow-sm mb-4">
+                                    <div className="card-header bg-white text-dark border-bottom">
+                                        <div className="card-header d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h4 className="mb-1 text-dark">Material Forecasting</h4>
+                                                <p className="mb-0 text-muted">Predictive analytics for inventory planning ({forecastReport.forecast_period_days} days ahead)</p>
+                                            </div>
+                                            <div className="d-flex gap-2 align-items-center">
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <label className="mb-0 text-dark">Forecast Period:</label>
+                                                    <select 
+                                                        className="form-select form-select-sm" 
+                                                        style={{ width: 120 }} 
+                                                        value={30} 
+                                                        onChange={(e) => console.log('Forecast days changed:', e.target.value)}
+                                                    >
+                                                        <option value={7}>7 days</option>
+                                                        <option value={14}>14 days</option>
+                                                        <option value={30}>30 days</option>
+                                                        <option value={60}>60 days</option>
+                                                        <option value={90}>90 days</option>
+                                                    </select>
+                                                </div>
+                                                <button className="btn btn-primary btn-sm" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
+                                                    📊 Export Data
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                     
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>SKU</th>
-                                                    <th>Name</th>
-                                                    <th className="text-end">Current Stock</th>
-                                                    <th className="text-end">Avg Daily Usage</th>
-                                                    <th className="text-end">Forecasted Usage (30d)</th>
-                                                    <th className="text-end">Projected Stock</th>
-                                                    <th className="text-end">Days Until Stockout</th>
-                                                    <th className="text-end">Recommended Order Qty</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {forecastReport.forecasts && forecastReport.forecasts.length > 0 ? (
-                                                    forecastReport.forecasts.slice(0, 20).map((item, idx) => (
-                                                        <tr key={idx} className={item.will_need_reorder ? 'table-warning' : ''}>
-                                                            <td className="fw-semibold">{item.sku}</td>
-                                                            <td>{item.name}</td>
-                                                            <td className="text-end">{item.current_stock}</td>
-                                                            <td className="text-end">{item.avg_daily_usage}</td>
-                                                            <td className="text-end">{item['forecasted_usage_30_days']}</td>
-                                                            <td className="text-end">{item.projected_stock}</td>
-                                                            <td className="text-end">{item.days_until_stockout}</td>
-                                                            <td className="text-end fw-bold">{item.recommended_order_qty}</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="8" className="text-center text-muted">No forecast data available.</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
+                                    <div className="card-body p-4">
+                                        {/* Enhanced Analytics Dashboard */}
+                                        <div className="row g-4 mb-4">
+                                            <div className="col-lg-3 col-md-6">
+                                                <div className="card border-0 bg-danger bg-opacity-10 analytics-card fade-in">
+                                                    <div className="card-body text-center">
+                                                        <div className="display-6 text-danger mb-2">⚠️</div>
+                                                        <h3 className="text-danger mb-1 metric-value">{forecastReport.summary.items_will_need_reorder}</h3>
+                                                        <p className="text-muted mb-0 metric-label">Items Need Reorder</p>
+                                                        <small className="text-danger">Critical for operations</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="col-lg-3 col-md-6">
+                                                <div className="card border-0 bg-warning bg-opacity-10 analytics-card slide-in-left">
+                                                    <div className="card-body text-center">
+                                                        <div className="display-6 text-warning mb-2">⏰</div>
+                                                        <h3 className="text-warning mb-1 metric-value">{forecastReport.summary.items_critical}</h3>
+                                                        <p className="text-muted mb-0 metric-label">Critical Items</p>
+                                                        <small className="text-warning">&lt; 7 days stockout risk</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="col-lg-3 col-md-6">
+                                                <div className="card border-0 bg-info bg-opacity-10 analytics-card slide-in-right">
+                                                    <div className="card-body text-center">
+                                                        <div className="display-6 text-info mb-2">📈</div>
+                                                        <h3 className="text-info mb-1 metric-value">{forecastReport.summary.total_forecasted_usage.toLocaleString()}</h3>
+                                                        <p className="text-muted mb-0 metric-label">Total Forecasted Usage</p>
+                                                        <small className="text-info">Units to be consumed</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="col-lg-3 col-md-6">
+                                                <div className="card border-0 bg-success bg-opacity-10 analytics-card fade-in">
+                                                    <div className="card-body text-center">
+                                                        <div className="display-6 text-success mb-2">✅</div>
+                                                        <h3 className="text-success mb-1 metric-value">
+                                                            {forecastReport.forecasts.filter(f => !f.will_need_reorder).length}
+                                                        </h3>
+                                                        <p className="text-muted mb-0 metric-label">Items Safe</p>
+                                                        <small className="text-success">No immediate reorder needed</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Enhanced Data Table */}
+                                        <div className="card border-0 shadow-sm">
+                                            <div className="card-header bg-light d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <h6 className="mb-0 forecast-title">📋 Detailed Forecast Analysis</h6>
+                                                    <small className="text-muted">Comprehensive forecasting data with actionable insights</small>
+                                                </div>
+                                                <div className="d-flex gap-2">
+                                                    <button className="btn btn-sm btn-outline-primary btn-enhanced">
+                                                        🔍 Filter Critical
+                                                    </button>
+                                                    <button className="btn btn-sm btn-outline-success btn-enhanced">
+                                                        📋 Generate Orders
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="card-body p-0">
+                                                <div className="table-responsive">
+                                                    <table className="table table-hover mb-0 table-enhanced">
+                                                        <thead className="table-light">
+                                                            <tr>
+                                                                <th className="border-0">📦 SKU</th>
+                                                                <th className="border-0">📝 Material</th>
+                                                                <th className="border-0 text-end">📊 Current</th>
+                                                                <th className="border-0 text-end">📈 Daily Avg</th>
+                                                                <th className="border-0 text-end">🔮 Forecasted</th>
+                                                                <th className="border-0 text-end">📉 Projected</th>
+                                                                <th className="border-0 text-end">⏰ Days Left</th>
+                                                                <th className="border-0 text-end">🛒 Order Qty</th>
+                                                                <th className="border-0 text-center">⚠️ Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {forecastReport.forecasts && forecastReport.forecasts.length > 0 ? (
+                                                                forecastReport.forecasts.slice(0, 20).map((item, idx) => {
+                                                                    const isCritical = item.days_until_stockout < 7;
+                                                                    const needsReorder = item.will_need_reorder;
+                                                                    const statusColor = isCritical ? 'danger' : needsReorder ? 'warning' : 'success';
+                                                                    const statusIcon = isCritical ? '🚨' : needsReorder ? '⚠️' : '✅';
+                                                                    
+                                                                    return (
+                                                                        <tr key={idx} className={`${isCritical ? 'table-danger' : needsReorder ? 'table-warning' : ''}`}>
+                                                                            <td className="fw-bold">{item.sku}</td>
+                                                                            <td>
+                                                                                <div className="d-flex align-items-center">
+                                                                                    <span className="me-2">{item.name}</span>
+                                                                                    {isCritical && <span className="badge bg-danger">CRITICAL</span>}
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="text-end fw-bold">{item.current_stock}</td>
+                                                                            <td className="text-end">{item.avg_daily_usage}</td>
+                                                                            <td className="text-end">{item['forecasted_usage_30_days']}</td>
+                                                                            <td className="text-end">
+                                                                                <span className={`fw-bold ${item.projected_stock < 0 ? 'text-danger' : 'text-warning'}`}>
+                                                                                    {item.projected_stock}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="text-end">
+                                                                                <span className={`badge bg-${statusColor} ${isCritical ? 'pulse' : ''}`}>
+                                                                                    {item.days_until_stockout} days
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="text-end">
+                                                                                {item.recommended_order_qty > 0 && (
+                                                                                    <span className="badge bg-primary">
+                                                                                        {item.recommended_order_qty}
+                                                                                    </span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="text-center">
+                                                                                <span className="fs-5">{statusIcon}</span>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })
+                                                            ) : (
+                                                                <tr>
+                                                                    <td colSpan="9" className="text-center text-muted">No forecast data available.</td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1619,7 +1729,7 @@ const Report = () => {
                         {activeTab === "stock-report" && mainTab === "inventory" && stockReport && (
                             <div className="card shadow-sm mb-4">
                                 <div className="card-header bg-white border-bottom">
-                                    <h5 className="mb-0 fw-bold">🚨 Automated Stock Report</h5>
+                                    <h5 className="mb-1 fw-bold">Automated Stock Report</h5>
                                     <small className="text-muted">Generated: {stockReport.generated_at}</small>
                                 </div>
                                 <div className="card-body">
@@ -1767,9 +1877,16 @@ const Report = () => {
 
                                 {/* Material Usage Overview - Horizontal Bar Chart */}
                                 <div className="card shadow-sm mb-4">
-                                    <div className="card-header bg-white border-bottom">
-                                        <h5 className="mb-0 fw-bold">📊 Top Materials Usage Across All Products</h5>
-                                        <small className="text-muted">Total consumption by material type</small>
+                                    <div className="card-header bg-white text-dark border-bottom">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h5 className="mb-1 fw-bold">Top Materials Usage Across All Products</h5>
+                                                <p className="mb-0 text-muted">Total consumption by material type</p>
+                                            </div>
+                                            <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("material_usage", resourceUtilization.material_usage_by_product)}>
+                                                📊 Export Data
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="card-body">
                                         <ResponsiveContainer width="100%" height={400}>
@@ -1833,7 +1950,7 @@ const Report = () => {
                                 {/* Product Comparison - Grouped Bar Chart */}
                                 <div className="card shadow-sm mb-4">
                                     <div className="card-header bg-white border-bottom">
-                                        <h5 className="mb-0 fw-bold">🔄 Material Usage Comparison by Product</h5>
+                                        <h5 className="mb-1 fw-bold">Material Usage Comparison by Product</h5>
                                         <small className="text-muted">Side-by-side comparison of top materials</small>
                                     </div>
                                     <div className="card-body">
@@ -2083,7 +2200,46 @@ const Report = () => {
                                 
                                 {/* Output Analytics Tab - NEW */}
                                 {activeTab === "output-analytics" && productionOutput && (
-                                    <div className="card shadow-sm mb-4">
+                                    <div>
+                                        {/* Production Summary Cards */}
+                                        {mainTab === "production" && productionAnalytics && productionAnalytics.kpis && (
+                                            <div className="row g-3 mb-4">
+                                                <div className="col-md-3">
+                                                    <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
+                                                        <div className="card-body">
+                                                            <div className="text-muted small mb-1">Total Productions</div>
+                                                            <div className="h3 mb-0 text-primary">{productionAnalytics.kpis.total || 0}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
+                                                        <div className="card-body">
+                                                            <div className="text-muted small mb-1">Completed</div>
+                                                            <div className="h3 mb-0 text-success">{productionAnalytics.kpis.completed || 0}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
+                                                        <div className="card-body">
+                                                            <div className="text-muted small mb-1">In Progress</div>
+                                                            <div className="h3 mb-0 text-warning">{productionAnalytics.kpis.in_progress || 0}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #dc3545' }}>
+                                                        <div className="card-body">
+                                                            <div className="text-muted small mb-1">On Hold</div>
+                                                            <div className="h3 mb-0 text-danger">{productionAnalytics.kpis.hold || 0}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        <div className="card shadow-sm mb-4">
                                         <div className="card-header bg-white border-bottom">
                                             <h5 className="mb-0 fw-bold">📈 Production Output by Product</h5>
                                         </div>
@@ -2329,6 +2485,7 @@ const Report = () => {
 </div>
                                         </div>
                                     </div>
+                                </div>
                                 )}
                                 
                                 {/* Resource Utilization Tab - NEW */}
@@ -2694,7 +2851,7 @@ const Report = () => {
                                 {activeTab === "stock-report" && stockReport && (
                                     <div className="card shadow-sm mb-4">
                                         <div className="card-header bg-white border-bottom">
-                                            <h5 className="mb-0 fw-bold">🚨 Automated Stock Report</h5>
+                                            <h5 className="mb-1 fw-bold">Automated Stock Report</h5>
                                             <small className="text-muted">Generated: {stockReport.generated_at}</small>
                                         </div>
                                         <div className="card-body">
@@ -2811,7 +2968,7 @@ const Report = () => {
                                 {activeTab === "material-usage" && resourceUtilization && resourceUtilization.material_usage_by_product && (
                                     <div className="card shadow-sm mb-4">
                                         <div className="card-header bg-white border-bottom">
-                                            <h5 className="mb-0 fw-bold">📊 Material Usage Trends by Product</h5>
+                                            <h5 className="mb-1 fw-bold">📊 Material Usage Trends by Product</h5>
                                         </div>
                                         <div className="card-body">
                                             <div className="row">
@@ -2910,37 +3067,52 @@ const Report = () => {
                                 {/* Sales Dashboard Tab */}
                                 {activeTab === "dashboard" && (
                                     <div className="mb-4" key={`sales-dashboard-${refreshKey}`}>
-                                        <SalesDashboard />
+                                        <SalesDashboard 
+                                            salesData={salesDashboardData}
+                                            loading={loading}
+                                            error={error}
+                                            onRefresh={handleGlobalRefresh}
+                                        />
                                     </div>
                                 )}
 
                                 {/* Sales Process Tab */}
                                 {activeTab === "process" && (
                                     <div className="mb-4" key={`sales-process-${refreshKey}`}>
-                                        <SalesProcessAnalytics />
+                                        <SalesProcessAnalytics 
+                                            processData={salesProcessData}
+                                            loading={loading}
+                                            error={error}
+                                            onRefresh={handleGlobalRefresh}
+                                        />
                                     </div>
                                 )}
 
                                 {/* Product Performance Tab */}
                                 {activeTab === "products" && (
                                     <div className="mb-4" key={`product-performance-${refreshKey}`}>
-                                        <ProductPerformance />
+                                        <ProductPerformance 
+                                            performanceData={productPerformanceData}
+                                            loading={loading}
+                                            error={error}
+                                            onRefresh={handleGlobalRefresh}
+                                        />
                                     </div>
                                 )}
 
                                 {/* Detailed Reports Tab */}
                                 {activeTab === "reports" && (
                                     <div className="mb-4" key={`sales-report-${refreshKey}`}>
-                                        <SalesReport />
+                                        <SalesReport 
+                                            reportData={salesReportData}
+                                            loading={loading}
+                                            error={error}
+                                            onRefresh={handleGlobalRefresh}
+                                        />
                                     </div>
                                 )}
 
-                                {/* Debug Tab */}
-                                {activeTab === "debug" && (
-                                    <div className="mb-4" key={`sales-debug-${refreshKey}`}>
-                                        <SalesDebug />
-                                    </div>
-                                )}
+                                
                             </div>
                         )}
         </AppLayout>
