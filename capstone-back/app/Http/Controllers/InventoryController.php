@@ -270,32 +270,35 @@ class InventoryController extends Controller
      */
     public function getDashboardData()
     {
-        $totalItems = InventoryItem::count();
-        $lowStockItems = InventoryItem::whereRaw('quantity_on_hand <= reorder_point')->count();
-        $outOfStockItems = InventoryItem::where('quantity_on_hand', 0)->count();
-        
-        // Get recent usage
-        $recentUsage = InventoryUsage::where('date', '>=', Carbon::now()->subDays(7))
-            ->sum('quantity_used');
+        // Cache dashboard data for 5 minutes to improve performance
+        return cache()->remember('inventory_dashboard', 300, function () {
+            $totalItems = InventoryItem::count();
+            $lowStockItems = InventoryItem::whereRaw('quantity_on_hand <= reorder_point')->count();
+            $outOfStockItems = InventoryItem::where('quantity_on_hand', 0)->count();
+            
+            // Get recent usage
+            $recentUsage = InventoryUsage::where('date', '>=', Carbon::now()->subDays(7))
+                ->sum('quantity_used');
 
-        // Get items that need immediate attention
-        $criticalItems = InventoryItem::whereRaw('quantity_on_hand <= safety_stock')
-            ->get()
-            ->map(function($item) {
-                $item->urgency = 'critical';
-                $item->days_until_stockout = $this->calculateDaysUntilStockout($item);
-                return $item;
-            });
+            // Get items that need immediate attention
+            $criticalItems = InventoryItem::whereRaw('quantity_on_hand <= safety_stock')
+                ->get()
+                ->map(function($item) {
+                    $item->urgency = 'critical';
+                    $item->days_until_stockout = $this->calculateDaysUntilStockout($item);
+                    return $item;
+                });
 
-        return response()->json([
-            'summary' => [
-                'total_items' => $totalItems,
-                'low_stock_items' => $lowStockItems,
-                'out_of_stock_items' => $outOfStockItems,
-                'recent_usage' => $recentUsage
-            ],
-            'critical_items' => $criticalItems
-        ]);
+            return [
+                'summary' => [
+                    'total_items' => $totalItems,
+                    'low_stock_items' => $lowStockItems,
+                    'out_of_stock_items' => $outOfStockItems,
+                    'recent_usage' => $recentUsage
+                ],
+                'critical_items' => $criticalItems
+            ];
+        });
     }
 
     /**
@@ -306,9 +309,13 @@ class InventoryController extends Controller
         $startDate = $request->get('start_date', Carbon::now()->subDays(30)->format('Y-m-d'));
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
         
-        $items = InventoryItem::with(['usages' => function($query) use ($startDate, $endDate) {
-            $query->whereBetween('date', [$startDate, $endDate]);
-        }])->get();
+        // Cache report data for 2 minutes to improve performance
+        $cacheKey = "inventory_report_{$startDate}_{$endDate}";
+        
+        return cache()->remember($cacheKey, 120, function () use ($startDate, $endDate) {
+            $items = InventoryItem::with(['usages' => function($query) use ($startDate, $endDate) {
+                $query->whereBetween('date', [$startDate, $endDate]);
+            }])->get();
 
         $report = $items->map(function($item) use ($startDate, $endDate) {
             $totalUsage = $item->usages->sum('qty_used');
@@ -331,20 +338,21 @@ class InventoryController extends Controller
             ];
         });
 
-        return response()->json([
-            'period' => [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-                'days' => Carbon::parse($startDate)->diffInDays($endDate)
-            ],
-            'summary' => [
-                'total_items' => $items->count(),
-                'items_needing_reorder' => $report->where('reorder_needed', true)->count(),
-                'critical_items' => $report->where('stock_status', 'critical')->count(),
-                'total_usage' => $report->sum('total_usage'),
-            ],
-            'items' => $report
-        ]);
+            return [
+                'period' => [
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'days' => Carbon::parse($startDate)->diffInDays($endDate)
+                ],
+                'summary' => [
+                    'total_items' => $items->count(),
+                    'items_needing_reorder' => $report->where('reorder_needed', true)->count(),
+                    'critical_items' => $report->where('stock_status', 'critical')->count(),
+                    'total_usage' => $report->sum('total_usage'),
+                ],
+                'items' => $report
+            ];
+        });
     }
 
     /**

@@ -24,6 +24,7 @@ class Order extends Model
         'transaction_ref',
         'shipping_address',
         'contact_phone',
+        'cancellation_reason',
     ];
 
     protected $casts = [

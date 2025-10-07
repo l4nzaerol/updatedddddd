@@ -11,6 +11,9 @@ const EnhancedOrdersManagement = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [orderItems, setOrderItems] = useState([]);
+  const [productionStatus, setProductionStatus] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState('');
+  const [showCancellationModal, setShowCancellationModal] = useState(false);
   const [filters, setFilters] = useState({
     startDate: "",
     endDate: "",
@@ -116,11 +119,47 @@ const EnhancedOrdersManagement = () => {
     setCurrentPage(1);
   };
 
-  const updateOrderStatus = async (orderId, newStatus) => {
+  // Check if production is completed for table and chair orders
+  const checkProductionCompletion = async (orderId) => {
     try {
-      await api.put(`/orders/${orderId}/status`, { status: newStatus });
+      const response = await api.get(`/orders/${orderId}/production-status`);
+      return response.data;
+    } catch (error) {
+      console.error("Error checking production status:", error);
+      return { isCompleted: false, message: "Unable to check production status" };
+    }
+  };
+
+  const updateOrderStatus = async (orderId, newStatus, reason = '') => {
+    try {
+      // Check if trying to update to statuses that require production completion
+      if (['ready_for_delivery', 'delivered', 'completed'].includes(newStatus)) {
+        const productionStatus = await checkProductionCompletion(orderId);
+        
+        if (!productionStatus.isCompleted) {
+          toast.error(`Cannot mark as ${newStatus.replace('_', ' ')}: ${productionStatus.message}`);
+          return;
+        }
+      }
+
+      // Handle cancellation with reason
+      if (newStatus === 'cancelled') {
+        if (!reason.trim()) {
+          toast.error('Please provide a reason for cancellation');
+          return;
+        }
+        await api.put(`/orders/${orderId}/status`, { 
+          status: newStatus, 
+          cancellation_reason: reason 
+        });
+      } else {
+        await api.put(`/orders/${orderId}/status`, { status: newStatus });
+      }
+
       await fetchOrders();
       setShowStatusModal(false);
+      setShowCancellationModal(false);
+      setCancellationReason('');
       toast.success(`Order #${orderId} status updated to ${newStatus.replace('_', ' ')}`);
     } catch (error) {
       console.error("Error updating order status:", error);
@@ -134,9 +173,36 @@ const EnhancedOrdersManagement = () => {
     setShowDetailsModal(true);
   };
 
-  const handleStatusChange = (order) => {
+  const handleStatusChange = async (order) => {
     setSelectedOrder(order);
+    
+    // Always check production status - let the backend determine if tracking is needed
+    try {
+      const status = await checkProductionCompletion(order.id);
+      setProductionStatus(status);
+    } catch (error) {
+      console.error("Error checking production status:", error);
+      setProductionStatus({ 
+        isCompleted: false, 
+        message: "Unable to check production status",
+        details: "Error occurred while checking production status"
+      });
+    }
+    
     setShowStatusModal(true);
+  };
+
+  const handleCancellation = (orderId) => {
+    setSelectedOrder({ id: orderId });
+    setShowCancellationModal(true);
+  };
+
+  const confirmCancellation = () => {
+    if (!cancellationReason.trim()) {
+      toast.error('Please provide a reason for cancellation');
+      return;
+    }
+    updateOrderStatus(selectedOrder.id, 'cancelled', cancellationReason);
   };
 
   const getStatusBadge = (status) => {
@@ -600,7 +666,7 @@ const EnhancedOrdersManagement = () => {
         {/* Status Change Modal */}
         {showStatusModal && selectedOrder && (
           <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="modal-dialog">
+            <div className="modal-dialog modal-lg">
               <div className="modal-content">
                 <div className="modal-header bg-info text-white">
                   <h5 className="modal-title">
@@ -613,47 +679,211 @@ const EnhancedOrdersManagement = () => {
                     onClick={() => setShowStatusModal(false)}
                   ></button>
                 </div>
-                <div className="modal-body">
-                  <div className="alert alert-info">
-                    ℹ️ 
-                    Updating status for Order #{selectedOrder.id}
-                  </div>
-                  <p><strong>Current Status:</strong> {getStatusBadge(selectedOrder.status)}</p>
-                  <hr />
-                  <h6 className="fw-bold">Select New Status:</h6>
-                  <div className="list-group">
-                    {statusOptions.map((status) => (
-                      <button
-                        key={status.value}
-                        className={`list-group-item list-group-item-action d-flex align-items-center ${
-                          selectedOrder.status === status.value ? 'active' : ''
-                        }`}
-                        onClick={() => updateOrderStatus(selectedOrder.id, status.value)}
-                        disabled={selectedOrder.status === status.value}
-                      >
-                        <span className="me-3">{status.icon}</span>
-                        <div>
-                          <div className="fw-semibold">{status.label}</div>
-                          <small className="text-muted">
-                            {status.value === 'pending' && 'Order is awaiting acceptance'}
-                            {status.value === 'processing' && 'Order is accepted and in production'}
-                            {status.value === 'ready_for_delivery' && 'Order is ready to be delivered'}
-                            {status.value === 'delivered' && 'Order has been delivered to customer'}
-                            {status.value === 'completed' && 'Order is fully completed'}
-                            {status.value === 'cancelled' && 'Order has been cancelled'}
-                          </small>
+                <div className="modal-body p-4">
+                  <div className="row">
+                    {/* Left Column - Order Info & Production Status */}
+                    <div className="col-md-6">
+                      {/* Order Info Header */}
+                      <div className="text-center mb-4">
+                        <h5 className="text-dark mb-2">Order #{selectedOrder.id}</h5>
+                        <div className="d-flex justify-content-center align-items-center gap-2">
+                          <span className="text-muted">Current Status:</span>
+                          {getStatusBadge(selectedOrder.status)}
                         </div>
-                      </button>
-                    ))}
+                      </div>
+
+                      {/* Production Status Section */}
+                      {productionStatus && (
+                        <div className={`alert ${productionStatus.isCompleted ? 'alert-success' : 'alert-warning'} border-0 mb-4`}>
+                          <div className="d-flex align-items-start">
+                            <div className="me-3">
+                              {productionStatus.isCompleted ? (
+                                <i className="fas fa-check-circle text-success fs-4"></i>
+                              ) : (
+                                <i className="fas fa-clock text-warning fs-4"></i>
+                              )}
+                            </div>
+                            <div className="flex-grow-1">
+                              <h6 className="mb-2 fw-semibold">
+                                {productionStatus.isCompleted ? 'Production Complete' : 'Production In Progress'}
+                              </h6>
+                              <p className="mb-2 text-muted">{productionStatus.message}</p>
+                              
+                              {productionStatus.stage && (
+                                <div className="d-flex align-items-center mb-1">
+                                  <i className="fas fa-cog text-primary me-2"></i>
+                                  <span className="text-primary fw-semibold">Current Stage: {productionStatus.stage}</span>
+                                </div>
+                              )}
+                              
+                              {productionStatus.progress !== undefined && productionStatus.progress > 0 && (
+                                <div className="d-flex align-items-center mb-1">
+                                  <i className="fas fa-chart-line text-info me-2"></i>
+                                  <span className="text-info fw-semibold">Progress: {productionStatus.progress}%</span>
+                                </div>
+                              )}
+                              
+                              {productionStatus.details && (
+                                <div className="d-flex align-items-center mb-1">
+                                  <i className="fas fa-info-circle text-info me-2"></i>
+                                  <span className="text-info">{productionStatus.details}</span>
+                                </div>
+                              )}
+                              
+                              {!productionStatus.isCompleted && (
+                                <div className="d-flex align-items-center mt-2">
+                                  <i className="fas fa-exclamation-triangle text-warning me-2"></i>
+                                  <span className="text-warning fw-semibold">Complete production before marking as ready for delivery</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right Column - Status Selection */}
+                    <div className="col-md-6">
+                      <h6 className="fw-semibold text-dark mb-3">Update Status</h6>
+                      <div className="row g-2">
+                        {statusOptions.map((status) => {
+                          const requiresProductionCompletion = ['ready_for_delivery', 'delivered', 'completed'].includes(status.value);
+                          const isDisabled = selectedOrder.status === status.value || 
+                            (requiresProductionCompletion && productionStatus && !productionStatus.isCompleted);
+                          const isCurrentStatus = selectedOrder.status === status.value;
+                          
+                          return (
+                            <div key={status.value} className="col-12">
+                              <button
+                                className={`btn w-100 text-start p-3 border-0 rounded-3 ${
+                                  isCurrentStatus 
+                                    ? 'bg-primary text-white' 
+                                    : isDisabled 
+                                      ? 'bg-light text-muted' 
+                                      : 'bg-white border hover-shadow'
+                                }`}
+                                onClick={() => {
+                                  if (status.value === 'cancelled') {
+                                    handleCancellation(selectedOrder.id);
+                                  } else if (!isDisabled) {
+                                    updateOrderStatus(selectedOrder.id, status.value);
+                                  }
+                                }}
+                                disabled={isDisabled}
+                                style={{
+                                  transition: 'all 0.2s ease',
+                                  boxShadow: isCurrentStatus ? '0 4px 12px rgba(13, 110, 253, 0.3)' : '0 2px 4px rgba(0,0,0,0.1)'
+                                }}
+                              >
+                                <div className="d-flex align-items-center">
+                                  <span className="me-3 fs-5">{status.icon}</span>
+                                  <div className="flex-grow-1">
+                                    <div className="fw-semibold">{status.label}</div>
+                                    <small className={`${isCurrentStatus ? 'text-white-50' : 'text-muted'}`}>
+                                      {status.value === 'pending' && 'Order is awaiting acceptance'}
+                                      {status.value === 'processing' && 'Order is accepted and in production'}
+                                      {status.value === 'ready_for_delivery' && (
+                                        isDisabled && productionStatus && !productionStatus.isCompleted
+                                          ? 'Production must be completed first'
+                                          : 'Order is ready to be delivered'
+                                      )}
+                                      {status.value === 'delivered' && (
+                                        isDisabled && productionStatus && !productionStatus.isCompleted
+                                          ? 'Production must be completed first'
+                                          : 'Order has been delivered to customer'
+                                      )}
+                                      {status.value === 'completed' && (
+                                        isDisabled && productionStatus && !productionStatus.isCompleted
+                                          ? 'Production must be completed first'
+                                          : 'Order is fully completed'
+                                      )}
+                                      {status.value === 'cancelled' && 'Order has been cancelled'}
+                                    </small>
+                                  </div>
+                                  {isCurrentStatus && (
+                                    <i className="fas fa-check-circle text-white fs-5"></i>
+                                  )}
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="modal-footer">
+                <div className="modal-footer border-0 bg-light p-3">
                   <button 
                     type="button" 
-                    className="btn btn-secondary" 
+                    className="btn btn-outline-secondary btn-sm" 
                     onClick={() => setShowStatusModal(false)}
                   >
+                    <i className="fas fa-times me-1"></i>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cancellation Modal */}
+        {showCancellationModal && selectedOrder && (
+          <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal-dialog modal-sm">
+              <div className="modal-content">
+                <div className="modal-header bg-danger text-white">
+                  <h5 className="modal-title">
+                    <i className="fas fa-times-circle me-2"></i>
+                    Cancel Order
+                  </h5>
+                  <button 
+                    type="button" 
+                    className="btn-close btn-close-white" 
+                    onClick={() => {
+                      setShowCancellationModal(false);
+                      setCancellationReason('');
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body p-3">
+                  <div className="text-center mb-3">
+                    <h6 className="text-muted mb-1">Order #{selectedOrder.id}</h6>
+                    <p className="text-muted small">Please provide a reason for cancelling this order</p>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold small">Cancellation Reason *</label>
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      value={cancellationReason}
+                      onChange={(e) => setCancellationReason(e.target.value)}
+                      placeholder="Please explain why this order is being cancelled..."
+                      required
+                    />
+                    <small className="text-muted">This reason will be visible to the customer</small>
+                  </div>
+                </div>
+                <div className="modal-footer border-0 bg-light p-3">
+                  <button 
+                    type="button" 
+                    className="btn btn-outline-secondary btn-sm" 
+                    onClick={() => {
+                      setShowCancellationModal(false);
+                      setCancellationReason('');
+                    }}
+                  >
+                    <i className="fas fa-times me-1"></i>
                     Cancel
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-danger btn-sm" 
+                    onClick={confirmCancellation}
+                  >
+                    <i className="fas fa-times-circle me-1"></i>
+                    Confirm Cancellation
                   </button>
                 </div>
               </div>

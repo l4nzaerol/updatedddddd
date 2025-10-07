@@ -162,6 +162,15 @@ export default function ProductionTrackingSystem() {
   const markOrderReadyForDelivery = async (orderId) => {
     try {
       console.log('Marking order as ready for delivery:', orderId);
+      
+      // Check production completion status first
+      const productionStatus = await api.get(`/orders/${orderId}/production-status`);
+      
+      if (!productionStatus.data.isCompleted) {
+        alert(`❌ Cannot mark as ready for delivery: ${productionStatus.data.message}`);
+        return;
+      }
+      
       const response = await api.put(`/orders/${orderId}/ready-for-delivery`);
       console.log('Response:', response.data);
       

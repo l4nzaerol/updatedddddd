@@ -43,27 +43,28 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('products', function (Blueprint $table) {
-            $table->dropIndex(['name']);
-            $table->dropIndex(['price']);
+            $table->dropIndex('products_name_index');
+            $table->dropIndex('products_price_index');
         });
 
         Schema::table('orders', function (Blueprint $table) {
-            $table->dropIndex(['checkout_date']);
-            $table->dropIndex(['status']);
-            $table->dropIndex(['payment_status']);
-            $table->dropIndex(['checkout_date', 'status']);
+            $table->dropIndex('orders_checkout_date_index');
+            $table->dropIndex('orders_status_index');
+            $table->dropIndex('orders_payment_status_index');
+            $table->dropIndex('orders_checkout_date_status_index');
         });
 
         Schema::table('order_items', function (Blueprint $table) {
-            $table->dropIndex(['product_id']);
-            $table->dropIndex(['order_id']);
-            $table->dropIndex(['product_id', 'order_id']);
+            $table->dropIndex('order_items_product_id_index');
+            $table->dropIndex('order_items_order_id_index');
+            $table->dropIndex('order_items_product_id_order_id_index');
         });
 
         Schema::table('inventory_items', function (Blueprint $table) {
-            $table->dropIndex(['category']);
-            $table->dropIndex(['name']);
-            $table->dropIndex(['category', 'name']);
+            $table->dropIndex('inventory_items_category_index');
+            $table->dropIndex('inventory_items_name_index');
+            $table->dropIndex('inventory_items_category_name_index');
         });
     }
 };
+

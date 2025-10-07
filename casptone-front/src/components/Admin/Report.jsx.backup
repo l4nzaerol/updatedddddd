@@ -20,6 +20,7 @@ const Report = () => {
     const navigate = useNavigate();
     const [windowDays, setWindowDays] = useState(30);
     const [loading, setLoading] = useState(true);
+    const [loadingMessage, setLoadingMessage] = useState("Loading reports...");
     const [error, setError] = useState("");
     const [mainTab, setMainTab] = useState("inventory"); // Main category: inventory, production, or sales
     const [activeTab, setActiveTab] = useState("overview"); // Sub-tab within category
@@ -61,171 +62,404 @@ const Report = () => {
         console.log('🔍 Has material_usage_by_product?', !!resourceUtilization?.material_usage_by_product);
     }, [activeTab, mainTab, resourceUtilization]);
 
+    // Smart loading function that loads only what's needed
+    const loadTabData = useCallback(async (tab, subTab) => {
+        setLoading(true);
+        setError("");
+        setLoadingMessage(`Loading ${tab} ${subTab} data...`);
+        
+        try {
+            console.log(`🚀 Loading data for ${tab}/${subTab}...`);
+            
+            if (tab === "inventory") {
+                await loadInventoryData(subTab);
+            } else if (tab === "production") {
+                await loadProductionData(subTab);
+            } else if (tab === "sales") {
+                await loadSalesData(subTab);
+            }
+            
+            console.log(`✅ Data loaded for ${tab}/${subTab}`);
+        } catch (err) {
+            console.error("Failed to load tab data:", err);
+            setError("Failed to load reports. Please try refreshing.");
+        } finally {
+            setLoading(false);
+            setLoadingMessage("Loading reports...");
+        }
+    }, [windowDays, selectedDate]);
+
+    // Load inventory data based on sub-tab
+    const loadInventoryData = async (subTab) => {
+        const promises = [];
+        
+        // Always load dashboard for inventory
+        if (!dashboardData) {
+            promises.push(
+                api.get("/inventory/dashboard").then(res => {
+                    setDashboardData(res.data);
+                    return res.data;
+                }).catch(e => console.error("Dashboard load failed:", e))
+            );
+        }
+        
+        // Load specific data based on sub-tab
+        switch (subTab) {
+            case "overview":
+                if (!dashboardData) {
+                    // Dashboard already loaded above
+                }
+                break;
+            case "inventory":
+                if (!inventoryReport) {
+                    promises.push(
+                        api.get("/inventory/report", { 
+                            params: { 
+                                start_date: getStartDate(windowDays), 
+                                end_date: new Date().toISOString().split('T')[0] 
+                            } 
+                        }).then(res => {
+                            setInventoryReport(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Inventory report load failed:", e))
+                    );
+                }
+                break;
+            case "forecast":
+                if (!forecastReport) {
+                    promises.push(
+                        api.get("/inventory/forecast", { 
+                            params: { forecast_days: 30, historical_days: windowDays } 
+                        }).then(res => {
+                            setForecastReport(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Forecast report load failed:", e))
+                    );
+                }
+                break;
+            case "replenishment":
+                if (!replenishmentSchedule) {
+                    promises.push(
+                        api.get("/inventory/replenishment-schedule").then(res => {
+                            setReplenishmentSchedule(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Replenishment schedule load failed:", e))
+                    );
+                }
+                break;
+            case "trends":
+                if (!consumptionTrends) {
+                    promises.push(
+                        api.get("/inventory/consumption-trends", { params: { days: windowDays } }).then(res => {
+                            setConsumptionTrends(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Consumption trends load failed:", e))
+                    );
+                }
+                break;
+            case "daily":
+                if (!dailyUsage) {
+                    promises.push(
+                        api.get("/inventory/daily-usage", { params: { date: selectedDate } }).then(res => {
+                            setDailyUsage(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Daily usage load failed:", e))
+                    );
+                }
+                break;
+        }
+        
+        // Execute all promises in parallel
+        await Promise.all(promises);
+    };
+
+    // Load production data based on sub-tab
+    const loadProductionData = async (subTab) => {
+        const promises = [];
+        
+        switch (subTab) {
+            case "output-analytics":
+                if (!productionOutput) {
+                    promises.push(
+                        api.get("/production/output-analytics").then(res => {
+                            setProductionOutput(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Production output load failed:", e))
+                    );
+                }
+                break;
+            case "resource-util":
+                if (!resourceUtilization) {
+                    promises.push(
+                        api.get("/production/resource-utilization").then(res => {
+                            setResourceUtilization(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Resource utilization load failed:", e))
+                    );
+                }
+                break;
+            case "cycle-throughput":
+                if (!productionPerformance) {
+                    promises.push(
+                        api.get("/production/performance").then(res => {
+                            setProductionPerformance(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Production performance load failed:", e))
+                    );
+                }
+                break;
+            case "predictive":
+                if (!predictiveAnalytics) {
+                    promises.push(
+                        api.get("/production/predictive-analytics").then(res => {
+                            setPredictiveAnalytics(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Predictive analytics load failed:", e))
+                    );
+                }
+                break;
+        }
+        
+        await Promise.all(promises);
+    };
+
+    // Load sales data based on sub-tab
+    const loadSalesData = async (subTab) => {
+        const promises = [];
+        
+        switch (subTab) {
+            case "dashboard":
+                if (!salesDashboardData) {
+                    promises.push(
+                        api.get("/sales/dashboard").then(res => {
+                            setSalesDashboardData(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Sales dashboard load failed:", e))
+                    );
+                }
+                break;
+            case "process":
+                if (!salesProcessData) {
+                    promises.push(
+                        api.get("/sales/process-analytics").then(res => {
+                            setSalesProcessData(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Sales process load failed:", e))
+                    );
+                }
+                break;
+            case "products":
+                if (!productPerformanceData) {
+                    promises.push(
+                        api.get("/sales/product-performance").then(res => {
+                            setProductPerformanceData(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Product performance load failed:", e))
+                    );
+                }
+                break;
+            case "reports":
+                if (!salesReportData) {
+                    promises.push(
+                        api.get("/sales/reports").then(res => {
+                            setSalesReportData(res.data);
+                            return res.data;
+                        }).catch(e => console.error("Sales reports load failed:", e))
+                    );
+                }
+                break;
+        }
+        
+        await Promise.all(promises);
+    };
+
+    // Legacy function for backward compatibility
     const fetchAllReports = useCallback(async () => {
         setLoading(true);
         setError("");
-        const startTime = performance.now();
         try {
-            console.log("🚀 Starting progressive report loading...");
+            console.log("Starting to fetch all reports...");
             
-            // Phase 1: Load critical data first (most important for user)
-            console.log("📊 Phase 1: Loading critical data...");
-            const criticalRequests = [
-                api.get("/inventory/dashboard"),
+            // Load all data in parallel for complete refresh
+            const promises = [
+                api.get("/inventory/dashboard").then(res => setDashboardData(res.data)).catch(e => console.error("Dashboard load failed:", e)),
                 api.get("/inventory/report", { 
                     params: { 
                         start_date: getStartDate(windowDays), 
                         end_date: new Date().toISOString().split('T')[0] 
                     } 
-                }),
-                api.get("/productions/analytics")
-            ];
-            
-            const criticalResults = await Promise.allSettled(criticalRequests);
-            
-            // Set critical data immediately
-            if (criticalResults[0].status === 'fulfilled') {
-                setDashboardData(criticalResults[0].value.data);
-                console.log("✅ Dashboard data loaded");
-            }
-            if (criticalResults[1].status === 'fulfilled') {
-                setInventoryReport(criticalResults[1].value.data);
-                console.log("✅ Inventory report loaded");
-            }
-            if (criticalResults[2].status === 'fulfilled') {
-                setProductionAnalytics(criticalResults[2].value.data);
-                setProductionPerformance(criticalResults[2].value.data);
-                console.log("✅ Production analytics loaded");
-            }
-            
-            // Phase 2: Load secondary data in background
-            console.log("📈 Phase 2: Loading secondary data...");
-            const secondaryRequests = [
+                }).then(res => setInventoryReport(res.data)).catch(e => console.error("Inventory report load failed:", e)),
                 api.get("/inventory/forecast", { 
                     params: { forecast_days: 30, historical_days: windowDays } 
-                }),
-                api.get("/inventory/replenishment-schedule"),
-                api.get("/inventory/consumption-trends", { 
-                    params: { days: windowDays } 
-                }),
-                api.get("/inventory/daily-usage", { 
-                    params: { date: selectedDate } 
-                })
-            ];
+                }).then(res => setForecastReport(res.data)).catch(e => console.error("Forecast report load failed:", e)),
             
-            const secondaryResults = await Promise.allSettled(secondaryRequests);
+                api.get("/inventory/replenishment-schedule").then(res => setReplenishmentSchedule(res.data)).catch(e => console.error("Replenishment schedule load failed:", e)),
             
-            // Set secondary data
-            if (secondaryResults[0].status === 'fulfilled') {
-                setForecastReport(secondaryResults[0].value.data);
-                console.log("✅ Forecast report loaded");
-            }
-            if (secondaryResults[1].status === 'fulfilled') {
-                setReplenishmentSchedule(secondaryResults[1].value.data);
-                console.log("✅ Replenishment schedule loaded");
-            }
-            if (secondaryResults[2].status === 'fulfilled') {
-                setConsumptionTrends(secondaryResults[2].value.data);
-                console.log("✅ Consumption trends loaded");
-            }
-            if (secondaryResults[3].status === 'fulfilled') {
-                setDailyUsage(secondaryResults[3].value.data);
-                console.log("✅ Daily usage loaded");
-            }
+                api.get("/inventory/consumption-trends", { params: { days: windowDays } }).then(res => setConsumptionTrends(res.data)).catch(e => console.error("Consumption trends load failed:", e)),
             
-            // Phase 3: Load advanced analytics in background (lowest priority)
-            console.log("🔬 Phase 3: Loading advanced analytics...");
-            const advancedRequests = [
+                api.get("/inventory/daily-usage", { params: { date: selectedDate } }).then(res => setDailyUsage(res.data)).catch(e => console.error("Daily usage load failed:", e)),
+                api.get("/productions/analytics").then(res => {
+                    setProductionAnalytics(res.data);
+                    setProductionPerformance(res.data);
+                }).catch(e => console.error("Production analytics load failed:", e)),
                 api.get('/analytics/production-output', { params: { 
                     start_date: getStartDate(90), 
                     end_date: new Date().toISOString().split('T')[0],
                     timeframe: 'daily'
-                }}),
+                }}).then(res => setProductionOutput(res.data)).catch(e => console.error("Production output load failed:", e)),
                 api.get('/analytics/resource-utilization', { params: { 
                     start_date: getStartDate(90), 
                     end_date: new Date().toISOString().split('T')[0]
-                }}),
+                }}).then(res => setResourceUtilization(res.data)).catch(e => console.error("Resource utilization load failed:", e)),
                 api.get('/analytics/production-performance', { params: { 
                     start_date: getStartDate(90), 
                     end_date: new Date().toISOString().split('T')[0]
-                }}),
-                api.get('/analytics/predictive', { params: { forecast_days: 30 }}),
-                api.get('/analytics/material-usage-trends', { params: { 
-                    start_date: getStartDate(90), 
-                    end_date: new Date().toISOString().split('T')[0],
-                    timeframe: 'daily'
-                }}),
-                api.get('/analytics/automated-stock-report'),
-                api.get('/analytics/sales-dashboard'),
-                api.get('/analytics/sales-process'),
-                api.get('/analytics/product-performance'),
-                api.get('/analytics/sales-report')
+                }}).then(res => setAdvancedPerformance(res.data)).catch(e => console.error("Advanced performance load failed:", e)),
+                api.get('/analytics/predictive', { params: { forecast_days: 30 }}).then(res => setPredictiveAnalytics(res.data)).catch(e => console.error("Predictive analytics load failed:", e)),
+                api.get('/analytics/automated-stock-report').then(res => setStockReport(res.data)).catch(e => console.error("Stock report load failed:", e)),
+                api.get("/sales/dashboard").then(res => setSalesDashboardData(res.data)).catch(e => console.error("Sales dashboard load failed:", e)),
+                api.get("/sales/process-analytics").then(res => setSalesProcessData(res.data)).catch(e => console.error("Sales process load failed:", e)),
+                api.get("/sales/product-performance").then(res => setProductPerformanceData(res.data)).catch(e => console.error("Product performance load failed:", e)),
+                api.get("/sales/reports").then(res => setSalesReportData(res.data)).catch(e => console.error("Sales reports load failed:", e))
             ];
             
-            const advancedResults = await Promise.allSettled(advancedRequests);
-            
-            // Set advanced analytics data
-            if (advancedResults[0].status === 'fulfilled') {
-                setProductionOutput(advancedResults[0].value.data);
-                console.log("✅ Production output loaded");
-            }
-            if (advancedResults[1].status === 'fulfilled') {
-                setResourceUtilization(advancedResults[1].value.data);
-                console.log("✅ Resource utilization loaded");
-            }
-            if (advancedResults[2].status === 'fulfilled') {
-                setAdvancedPerformance(advancedResults[2].value.data);
-                console.log("✅ Production performance loaded");
-            }
-            if (advancedResults[3].status === 'fulfilled') {
-                setPredictiveAnalytics(advancedResults[3].value.data);
-                console.log("✅ Predictive analytics loaded");
-            }
-            if (advancedResults[4].status === 'fulfilled') {
-                console.log("✅ Material trends loaded");
-            }
-            if (advancedResults[5].status === 'fulfilled') {
-                setStockReport(advancedResults[5].value.data);
-                console.log("✅ Stock report loaded");
-            }
-            if (advancedResults[6].status === 'fulfilled') {
-                setSalesDashboardData(advancedResults[6].value.data);
-                console.log("✅ Sales dashboard loaded");
-            }
-            if (advancedResults[7].status === 'fulfilled') {
-                setSalesProcessData(advancedResults[7].value.data);
-                console.log("✅ Sales process loaded");
-            }
-            if (advancedResults[8].status === 'fulfilled') {
-                setProductPerformanceData(advancedResults[8].value.data);
-                console.log("✅ Product performance loaded");
-            }
-            if (advancedResults[9].status === 'fulfilled') {
-                setSalesReportData(advancedResults[9].value.data);
-                console.log("✅ Sales report loaded");
-            }
-            
-            const totalTime = performance.now() - startTime;
-            console.log(`🎉 All reports loaded successfully in ${totalTime.toFixed(2)}ms (${(totalTime/1000).toFixed(2)}s)`);
+            // Execute all promises in parallel
+            await Promise.all(promises);
+            console.log("All reports loaded successfully!");
             
         } catch (err) {
-            console.error("❌ Error fetching reports:", err);
+            console.error("Error fetching reports:", err);
             setError("Failed to load reports. Please check console for details.");
         } finally {
             setLoading(false);
         }
     }, [windowDays, selectedDate]);
 
+
+                            case 0: 
+                                setProductionOutput(result.value.data);
+                                console.log('✅ Production Output loaded:', result.value.data);
+                                break;
+                            case 1: 
+                                setResourceUtilization(result.value.data);
+                                console.log('✅ Resource Utilization loaded:', result.value.data);
+                                console.log('   - Has material_usage_by_product?', !!result.value.data?.material_usage_by_product);
+                                console.log('   - Is it an array?', Array.isArray(result.value.data?.material_usage_by_product));
+                                console.log('   - Count:', result.value.data?.material_usage_by_product?.length || 0);
+                                console.log('   - Data:', result.value.data?.material_usage_by_product);
+                                break;
+                            case 2: 
+                                setAdvancedPerformance(result.value.data);
+                                console.log('✅ Production Performance loaded:', result.value.data);
+                                break;
+                            case 3: 
+                                setPredictiveAnalytics(result.value.data);
+                                console.log('✅ Predictive Analytics loaded:', result.value.data);
+                                break;
+                            case 4: 
+                                // setMaterialTrends(result.value.data);
+                                console.log('✅ Material Trends loaded:', result.value.data);
+                                break;
+                            case 5: 
+                                setStockReport(result.value.data);
+                                console.log('✅ Stock Report loaded:', result.value.data);
+                                break;
+                            default:
+                                console.log('⚠️ Unknown analytics endpoint index:', index);
+                                break;
+                        }
+                    } else {
+                        console.error(`❌ Failed to load ${endpointNames[index]}:`, result.reason?.response?.data || result.reason);
+                    }
+                });
+                
+                const successCount = results.filter(r => r.status === 'fulfilled').length;
+                console.log(`📊 Advanced analytics: ${successCount}/${results.length} endpoints loaded successfully`);
+            } catch (e) {
+                console.error("Advanced analytics load failed:", e);
+            }
+            
+            // Load Sales Analytics Data
+            try {
+                console.log("🛒 Loading Sales Analytics...");
+                const salesEndpoints = [
+                    { url: '/analytics/sales-dashboard', setter: setSalesDashboardData, name: 'Sales Dashboard' },
+                    { url: '/analytics/sales-process', setter: setSalesProcessData, name: 'Sales Process' },
+                    { url: '/analytics/product-performance', setter: setProductPerformanceData, name: 'Product Performance' },
+                    { url: '/analytics/sales-report', setter: setSalesReportData, name: 'Sales Report' }
+                ];
+                
+                const salesPromises = salesEndpoints.map(endpoint => 
+                    api.get(endpoint.url, {
+                        params: {
+                            start_date: getStartDate(windowDays),
+                            end_date: new Date().toISOString().split('T')[0]
+                        }
+                    }).then(response => {
+                        endpoint.setter(response.data);
+                        console.log(`✅ ${endpoint.name} loaded:`, response.data);
+                        return { status: 'fulfilled', value: response };
+                    }).catch(error => {
+                        console.error(`❌ ${endpoint.name} failed:`, error);
+                        return { status: 'rejected', reason: error };
+                    })
+                );
+                
+                const salesResults = await Promise.allSettled(salesPromises);
+                const salesSuccessCount = salesResults.filter(r => r.status === 'fulfilled').length;
+                console.log(`🛒 Sales Analytics: ${salesSuccessCount}/${salesResults.length} endpoints loaded successfully`);
+                
+            } catch (e) {
+                console.error("Sales analytics load failed:", e);
+            }
+            
+            console.log("All reports loaded successfully!");
+            
+        } catch (err) {
+            console.error("Error fetching reports:", err);
+            setError("Failed to load reports. Please check console for details.");
+        } finally {
+            setLoading(false);
+        }
+    }, [windowDays, selectedDate]);
+
+    // Smart loading based on tab changes
     useEffect(() => {
-        fetchAllReports();
-    }, [fetchAllReports]);
+        loadTabData(mainTab, activeTab);
+    }, [mainTab, activeTab, loadTabData]);
+
+    // Initial load
+    useEffect(() => {
+        if (!dashboardData && mainTab === "inventory") {
+            loadTabData("inventory", "overview");
+        }
+    }, []);
 
     const handleGlobalRefresh = () => {
         console.log('🔄 Global refresh triggered');
         clearRequestCache();
         setRefreshKey(prev => prev + 1); // Force component refresh
         console.log('🔄 Refresh key updated to:', refreshKey + 1);
-        fetchAllReports();
+        
+        // Clear all cached data to force reload
+        setDashboardData(null);
+        setInventoryReport(null);
+        setForecastReport(null);
+        setReplenishmentSchedule(null);
+        setConsumptionTrends(null);
+        setDailyUsage(null);
+        setProductionOutput(null);
+        setResourceUtilization(null);
+        setAdvancedPerformance(null);
+        setPredictiveAnalytics(null);
+        setStockReport(null);
+        setSalesDashboardData(null);
+        setSalesProcessData(null);
+        setProductPerformanceData(null);
+        setSalesReportData(null);
+        
+        // Reload current tab data
+        loadTabData(mainTab, activeTab);
     };
     
     const getStartDate = (days) => {
@@ -629,14 +863,14 @@ const Report = () => {
                 {loading && (
                     <div className="alert alert-info">
                         <div className="spinner-border spinner-border-sm me-2" role="status"></div>
-                        Loading reports... Please wait.
+                        {loadingMessage} Please wait.
                     </div>
                 )}
                 
                 {error && (
                     <div className="alert alert-warning">
                         {error}
-                        <button className="btn btn-sm btn-primary ms-3" onClick={fetchAllReports}>
+                        <button className="btn btn-sm btn-primary ms-3" onClick={handleGlobalRefresh}>
                             Retry
                         </button>
                     </div>

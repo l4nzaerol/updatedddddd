@@ -37,6 +37,7 @@ const UnifiedOrderManagement = () => {
   const [adminNotes, setAdminNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [productionStatus, setProductionStatus] = useState(null);
   
   // Filters
   const [filters, setFilters] = useState({
@@ -214,11 +215,33 @@ const UnifiedOrderManagement = () => {
     }
   };
 
+  // Check if production is completed for table and chair orders
+  const checkProductionCompletion = async (orderId) => {
+    try {
+      const response = await api.get(`/orders/${orderId}/production-status`);
+      return response.data;
+    } catch (error) {
+      console.error("Error checking production status:", error);
+      return { isCompleted: false, message: "Unable to check production status" };
+    }
+  };
+
   const handleUpdateStatus = async (newStatus) => {
     if (!selectedOrder) return;
 
     setProcessing(true);
     try {
+      // Check if trying to update to statuses that require production completion
+      if (['ready_for_delivery', 'delivered', 'completed'].includes(newStatus)) {
+        const productionStatus = await checkProductionCompletion(selectedOrder.id);
+        
+        if (!productionStatus.isCompleted) {
+          toast.error(`Cannot mark as ${newStatus.replace('_', ' ')}: ${productionStatus.message}`);
+          setProcessing(false);
+          return;
+        }
+      }
+
       await api.put(`/orders/${selectedOrder.id}/status`, { status: newStatus });
       toast.success(`Order #${selectedOrder.id} status updated to ${newStatus.replace('_', ' ')}`);
       
@@ -591,8 +614,22 @@ const UnifiedOrderManagement = () => {
                                   {order.acceptance_status === 'accepted' && (
                                     <button
                                       className="btn btn-outline-info"
-                                      onClick={() => {
+                                      onClick={async () => {
                                         setSelectedOrder(order);
+                                        
+                                        // Always check production status - let the backend determine if tracking is needed
+                                        try {
+                                          const status = await checkProductionCompletion(order.id);
+                                          setProductionStatus(status);
+                                        } catch (error) {
+                                          console.error("Error checking production status:", error);
+                                          setProductionStatus({ 
+                                            isCompleted: false, 
+                                            message: "Unable to check production status",
+                                            details: "Error occurred while checking production status"
+                                          });
+                                        }
+                                        
                                         setShowStatusModal(true);
                                       }}
                                       title="Update Status"
@@ -774,33 +811,144 @@ const UnifiedOrderManagement = () => {
       )}
 
       {/* Status Update Modal */}
-      {showStatusModal && selectedOrder && (
-        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog">
+        {showStatusModal && selectedOrder && (
+          <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal-dialog modal-lg">
             <div className="modal-content">
               <div className="modal-header bg-info text-white">
                 <h5 className="modal-title">Update Order Status</h5>
                 <button type="button" className="btn-close btn-close-white" onClick={() => setShowStatusModal(false)}></button>
               </div>
-              <div className="modal-body">
-                <p><strong>Current Status:</strong> {getStatusBadge(selectedOrder.status)}</p>
-                <hr />
-                <h6 className="fw-bold">Select New Status:</h6>
-                <div className="list-group">
-                  {['processing', 'ready_for_delivery', 'delivered', 'completed', 'cancelled'].map((status) => (
-                    <button
-                      key={status}
-                      className={`list-group-item list-group-item-action ${selectedOrder.status === status ? 'active' : ''}`}
-                      onClick={() => handleUpdateStatus(status)}
-                      disabled={selectedOrder.status === status || processing}
-                    >
-                      {getStatusBadge(status)}
-                    </button>
-                  ))}
+              <div className="modal-body p-3">
+                {/* Order Info Header */}
+                <div className="text-center mb-3">
+                  <h6 className="text-muted mb-1">Order #{selectedOrder.id}</h6>
+                  <div className="d-flex justify-content-center align-items-center gap-2">
+                    <span className="text-muted">Current Status:</span>
+                    {getStatusBadge(selectedOrder.status)}
+                  </div>
+                </div>
+
+                {/* Production Status Section */}
+                {productionStatus && (
+                  <div className={`alert ${productionStatus.isCompleted ? 'alert-success' : 'alert-warning'} border-0 mb-3`}>
+                    <div className="d-flex align-items-start">
+                      <div className="me-2">
+                        {productionStatus.isCompleted ? (
+                          <i className="fas fa-check-circle text-success fs-6"></i>
+                        ) : (
+                          <i className="fas fa-clock text-warning fs-6"></i>
+                        )}
+                      </div>
+                      <div className="flex-grow-1">
+                        <h6 className="mb-1 fw-semibold small">
+                          {productionStatus.isCompleted ? 'Production Complete' : 'Production In Progress'}
+                        </h6>
+                        <p className="mb-0 text-muted small">{productionStatus.message}</p>
+                        {productionStatus.stage && (
+                          <small className="text-primary d-block mt-1">
+                            <i className="fas fa-cog me-1"></i>
+                            Current Stage: {productionStatus.stage}
+                          </small>
+                        )}
+                        {productionStatus.progress !== undefined && productionStatus.progress > 0 && (
+                          <small className="text-info d-block mt-1">
+                            <i className="fas fa-chart-line me-1"></i>
+                            Progress: {productionStatus.progress}%
+                          </small>
+                        )}
+                        {productionStatus.details && (
+                          <small className="text-info d-block mt-1">
+                            <i className="fas fa-info-circle me-1"></i>
+                            {productionStatus.details}
+                          </small>
+                        )}
+                        {!productionStatus.isCompleted && (
+                          <small className="text-warning d-block mt-1">
+                            <i className="fas fa-clock me-1"></i>
+                            Complete production before marking as ready for delivery
+                          </small>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Status Selection */}
+                <div className="mb-2">
+                  <h6 className="fw-semibold text-dark mb-2 small">Update Status</h6>
+                  <div className="row g-1">
+                    {['processing', 'ready_for_delivery', 'delivered', 'completed', 'cancelled'].map((status) => {
+                      const requiresProductionCompletion = ['ready_for_delivery', 'delivered', 'completed'].includes(status);
+                      const isDisabled = selectedOrder.status === status || processing ||
+                        (requiresProductionCompletion && productionStatus && !productionStatus.isCompleted);
+                      const isCurrentStatus = selectedOrder.status === status;
+                      
+                      const statusConfig = {
+                        processing: { icon: '⚙️', label: 'Processing', color: 'primary' },
+                        ready_for_delivery: { icon: '📦', label: 'Ready for Delivery', color: 'info' },
+                        delivered: { icon: '✅', label: 'Delivered', color: 'success' },
+                        completed: { icon: '🎉', label: 'Completed', color: 'success' },
+                        cancelled: { icon: '❌', label: 'Cancelled', color: 'danger' }
+                      };
+                      
+                      const config = statusConfig[status];
+                      
+                      return (
+                        <div key={status} className="col-12">
+                          <button
+                            className={`btn w-100 text-start p-2 border-0 rounded-2 ${
+                              isCurrentStatus 
+                                ? 'bg-primary text-white' 
+                                : isDisabled 
+                                  ? 'bg-light text-muted' 
+                                  : 'bg-white border hover-shadow'
+                            }`}
+                            onClick={() => !isDisabled && handleUpdateStatus(status)}
+                            disabled={isDisabled}
+                            style={{
+                              transition: 'all 0.2s ease',
+                              boxShadow: isCurrentStatus ? '0 2px 8px rgba(13, 110, 253, 0.3)' : '0 1px 3px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            <div className="d-flex align-items-center">
+                              <span className="me-2 fs-6">{config.icon}</span>
+                              <div className="flex-grow-1">
+                                <div className="fw-semibold small">{config.label}</div>
+                                <small className={`${isCurrentStatus ? 'text-white-50' : 'text-muted'} small`}>
+                                  {status === 'processing' && 'Order is accepted and in production'}
+                                  {status === 'ready_for_delivery' && (
+                                    isDisabled && productionStatus && !productionStatus.isCompleted
+                                      ? 'Production must be completed first'
+                                      : 'Order is ready to be delivered'
+                                  )}
+                                  {status === 'delivered' && (
+                                    isDisabled && productionStatus && !productionStatus.isCompleted
+                                      ? 'Production must be completed first'
+                                      : 'Order has been delivered to customer'
+                                  )}
+                                  {status === 'completed' && (
+                                    isDisabled && productionStatus && !productionStatus.isCompleted
+                                      ? 'Production must be completed first'
+                                      : 'Order is fully completed'
+                                  )}
+                                  {status === 'cancelled' && 'Order has been cancelled'}
+                                </small>
+                              </div>
+                              {isCurrentStatus && (
+                                <i className="fas fa-check-circle text-white small"></i>
+                              )}
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)}>
+              <div className="modal-footer border-0 bg-light p-3">
+                <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowStatusModal(false)}>
+                  <i className="fas fa-times me-1"></i>
                   Close
                 </button>
               </div>

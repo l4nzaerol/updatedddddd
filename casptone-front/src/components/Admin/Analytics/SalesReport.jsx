@@ -6,7 +6,10 @@ import {
 } from 'recharts';
 import api from '../../../api/client';
 
-const SalesReport = ({ reportData, loading, error, onRefresh }) => {
+const SalesReport = () => {
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filters, setFilters] = useState({
     start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
@@ -14,29 +17,12 @@ const SalesReport = ({ reportData, loading, error, onRefresh }) => {
     payment_status: 'all'
   });
 
-  // Use props data if available, otherwise fetch
-  const [localReportData, setLocalReportData] = useState(reportData);
-  const [localLoading, setLocalLoading] = useState(loading);
-  const [localError, setLocalError] = useState(error);
-
   useEffect(() => {
-    if (reportData) {
-      setLocalReportData(reportData);
-      setLocalLoading(false);
-      setLocalError('');
-    } else {
-      fetchReportData();
-    }
-  }, [reportData]);
-
-  useEffect(() => {
-    if (!reportData) {
-      fetchReportData();
-    }
+    fetchReportData();
   }, [filters]);
 
   const fetchReportData = async () => {
-    setLocalLoading(true);
+    setLoading(true);
     try {
       const timestamp = Date.now();
       const response = await api.get('/analytics/sales-report', {
@@ -46,14 +32,14 @@ const SalesReport = ({ reportData, loading, error, onRefresh }) => {
           _force: 'true' // Force fresh data
         }
       });
-      setLocalReportData(response.data);
+      setReportData(response.data);
       console.log('Sales Report - Fresh data loaded:', response.data);
       console.log('Sales Report - Total orders from API:', response.data.summary?.total_orders);
     } catch (err) {
-      setLocalError('Failed to load sales report data');
+      setError('Failed to load sales report data');
       console.error('Sales report data error:', err);
     } finally {
-      setLocalLoading(false);
+      setLoading(false);
     }
   };
 
@@ -92,7 +78,7 @@ const SalesReport = ({ reportData, loading, error, onRefresh }) => {
     }
   };
 
-  if (localLoading) {
+  if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -102,31 +88,28 @@ const SalesReport = ({ reportData, loading, error, onRefresh }) => {
     );
   }
 
-  if (localError) {
+  if (error) {
     return (
       <div className="alert alert-danger">
         <h4>Error Loading Sales Report Data</h4>
-        <p>{localError}</p>
-        <button className="btn btn-primary" onClick={onRefresh || fetchReportData}>
+        <p>{error}</p>
+        <button className="btn btn-primary" onClick={fetchReportData}>
           Retry
         </button>
       </div>
     );
   }
 
-  if (!localReportData) {
+  if (!reportData) {
     return (
       <div className="alert alert-info">
         <h4>No Sales Report Data Available</h4>
         <p>No sales report data found for the selected filters.</p>
-        <button className="btn btn-primary" onClick={onRefresh || fetchReportData}>
-          Refresh Data
-        </button>
       </div>
     );
   }
 
-  const { orders, summary, filters: appliedFilters } = localReportData;
+  const { orders, summary, filters: appliedFilters } = reportData;
 
   // Prepare data for charts
   const ordersByDate = orders.reduce((acc, order) => {
@@ -173,7 +156,6 @@ const SalesReport = ({ reportData, loading, error, onRefresh }) => {
     <div className="sales-report">
       {/* Header */}
   
-
       {/* Summary Cards - Production Style */}
       <div className="row g-3 mb-4">
         <div className="col-md-2">

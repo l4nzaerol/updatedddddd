@@ -736,7 +736,8 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'status' => 'required|in:pending,processing,ready_for_delivery,delivered,completed,cancelled'
+            'status' => 'required|in:pending,processing,ready_for_delivery,delivered,completed,cancelled',
+            'cancellation_reason' => 'nullable|string|max:500'
         ]);
 
         $order = Order::with(['items.product', 'user'])->find($id);
@@ -749,6 +750,12 @@ class OrderController extends Controller
         $newStatus = $validated['status'];
         
         $order->status = $newStatus;
+        
+        // Handle cancellation reason
+        if ($newStatus === 'cancelled' && isset($validated['cancellation_reason'])) {
+            $order->cancellation_reason = $validated['cancellation_reason'];
+        }
+        
         $order->save();
 
         // Create notification for customer based on status change
@@ -927,6 +934,147 @@ class OrderController extends Controller
             'message' => 'Order marked as delivered',
             'order' => $order->load(['user', 'items.product'])
         ]);
+    }
+
+    /**
+     * Check production completion status for an order
+     */
+    public function checkProductionStatus($orderId)
+    {
+        try {
+            $order = Order::with(['items.product', 'productions.processes'])->findOrFail($orderId);
+            
+            // Check if order has table or chair items (specifically wooden furniture)
+            $hasTrackedProducts = $order->items->some(function ($item) {
+                if (!$item->product || !$item->product->name) {
+                    return false;
+                }
+                $productName = strtolower($item->product->name);
+                return str_contains($productName, 'table') || 
+                       str_contains($productName, 'chair') ||
+                       str_contains($productName, 'wooden') ||
+                       str_contains($productName, 'furniture');
+            });
+            
+            // Log for debugging
+            \Log::info('Production status check', [
+                'order_id' => $orderId,
+                'has_tracked_products' => $hasTrackedProducts,
+                'items' => $order->items->map(function($item) {
+                    return [
+                        'product_name' => $item->product->name ?? 'No product',
+                        'product_id' => $item->product_id
+                    ];
+                })->toArray()
+            ]);
+            
+            if (!$hasTrackedProducts) {
+                return response()->json([
+                    'isCompleted' => true,
+                    'message' => 'No production tracking required for this order',
+                    'details' => 'This order does not contain wooden furniture items'
+                ]);
+            }
+            
+            // Check if all productions are completed
+            $productions = $order->productions;
+            
+            if ($productions->isEmpty()) {
+                return response()->json([
+                    'isCompleted' => false,
+                    'message' => 'Production not started yet',
+                    'details' => 'Production records will be created when manufacturing begins',
+                    'stage' => 'Not Started'
+                ]);
+            }
+            
+            $allCompleted = true;
+            $incompleteProductions = [];
+            
+            foreach ($productions as $production) {
+                if ($production->status !== 'Completed') {
+                    $allCompleted = false;
+                    
+                    // Get detailed production stages
+                    $stages = $production->processes()->orderBy('process_order')->get();
+                    $currentStage = $stages->firstWhere('status', 'in_progress');
+                    $completedStages = $stages->where('status', 'completed')->count();
+                    $totalStages = $stages->count();
+                    
+                    $incompleteProductions[] = [
+                        'id' => $production->id,
+                        'product' => $production->product->name,
+                        'status' => $production->status,
+                        'current_stage' => $production->current_stage,
+                        'progress' => $production->overall_progress,
+                        'stages' => [
+                            'completed' => $completedStages,
+                            'total' => $totalStages,
+                            'current_stage_name' => $currentStage ? $currentStage->process_name : 'Pending',
+                            'current_stage_status' => $currentStage ? $currentStage->status : 'pending'
+                        ]
+                    ];
+                }
+            }
+            
+            if ($allCompleted) {
+                return response()->json([
+                    'isCompleted' => true,
+                    'message' => 'All wooden furniture production completed successfully',
+                    'details' => 'All items are ready for delivery',
+                    'stage' => 'Completed'
+                ]);
+            } else {
+                $woodenItems = collect($incompleteProductions)->filter(function($item) {
+                    $productName = strtolower($item['product']);
+                    return str_contains($productName, 'wooden') || 
+                           str_contains($productName, 'chair') || 
+                           str_contains($productName, 'table');
+                });
+                
+                $message = 'Wooden furniture production in progress. ';
+                if ($woodenItems->isNotEmpty()) {
+                    $message .= 'Incomplete wooden items: ' . $woodenItems->pluck('product')->join(', ');
+                    $currentStages = $woodenItems->map(function($item) {
+                        return $item['stages']['current_stage_name'] . ' (' . $item['stages']['completed'] . '/' . $item['stages']['total'] . ' stages)';
+                    })->join(', ');
+                    $message .= ' (Current stage: ' . $currentStages . ')';
+                } else {
+                    $message .= 'Incomplete items: ' . collect($incompleteProductions)->pluck('product')->join(', ');
+                    $message .= ' (Status: ' . collect($incompleteProductions)->pluck('status')->join(', ') . ')';
+                }
+                
+                // Get the most current production stage
+                $currentStage = 'Unknown';
+                $overallProgress = 0;
+                if (!empty($incompleteProductions)) {
+                    $firstProduction = $incompleteProductions[0];
+                    $currentStage = $firstProduction['stages']['current_stage_name'];
+                    $overallProgress = $firstProduction['progress'];
+                }
+                
+                return response()->json([
+                    'isCompleted' => false,
+                    'message' => $message,
+                    'details' => "Current stage: {$currentStage}",
+                    'stage' => $currentStage,
+                    'progress' => $overallProgress,
+                    'incompleteProductions' => $incompleteProductions,
+                    'woodenItems' => $woodenItems->values()->toArray()
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error checking production status', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'isCompleted' => false,
+                'message' => 'Unable to check production status: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
 }
