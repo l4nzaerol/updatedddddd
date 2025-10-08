@@ -262,6 +262,396 @@ const Report = () => {
         link.click();
     };
 
+    // Sales Export Handlers
+    const handleSalesExport = async (tabType, format) => {
+        try {
+            let data = null;
+            let filename = '';
+            
+            // Get data based on tab type
+            switch (tabType) {
+                case 'dashboard':
+                    data = salesDashboardData;
+                    filename = 'sales_dashboard';
+                    break;
+                case 'process':
+                    data = salesProcessData;
+                    filename = 'sales_process';
+                    break;
+                case 'reports':
+                    data = salesReportData;
+                    filename = 'sales_reports';
+                    break;
+                case 'products':
+                    data = productPerformanceData;
+                    filename = 'product_performance';
+                    break;
+                default:
+                    alert('Invalid tab type for export');
+                    return;
+            }
+
+            if (!data) {
+                alert('No data available to export');
+                return;
+            }
+
+            if (format === 'csv') {
+                // Export as CSV
+                const csvData = convertSalesDataToCSV(data, tabType);
+                downloadCSV(csvData, `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+            } else if (format === 'pdf') {
+                // Export as PDF
+                await exportSalesDataToPDF(data, tabType, filename);
+            }
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Failed to export data');
+        }
+    };
+
+    const convertSalesDataToCSV = (data, tabType) => {
+        if (!data) return '';
+        
+        switch (tabType) {
+            case 'dashboard':
+                return convertDashboardDataToCSV(data);
+            case 'process':
+                return convertProcessDataToCSV(data);
+            case 'reports':
+                return convertReportsDataToCSV(data);
+            case 'products':
+                return convertProductsDataToCSV(data);
+            default:
+                return '';
+        }
+    };
+
+    const convertDashboardDataToCSV = (data) => {
+        if (!data || !data.overview) return '';
+        
+        const headers = ['Metric', 'Value'];
+        const rows = [
+            ['Total Revenue', data.overview.total_revenue],
+            ['Total Orders', data.overview.total_orders],
+            ['Paid Orders', data.overview.paid_orders],
+            ['Pending Orders', data.overview.pending_orders],
+            ['Average Order Value', data.overview.average_order_value],
+            ['Conversion Rate', data.overview.conversion_rate]
+        ];
+        
+        return [headers.join(','), ...rows.map(row => row.map(val => `"${val}"`).join(','))].join('\n');
+    };
+
+    const convertProcessDataToCSV = (data) => {
+        if (!data) return '';
+        
+        const headers = ['Stage', 'Count', 'Percentage'];
+        const rows = data.stages?.map(stage => [
+            stage.name,
+            stage.count,
+            stage.percentage
+        ]) || [];
+        
+        return [headers.join(','), ...rows.map(row => row.map(val => `"${val}"`).join(','))].join('\n');
+    };
+
+    const convertReportsDataToCSV = (data) => {
+        if (!data || !data.orders) return '';
+        
+        const headers = ['Order ID', 'Customer', 'Total', 'Status', 'Payment Status', 'Date'];
+        const rows = data.orders.map(order => [
+            order.id,
+            order.customer_name,
+            order.total,
+            order.status,
+            order.payment_status,
+            order.created_at
+        ]);
+        
+        return [headers.join(','), ...rows.map(row => row.map(val => `"${val}"`).join(','))].join('\n');
+    };
+
+    const convertProductsDataToCSV = (data) => {
+        if (!data || !data.products) return '';
+        
+        const headers = ['Product', 'Orders', 'Revenue', 'Average Price'];
+        const rows = data.products.map(product => [
+            product.name,
+            product.orders,
+            product.revenue,
+            product.average_price
+        ]);
+        
+        return [headers.join(','), ...rows.map(row => row.map(val => `"${val}"`).join(','))].join('\n');
+    };
+
+    const exportSalesDataToPDF = async (data, tabType, filename) => {
+        // Dynamic import for jsPDF to avoid bundle size issues
+        const { jsPDF } = await import('jspdf');
+        const doc = new jsPDF();
+        
+        // Add title
+        doc.setFontSize(20);
+        doc.text(`${tabType.charAt(0).toUpperCase() + tabType.slice(1)} Report`, 20, 20);
+        
+        // Add date
+        doc.setFontSize(12);
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 30);
+        
+        // Add data based on tab type
+        let yPosition = 50;
+        doc.setFontSize(14);
+        
+        switch (tabType) {
+            case 'dashboard':
+                if (data.overview) {
+                    doc.text('Sales Overview:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    doc.text(`Total Revenue: ₱${data.overview.total_revenue}`, 20, yPosition);
+                    yPosition += 7;
+                    doc.text(`Total Orders: ${data.overview.total_orders}`, 20, yPosition);
+                    yPosition += 7;
+                    doc.text(`Paid Orders: ${data.overview.paid_orders}`, 20, yPosition);
+                    yPosition += 7;
+                    doc.text(`Pending Orders: ${data.overview.pending_orders}`, 20, yPosition);
+                    yPosition += 7;
+                    doc.text(`Average Order Value: ₱${data.overview.average_order_value}`, 20, yPosition);
+                    yPosition += 7;
+                    doc.text(`Conversion Rate: ${data.overview.conversion_rate}%`, 20, yPosition);
+                }
+                break;
+            case 'process':
+                if (data.stages) {
+                    doc.text('Sales Process Stages:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    data.stages.forEach(stage => {
+                        doc.text(`${stage.name}: ${stage.count} (${stage.percentage}%)`, 20, yPosition);
+                        yPosition += 7;
+                    });
+                }
+                break;
+            case 'reports':
+                if (data.orders) {
+                    doc.text('Recent Orders:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(8);
+                    data.orders.slice(0, 20).forEach(order => {
+                        doc.text(`Order ${order.id}: ${order.customer_name} - ₱${order.total} (${order.status})`, 20, yPosition);
+                        yPosition += 5;
+                    });
+                }
+                break;
+            case 'products':
+                if (data.products) {
+                    doc.text('Product Performance:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    data.products.forEach(product => {
+                        doc.text(`${product.name}: ${product.orders} orders, ₱${product.revenue} revenue`, 20, yPosition);
+                        yPosition += 7;
+                    });
+                }
+                break;
+            default:
+                doc.text('No data available for export', 20, yPosition);
+                break;
+        }
+        
+        // Save the PDF
+        doc.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // Inventory Export Handlers
+    const handleInventoryExport = async (exportType, format) => {
+        try {
+            if (format === 'pdf') {
+                await exportInventoryDataToPDF(exportType);
+            }
+        } catch (error) {
+            console.error('Inventory export error:', error);
+            alert('Failed to export inventory data');
+        }
+    };
+
+    const exportInventoryDataToPDF = async (exportType) => {
+        // Dynamic import for jsPDF
+        const { jsPDF } = await import('jspdf');
+        const doc = new jsPDF();
+        
+        // Add title
+        doc.setFontSize(20);
+        doc.text('Inventory Report', 20, 20);
+        
+        // Add date
+        doc.setFontSize(12);
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 30);
+        
+        let yPosition = 50;
+        doc.setFontSize(14);
+        
+        switch (exportType) {
+            case 'stock':
+                if (inventoryReport) {
+                    doc.text('Inventory Stock Levels:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    // Add summary
+                    if (inventoryReport.summary) {
+                        doc.text(`Total Items: ${inventoryReport.summary.total_items}`, 20, yPosition);
+                        yPosition += 7;
+                        doc.text(`Items Needing Reorder: ${inventoryReport.summary.items_needing_reorder}`, 20, yPosition);
+                        yPosition += 7;
+                        doc.text(`Critical Items: ${inventoryReport.summary.critical_items}`, 20, yPosition);
+                        yPosition += 7;
+                        doc.text(`Total Usage: ${inventoryReport.summary.total_usage}`, 20, yPosition);
+                        yPosition += 15;
+                    }
+                    
+                    // Add sample items (first 20)
+                    if (inventoryReport.items) {
+                        doc.text('Sample Inventory Items:', 20, yPosition);
+                        yPosition += 10;
+                        doc.setFontSize(8);
+                        
+                        inventoryReport.items.slice(0, 20).forEach(item => {
+                            doc.text(`${item.sku}: ${item.name} - Stock: ${item.current_stock} (${item.stock_status})`, 20, yPosition);
+                            yPosition += 5;
+                        });
+                    }
+                }
+                break;
+            case 'usage':
+                if (consumptionTrends) {
+                    doc.text('Inventory Usage Trends:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    if (consumptionTrends.trends) {
+                        Object.entries(consumptionTrends.trends).slice(0, 15).forEach(([sku, trend]) => {
+                            doc.text(`${sku}: ${trend.avg_daily_usage} units/day (Trend: ${trend.trend > 0 ? '+' : ''}${trend.trend})`, 20, yPosition);
+                            yPosition += 7;
+                        });
+                    }
+                }
+                break;
+            case 'replenishment':
+                if (replenishmentSchedule) {
+                    doc.text('Replenishment Schedule:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    if (replenishmentSchedule.schedule) {
+                        replenishmentSchedule.schedule.slice(0, 20).forEach(item => {
+                            doc.text(`${item.sku}: Reorder by ${item.order_by_date} (Qty: ${item.recommended_order_qty})`, 20, yPosition);
+                            yPosition += 5;
+                        });
+                    }
+                }
+                break;
+            default:
+                doc.text('No data available for export', 20, yPosition);
+                break;
+        }
+        
+        // Save the PDF
+        doc.save(`inventory_${exportType}_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // Production Export Handlers
+    const handleProductionExport = async (exportType, format) => {
+        try {
+            if (format === 'pdf') {
+                await exportProductionDataToPDF(exportType);
+            }
+        } catch (error) {
+            console.error('Production export error:', error);
+            alert('Failed to export production data');
+        }
+    };
+
+    const exportProductionDataToPDF = async (exportType) => {
+        // Dynamic import for jsPDF
+        const { jsPDF } = await import('jspdf');
+        const doc = new jsPDF();
+        
+        // Add title
+        doc.setFontSize(20);
+        doc.text('Production Report', 20, 20);
+        
+        // Add date
+        doc.setFontSize(12);
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 30);
+        
+        let yPosition = 50;
+        doc.setFontSize(14);
+        
+        switch (exportType) {
+            case 'analytics':
+                if (productionAnalytics) {
+                    doc.text('Production Analytics:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    // Add summary data
+                    if (productionAnalytics.summary) {
+                        doc.text(`Total Production: ${productionAnalytics.summary.total_production}`, 20, yPosition);
+                        yPosition += 7;
+                        doc.text(`Active Orders: ${productionAnalytics.summary.active_orders}`, 20, yPosition);
+                        yPosition += 7;
+                        doc.text(`Completion Rate: ${productionAnalytics.summary.completion_rate}%`, 20, yPosition);
+                        yPosition += 15;
+                    }
+                    
+                    // Add daily output data
+                    if (productionAnalytics.daily_output) {
+                        doc.text('Daily Production Output:', 20, yPosition);
+                        yPosition += 10;
+                        doc.setFontSize(8);
+                        
+                        productionAnalytics.daily_output.slice(0, 20).forEach(day => {
+                            doc.text(`${day.date}: ${day.quantity} units`, 20, yPosition);
+                            yPosition += 5;
+                        });
+                    }
+                }
+                break;
+            case 'stages':
+                if (productionAnalytics && productionAnalytics.stage_breakdown) {
+                    doc.text('Production Stage Breakdown:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    productionAnalytics.stage_breakdown.forEach(stage => {
+                        doc.text(`${stage.name}: ${stage.value} orders (${stage.percentage}%)`, 20, yPosition);
+                        yPosition += 7;
+                    });
+                }
+                break;
+            case 'output':
+                if (productionAnalytics && productionAnalytics.daily_output) {
+                    doc.text('Daily Production Output:', 20, yPosition);
+                    yPosition += 10;
+                    doc.setFontSize(10);
+                    
+                    productionAnalytics.daily_output.forEach(day => {
+                        doc.text(`${day.date}: ${day.quantity} units produced`, 20, yPosition);
+                        yPosition += 7;
+                    });
+                }
+                break;
+            default:
+                doc.text('No data available for export', 20, yPosition);
+                break;
+        }
+        
+        // Save the PDF
+        doc.save(`production_${exportType}_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
     // Production CSV Export Handlers
     const handleExportProductionCSV = () => {
         if (!productionAnalytics) {
@@ -493,7 +883,7 @@ const Report = () => {
                     </li>
                     <li className="nav-item">
                         <button className={`nav-link ${activeTab === "trends" ? "active" : ""}`} onClick={() => setActiveTab("trends")}>
-                            📈 Trends
+                            📈  Consumption Trends
                         </button>
                     </li>
                 </ul>
@@ -553,79 +943,123 @@ const Report = () => {
                         </ul>
                         )}
                 
-                {/* CSV Export Buttons */}
-                <div className="card shadow-sm mb-4">
-                    <div className="card-body">
-                        <h6 className="fw-bold mb-3">📥 Export Reports to CSV</h6>
-                        <div className="d-flex flex-wrap gap-2">
+                {/* CSV Export Buttons - Hidden for Sales Analytics */}
+                {mainTab !== "sales" && (
+                    <div className="card shadow-sm mb-4">
+                        <div className="card-body">
+                            <h6 className="fw-bold mb-3">📥 Export Reports</h6>
+                            <div className="d-flex flex-wrap gap-2">
+                                {mainTab === "inventory" && (
+                                    <>
+                                        <button 
+                                            className="btn btn-outline-primary" 
+                                            onClick={downloadStockCsv}
+                                            title="Export current inventory stock levels to CSV"
+                                        >
+                                            📦 Download Stock CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleInventoryExport('stock', 'pdf')}
+                                            title="Export current inventory stock levels to PDF"
+                                        >
+                                            📄 Download Stock PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-primary" 
+                                            onClick={() => downloadUsageCsv(90)}
+                                            title="Export inventory usage history (90 days) to CSV"
+                                        >
+                                            📊 Download Usage CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleInventoryExport('usage', 'pdf')}
+                                            title="Export inventory usage history to PDF"
+                                        >
+                                            📄 Download Usage PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-primary" 
+                                            onClick={downloadReplenishmentCsv}
+                                            title="Export replenishment schedule to CSV"
+                                        >
+                                            📅 Download Replenishment CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleInventoryExport('replenishment', 'pdf')}
+                                            title="Export replenishment schedule to PDF"
+                                        >
+                                            📄 Download Replenishment PDF
+                                        </button>
+                                    </>
+                                )}
+                                {mainTab === "production" && (
+                                    <>
+                                        <button 
+                                            className="btn btn-outline-primary" 
+                                            onClick={handleExportProductionCSV}
+                                            title="Export all production data to CSV"
+                                        >
+                                            🏭 Download Production CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleProductionExport('analytics', 'pdf')}
+                                            title="Export all production data to PDF"
+                                        >
+                                            📄 Download Production PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-success" 
+                                            onClick={handleExportStageBreakdown}
+                                            title="Export stage distribution data to CSV"
+                                        >
+                                            🎯 Download Stage Breakdown CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleProductionExport('stages', 'pdf')}
+                                            title="Export stage distribution data to PDF"
+                                        >
+                                            📄 Download Stage Breakdown PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-info" 
+                                            onClick={handleExportDailyOutput}
+                                            title="Export daily production output to CSV"
+                                        >
+                                            📈 Download Daily Output CSV
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-danger" 
+                                            onClick={() => handleProductionExport('output', 'pdf')}
+                                            title="Export daily production output to PDF"
+                                        >
+                                            📄 Download Daily Output PDF
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                             {mainTab === "inventory" && (
-                                <>
-                                    <button 
-                                        className="btn btn-outline-primary" 
-                                        onClick={downloadStockCsv}
-                                        title="Export current inventory stock levels"
-                                    >
-                                        📦 Download Stock CSV
-                                    </button>
-                                    <button 
-                                        className="btn btn-outline-primary" 
-                                        onClick={() => downloadUsageCsv(90)}
-                                        title="Export inventory usage history (90 days)"
-                                    >
-                                        📊 Download Usage CSV
-                                    </button>
-                                    <button 
-                                        className="btn btn-outline-primary" 
-                                        onClick={downloadReplenishmentCsv}
-                                        title="Export replenishment schedule"
-                                    >
-                                        📅 Download Replenishment CSV
-                                    </button>
-                                </>
-                            )}
-                            {mainTab === "production" && (
-                                <>
-                                    <button 
-                                        className="btn btn-outline-primary" 
-                                        onClick={handleExportProductionCSV}
-                                        title="Export all production data"
-                                    >
-                                        🏭 Download Production CSV
-                                    </button>
-                                    <button 
-                                        className="btn btn-outline-success" 
-                                        onClick={handleExportStageBreakdown}
-                                        title="Export stage distribution data"
-                                    >
-                                        🎯 Download Stage Breakdown CSV
-                                    </button>
-                                    <button 
-                                        className="btn btn-outline-info" 
-                                        onClick={handleExportDailyOutput}
-                                        title="Export daily production output"
-                                    >
-                                        📈 Download Daily Output CSV
-                                    </button>
-                                </>
+                                <div className="mt-3 d-flex align-items-center gap-2">
+                                    <label htmlFor="fc-window" className="mb-0 small text-muted">Forecast window (days):</label>
+                                    <input 
+                                        id="fc-window" 
+                                        type="number" 
+                                        min="7" 
+                                        max="120" 
+                                        className="form-control form-control-sm" 
+                                        style={{width:120}}
+                                        value={windowDays} 
+                                        onChange={(e)=> setWindowDays(Number(e.target.value)||30)} 
+                                    />
+                                </div>
                             )}
                         </div>
-                        {mainTab === "inventory" && (
-                            <div className="mt-3 d-flex align-items-center gap-2">
-                                <label htmlFor="fc-window" className="mb-0 small text-muted">Forecast window (days):</label>
-                                <input 
-                                    id="fc-window" 
-                                    type="number" 
-                                    min="7" 
-                                    max="120" 
-                                    className="form-control form-control-sm" 
-                                    style={{width:120}}
-                                    value={windowDays} 
-                                    onChange={(e)=> setWindowDays(Number(e.target.value)||30)} 
-                                />
-                            </div>
-                        )}
                     </div>
-                </div>
+                )}
                 {loading && (
                     <div className="alert alert-info">
                         <div className="spinner-border spinner-border-sm me-2" role="status"></div>
@@ -719,7 +1153,7 @@ const Report = () => {
                                         <div className="col-md-6">
                                             <div className="card bg-light">
                                                 <div className="card-body">
-                                                    <h6>📅 Daily Usage</h6>
+                                                    <h6>📅 Materials Usage</h6>
                                                     <p className="small text-muted">View material usage for specific dates</p>
                                                     <button className="btn btn-sm btn-primary" onClick={() => setActiveTab("daily")}>
                                                         View Report →
@@ -1795,175 +2229,152 @@ const Report = () => {
     )
 )}
                         
-                        {/* Enhanced Forecast Tab */}
+                        {/* Material Forecasting Tab */}
                         {activeTab === "forecast" && (
                             forecastReport ? (
                             <div>
-                                {/* Enhanced Header with Analytics */}
-                                <div className="card shadow-sm mb-4">
-                                    <div className="card-header bg-white text-dark border-bottom">
-                                        <div className="card-header d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <h4 className="mb-1 text-dark">Material Forecasting</h4>
-                                                <p className="mb-0 text-muted">Predictive analytics for inventory planning ({forecastReport.forecast_period_days} days ahead)</p>
-                                            </div>
-                                            <div className="d-flex gap-2 align-items-center">
-                                                <div className="d-flex align-items-center gap-2">
-                                                    <label className="mb-0 text-dark">Forecast Period:</label>
-                                                    <select 
-                                                        className="form-select form-select-sm" 
-                                                        style={{ width: 120 }} 
-                                                        value={30} 
-                                                        onChange={(e) => console.log('Forecast days changed:', e.target.value)}
-                                                    >
-                                                        <option value={7}>7 days</option>
-                                                        <option value={14}>14 days</option>
-                                                        <option value={30}>30 days</option>
-                                                        <option value={60}>60 days</option>
-                                                        <option value={90}>90 days</option>
-                                                    </select>
+                                {/* Simple Summary Cards */}
+                                <div className="row mb-4">
+                                    <div className="col-md-3">
+                                        <div className="card border-danger shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-danger mb-2">
+                                                    <i className="fas fa-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
                                                 </div>
-                                                <button className="btn btn-primary btn-sm" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
-                                                    📊 Export Data
-                                                </button>
+                                                <h3 className="text-danger mb-1">{forecastReport.summary.items_will_need_reorder}</h3>
+                                                <p className="text-muted small mb-0">Items Need Reorder</p>
+                                                <span className="badge bg-danger mt-2">Critical</span>
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    <div className="card-body p-4">
-                                        {/* Enhanced Analytics Dashboard */}
-                                        <div className="row g-4 mb-4">
-                                            <div className="col-lg-3 col-md-6">
-                                                <div className="card border-0 bg-danger bg-opacity-10 analytics-card fade-in">
-                                                    <div className="card-body text-center">
-                                                        <div className="display-6 text-danger mb-2">⚠️</div>
-                                                        <h3 className="text-danger mb-1 metric-value">{forecastReport.summary.items_will_need_reorder}</h3>
-                                                        <p className="text-muted mb-0 metric-label">Items Need Reorder</p>
-                                                        <small className="text-danger">Critical for operations</small>
-                                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-warning shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-warning mb-2">
+                                                    <i className="fas fa-clock" style={{ fontSize: '2rem' }}></i>
                                                 </div>
-                                            </div>
-                                            
-                                            <div className="col-lg-3 col-md-6">
-                                                <div className="card border-0 bg-warning bg-opacity-10 analytics-card slide-in-left">
-                                                    <div className="card-body text-center">
-                                                        <div className="display-6 text-warning mb-2">⏰</div>
-                                                        <h3 className="text-warning mb-1 metric-value">{forecastReport.summary.items_critical}</h3>
-                                                        <p className="text-muted mb-0 metric-label">Critical Items</p>
-                                                        <small className="text-warning">&lt; 7 days stockout risk</small>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="col-lg-3 col-md-6">
-                                                <div className="card border-0 bg-info bg-opacity-10 analytics-card slide-in-right">
-                                                    <div className="card-body text-center">
-                                                        <div className="display-6 text-info mb-2">📈</div>
-                                                        <h3 className="text-info mb-1 metric-value">{forecastReport.summary.total_forecasted_usage.toLocaleString()}</h3>
-                                                        <p className="text-muted mb-0 metric-label">Total Forecasted Usage</p>
-                                                        <small className="text-info">Units to be consumed</small>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="col-lg-3 col-md-6">
-                                                <div className="card border-0 bg-success bg-opacity-10 analytics-card fade-in">
-                                                    <div className="card-body text-center">
-                                                        <div className="display-6 text-success mb-2">✅</div>
-                                                        <h3 className="text-success mb-1 metric-value">
-                                                            {forecastReport.forecasts.filter(f => !f.will_need_reorder).length}
-                                                        </h3>
-                                                        <p className="text-muted mb-0 metric-label">Items Safe</p>
-                                                        <small className="text-success">No immediate reorder needed</small>
-                                                    </div>
-                                                </div>
+                                                <h3 className="text-warning mb-1">{forecastReport.summary.items_critical}</h3>
+                                                <p className="text-muted small mb-0">Critical Items</p>
+                                                <span className="badge bg-warning text-dark mt-2">&lt; 7 days</span>
                                             </div>
                                         </div>
-                                        
-                                        {/* Enhanced Data Table */}
-                                        <div className="card border-0 shadow-sm">
-                                            <div className="card-header bg-light d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <h6 className="mb-0 forecast-title">📋 Detailed Forecast Analysis</h6>
-                                                    <small className="text-muted">Comprehensive forecasting data with actionable insights</small>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-info shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-info mb-2">
+                                                    <i className="fas fa-chart-line" style={{ fontSize: '2rem' }}></i>
                                                 </div>
-                                                <div className="d-flex gap-2">
-                                                    <button className="btn btn-sm btn-outline-primary btn-enhanced">
-                                                        🔍 Filter Critical
-                                                    </button>
-                                                    <button className="btn btn-sm btn-outline-success btn-enhanced">
-                                                        📋 Generate Orders
-                                                    </button>
-                                                </div>
+                                                <h3 className="text-info mb-1">{forecastReport.summary.total_forecasted_usage.toLocaleString()}</h3>
+                                                <p className="text-muted small mb-0">Forecasted Usage</p>
+                                                <span className="badge bg-info mt-2">30 days</span>
                                             </div>
-                                            <div className="card-body p-0">
-                                                <div className="table-responsive">
-                                                    <table className="table table-hover mb-0 table-enhanced">
-                                                        <thead className="table-light">
-                                                            <tr>
-                                                                <th className="border-0">📦 SKU</th>
-                                                                <th className="border-0">📝 Material</th>
-                                                                <th className="border-0 text-end">📊 Current</th>
-                                                                <th className="border-0 text-end">📈 Daily Avg</th>
-                                                                <th className="border-0 text-end">🔮 Forecasted</th>
-                                                                <th className="border-0 text-end">📉 Projected</th>
-                                                                <th className="border-0 text-end">⏰ Days Left</th>
-                                                                <th className="border-0 text-end">🛒 Order Qty</th>
-                                                                <th className="border-0 text-center">⚠️ Status</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {forecastReport.forecasts && forecastReport.forecasts.length > 0 ? (
-                                                                forecastReport.forecasts.slice(0, 20).map((item, idx) => {
-                                                                    const isCritical = item.days_until_stockout < 7;
-                                                                    const needsReorder = item.will_need_reorder;
-                                                                    const statusColor = isCritical ? 'danger' : needsReorder ? 'warning' : 'success';
-                                                                    const statusIcon = isCritical ? '🚨' : needsReorder ? '⚠️' : '✅';
-                                                                    
-                                                                    return (
-                                                                        <tr key={idx} className={`${isCritical ? 'table-danger' : needsReorder ? 'table-warning' : ''}`}>
-                                                                            <td className="fw-bold">{item.sku}</td>
-                                                                            <td>
-                                                                                <div className="d-flex align-items-center">
-                                                                                    <span className="me-2">{item.name}</span>
-                                                                                    {isCritical && <span className="badge bg-danger">CRITICAL</span>}
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="text-end fw-bold">{item.current_stock}</td>
-                                                                            <td className="text-end">{item.avg_daily_usage}</td>
-                                                                            <td className="text-end">{item['forecasted_usage_30_days']}</td>
-                                                                            <td className="text-end">
-                                                                                <span className={`fw-bold ${item.projected_stock < 0 ? 'text-danger' : 'text-warning'}`}>
-                                                                                    {item.projected_stock}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className="text-end">
-                                                                                <span className={`badge bg-${statusColor} ${isCritical ? 'pulse' : ''}`}>
-                                                                                    {item.days_until_stockout} days
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className="text-end">
-                                                                                {item.recommended_order_qty > 0 && (
-                                                                                    <span className="badge bg-primary">
-                                                                                        {item.recommended_order_qty}
-                                                                                    </span>
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="text-center">
-                                                                                <span className="fs-5">{statusIcon}</span>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })
-                                                            ) : (
-                                                                <tr>
-                                                                    <td colSpan="9" className="text-center text-muted">No forecast data available.</td>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-success shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-success mb-2">
+                                                    <i className="fas fa-check-circle" style={{ fontSize: '2rem' }}></i>
+                                                </div>
+                                                <h3 className="text-success mb-1">
+                                                    {forecastReport.forecasts.filter(f => !f.will_need_reorder).length}
+                                                </h3>
+                                                <p className="text-muted small mb-0">Items Safe</p>
+                                                <span className="badge bg-success mt-2">No Action</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Simple Data Table */}
+                                <div className="card shadow-sm">
+                                    <div className="card-header d-flex justify-content-between align-items-center">
+                                        <h5 className="mb-0">Material Forecast Analysis</h5>
+                                        <div className="d-flex gap-2">
+                                            <select 
+                                                className="form-select form-select-sm" 
+                                                style={{ width: 120 }} 
+                                                value={30} 
+                                                onChange={(e) => console.log('Forecast days changed:', e.target.value)}
+                                            >
+                                                <option value={7}>7 days</option>
+                                                <option value={14}>14 days</option>
+                                                <option value={30}>30 days</option>
+                                                <option value={60}>60 days</option>
+                                                <option value={90}>90 days</option>
+                                            </select>
+                                            <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("material_forecast", forecastReport.forecasts)}>
+                                                📊 Export
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="card-body">
+                                        <div className="table-responsive">
+                                            <table className="table table-hover">
+                                                <thead>
+                                                    <tr>
+                                                        <th>SKU</th>
+                                                        <th>Material</th>
+                                                        <th className="text-end">Current</th>
+                                                        <th className="text-end">Daily Avg</th>
+                                                        <th className="text-end">Forecasted</th>
+                                                        <th className="text-end">Projected</th>
+                                                        <th className="text-end">Days Left</th>
+                                                        <th className="text-end">Order Qty</th>
+                                                        <th className="text-center">Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {forecastReport.forecasts && forecastReport.forecasts.length > 0 ? (
+                                                        forecastReport.forecasts.slice(0, 20).map((item, idx) => {
+                                                            const isCritical = item.days_until_stockout < 7;
+                                                            const needsReorder = item.will_need_reorder;
+                                                            const statusColor = isCritical ? 'danger' : needsReorder ? 'warning' : 'success';
+                                                            const statusIcon = isCritical ? '🚨' : needsReorder ? '⚠️' : '✅';
+                                                            
+                                                            return (
+                                                                <tr key={idx} className={`${isCritical ? 'table-danger' : needsReorder ? 'table-warning' : ''}`}>
+                                                                    <td className="fw-semibold">{item.sku}</td>
+                                                                    <td>
+                                                                        <div className="d-flex align-items-center">
+                                                                            <span className="me-2">{item.name}</span>
+                                                                            {isCritical && <span className="badge bg-danger">CRITICAL</span>}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="text-end fw-bold">{item.current_stock}</td>
+                                                                    <td className="text-end">{item.avg_daily_usage}</td>
+                                                                    <td className="text-end">{item['forecasted_usage_30_days']}</td>
+                                                                    <td className="text-end">
+                                                                        <span className={`fw-bold ${item.projected_stock < 0 ? 'text-danger' : 'text-warning'}`}>
+                                                                            {item.projected_stock}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="text-end">
+                                                                        <span className={`badge bg-${statusColor}`}>
+                                                                            {item.days_until_stockout} days
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="text-end">
+                                                                        {item.recommended_order_qty > 0 && (
+                                                                            <span className="badge bg-primary">
+                                                                                {item.recommended_order_qty}
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="text-center">
+                                                                        <span className="fs-5">{statusIcon}</span>
+                                                                    </td>
                                                                 </tr>
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan="9" className="text-center text-muted">No forecast data available.</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>
@@ -2046,80 +2457,6 @@ const Report = () => {
                             )
                         )}
                 
-                        {/* Daily Usage Tab */}
-                        {activeTab === "daily" && (
-                            dailyUsage ? (
-                    <div className="card shadow-sm mb-4">
-                        <div className="card-header d-flex justify-content-between align-items-center">
-                            <h5 className="mb-0">Daily Usage Report</h5>
-                            <div className="d-flex gap-2 align-items-center">
-                                <label className="mb-0">Date:</label>
-                                <input 
-                                    type="date" 
-                                    className="form-control form-control-sm" 
-                                    style={{ width: 160 }}
-                                    value={selectedDate} 
-                                    onChange={(e) => setSelectedDate(e.target.value)} 
-                                />
-                                <button className="btn btn-sm btn-primary" onClick={fetchAllReports}>Load</button>
-                                <button className="btn btn-sm btn-outline-primary" onClick={() => dailyUsage && dailyUsage.usage_summary && exportReport("daily_usage", Object.values(dailyUsage.usage_summary))}>
-                                    📥 Export CSV
-                                </button>
-                            </div>
-                        </div>
-                        <div className="card-body">
-                            <div className="row mb-3">
-                                <div className="col-md-4">
-                                    <div className="text-muted small">Date</div>
-                                    <div className="h4">{dailyUsage.date}</div>
-                                </div>
-                                <div className="col-md-4">
-                                    <div className="text-muted small">Total Items Used</div>
-                                    <div className="h4 text-primary">{dailyUsage.total_items_used}</div>
-                                </div>
-                                <div className="col-md-4">
-                                    <div className="text-muted small">Total Quantity Used</div>
-                                    <div className="h4 text-info">{dailyUsage.total_quantity_used}</div>
-                                </div>
-                            </div>
-                            
-                            {dailyUsage.usage_summary && Object.keys(dailyUsage.usage_summary).length > 0 ? (
-                                <div className="table-responsive">
-                                    <table className="table table-sm table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>SKU</th>
-                                                <th>Item Name</th>
-                                                <th className="text-end">Total Used</th>
-                                                <th className="text-end">Remaining Stock</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {Object.values(dailyUsage.usage_summary).map((item, idx) => (
-                                                <tr key={idx}>
-                                                    <td className="fw-semibold">{item.sku}</td>
-                                                    <td>{item.item_name}</td>
-                                                    <td className="text-end">{item.total_used}</td>
-                                                    <td className="text-end">{item.remaining_stock}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <div className="alert alert-info">
-                                    No usage data recorded for this date.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                            ) : (
-                                <div className="alert alert-warning">
-                                    <strong>No Daily Usage Data Available</strong><br/>
-                                    Select a date and click Load to view usage data.
-                                </div>
-                            )
-                        )}
                         
                         {/* Stock Report Tab - Inventory */}
                         {activeTab === "stock-report" && mainTab === "inventory" && stockReport && (
@@ -2685,12 +3022,12 @@ const Report = () => {
                                                                 <div
                                                                     className="progress-bar"
                                                                     style={{ 
-                                                                        width: `${product.efficiency}%`,
+                                                                        width: `${Number(product.efficiency).toFixed(2)}%`,
                                                                         backgroundColor: idx === 0 ? '#28a745' : idx === 1 ? '#17a2b8' : '#6c757d'
                                                                     }}
                                                                 ></div>
                                                             </div>
-                                                            <small className="text-muted">{product.efficiency}% efficiency</small>
+                                                            <small className="text-muted">{Number(product.efficiency).toFixed(2)}% efficiency</small>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -3460,6 +3797,71 @@ const Report = () => {
                         {/* Sales Analytics Content */}
                         {mainTab === "sales" && (
                             <div>
+                                {/* Sales Export Buttons */}
+                                <div className="card shadow-sm mb-4">
+                                    <div className="card-body">
+                                        <h6 className="fw-bold mb-3">📥 Export Sales Data</h6>
+                                        <div className="d-flex flex-wrap gap-2">
+                                            <button 
+                                                className="btn btn-outline-primary" 
+                                                onClick={() => handleSalesExport('dashboard', 'csv')}
+                                                title="Export Sales Dashboard data to CSV"
+                                            >
+                                                📊 Export Dashboard CSV
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-danger" 
+                                                onClick={() => handleSalesExport('dashboard', 'pdf')}
+                                                title="Export Sales Dashboard data to PDF"
+                                            >
+                                                📄 Export Dashboard PDF
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-primary" 
+                                                onClick={() => handleSalesExport('process', 'csv')}
+                                                title="Export Sales Process data to CSV"
+                                            >
+                                                🔄 Export Process CSV
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-danger" 
+                                                onClick={() => handleSalesExport('process', 'pdf')}
+                                                title="Export Sales Process data to PDF"
+                                            >
+                                                📄 Export Process PDF
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-primary" 
+                                                onClick={() => handleSalesExport('reports', 'csv')}
+                                                title="Export Sales Reports data to CSV"
+                                            >
+                                                📋 Export Reports CSV
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-danger" 
+                                                onClick={() => handleSalesExport('reports', 'pdf')}
+                                                title="Export Sales Reports data to PDF"
+                                            >
+                                                📄 Export Reports PDF
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-primary" 
+                                                onClick={() => handleSalesExport('products', 'csv')}
+                                                title="Export Product Performance data to CSV"
+                                            >
+                                                📦 Export Products CSV
+                                            </button>
+                                            <button 
+                                                className="btn btn-outline-danger" 
+                                                onClick={() => handleSalesExport('products', 'pdf')}
+                                                title="Export Product Performance data to PDF"
+                                            >
+                                                📄 Export Products PDF
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Sales Dashboard Tab */}
                                 {activeTab === "dashboard" && (
                                     <div className="mb-4" key={`sales-dashboard-${refreshKey}`}>

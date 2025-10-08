@@ -7,69 +7,35 @@ use App\Models\Product;
 use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
 
-class ProductsTableSeeder extends Seeder
+class UpdateProductPricesFromBomSeeder extends Seeder
 {
     public function run()
     {
-        $this->command->info('Creating products with BOM-calculated prices...');
+        $this->command->info('Updating product prices based on BOM calculations...');
 
-        // Create products first
-        $diningTable = Product::updateOrCreate(
-            ['name' => 'Dining Table'],
-            [
-                'description' => 'High-quality mahogany dining table',
-                'price' => 12500.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Table.jpg',
-            ]
-        );
-
-        $woodenChair = Product::updateOrCreate(
-            ['name' => 'Wooden Chair'],
-            [
-                'description' => 'Comfortable mahogany wooden chair',
-                'price' => 7500.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Chair.jpg',
-            ]
-        );
-
-        $alkansya = Product::updateOrCreate(
-            ['name' => 'Alkansya'],
-            [
-                'description' => 'Traditional Filipino wooden chest',
-                'price' => 159.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Alkansya.jpg',
-            ]
-        );
-
-        $this->command->info('Products created. Attempting to calculate BOM-based prices...');
-
-        // Try to calculate and update prices based on BOM (if available)
-        $this->updateProductPrice($diningTable);
-        $this->updateProductPrice($woodenChair);
-        // Skip Alkansya - it uses fixed pricing of ₱159
-
-        $this->command->info('Products created successfully!');
-    }
-
-    /**
-     * Calculate and update product price based on BOM
-     */
-    private function updateProductPrice($product)
-    {
-        $bomPrice = $this->calculateBomPrice($product->id);
+        $products = Product::all();
         
-        if ($bomPrice) {
-            $oldPrice = $product->price;
-            $product->price = $bomPrice;
-            $product->save();
+        foreach ($products as $product) {
+            // Skip Alkansya - it uses fixed pricing
+            if (strtolower($product->name) === 'alkansya') {
+                $this->command->info("Skipping {$product->name} - uses fixed pricing (₱{$product->price})");
+                continue;
+            }
             
-            $this->command->info("Updated {$product->name}: ₱{$oldPrice} → ₱{$bomPrice}");
-        } else {
-            $this->command->warn("No BOM price calculated for {$product->name} - keeping original price ₱{$product->price}");
+            $bomPrice = $this->calculateBomPrice($product->id);
+            
+            if ($bomPrice) {
+                $oldPrice = $product->price;
+                $product->price = $bomPrice;
+                $product->save();
+                
+                $this->command->info("Updated {$product->name}: ₱{$oldPrice} → ₱{$bomPrice}");
+            } else {
+                $this->command->warn("No BOM price calculated for {$product->name} - keeping original price ₱{$product->price}");
+            }
         }
+        
+        $this->command->info('Product prices updated successfully!');
     }
 
     /**

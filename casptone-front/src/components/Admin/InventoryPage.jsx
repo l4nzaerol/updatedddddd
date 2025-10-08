@@ -4,17 +4,6 @@ import AppLayout from "../Header";
 import Pusher from "pusher-js";
 import AlkansyaDailyOutputModal from "./AlkansyaDailyOutputModal";
 
-/**
- * Enhanced Inventory Management Page with Material CRUD Operations
- * Features:
- * - Add new materials (raw/finished goods)
- * - Edit existing materials
- * - Delete materials
- * - Real-time tracking and analytics
- * - Automated reports and forecasting
- * - Grouped display: Raw Materials first, then Finished Products
- * - Modern, engaging dashboard design
- */
 
 // Custom styles for simple, clean design
 const customStyles = `
@@ -405,6 +394,12 @@ const InventoryPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
+  const [alkansyaStats, setAlkansyaStats] = useState({
+    totalOutput: 0,
+    averageDaily: 0,
+    last7Days: 0,
+    productionDays: 0
+  });
   const wsRef = useRef(null);
   const pollRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -436,6 +431,7 @@ const InventoryPage = () => {
   // Fetch inventory and usage data
   useEffect(() => {
     fetchInventory();
+    fetchAlkansyaStats();
   }, []);
 
   const fetchInventory = async () => {
@@ -456,6 +452,23 @@ const InventoryPage = () => {
       setError("Failed to fetch initial data. Check API settings.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAlkansyaStats = async () => {
+    try {
+      console.log('Fetching Alkansya statistics...');
+      // Use the working test route temporarily
+      const data = await apiCall('/test-alkansya-stats');
+      console.log('Alkansya statistics data:', data);
+      setAlkansyaStats({
+        totalOutput: data.total_output || 0,
+        averageDaily: data.average_daily || 0,
+        last7Days: data.last_7_days || 0,
+        productionDays: data.total_days || 0
+      });
+    } catch (err) {
+      console.error('Failed to fetch Alkansya statistics:', err);
     }
   };
 
@@ -674,44 +687,6 @@ const InventoryPage = () => {
     return { raw, finished };
   }, [filtered]);
 
-  // Export functions
-  const exportStockReport = () => {
-    const rows = enriched.map((it) => ({
-      SKU: it.sku,
-      Item: it.name,
-      Category: it.category,
-      Location: it.location,
-      OnHand: it.onHand,
-      AvgDailyUsage: it.avgDaily,
-      LeadTimeDays: it.leadTimeDays,
-      SafetyStock: it.safetyStock,
-      ROP: it.rop,
-      DaysCover: it.daysCover,
-      Status: it.status.label,
-    }));
-    download(`stock_levels_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(rows));
-  };
-
-  const exportReplenishmentPlan = () => {
-    const rows = enriched
-      .filter((it) => it.suggestedOrderQty > 0)
-      .map((it) => ({
-        SKU: it.sku,
-        Item: it.name,
-        SuggestedOrderQty: it.suggestedOrderQty,
-        ROP: it.rop,
-        OnHand: it.onHand,
-        LeadTimeDays: it.leadTimeDays,
-        ETAReorderDate: it.etaReorderDate,
-      }));
-    download(`replenishment_plan_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(rows));
-  };
-
-  const exportUsageTrends = () => {
-    const rows = (usage || []).map((u) => ({ SKU: u.sku, Date: u.date, QtyUsed: u.qtyUsed }));
-    download(`usage_trends_${new Date().toISOString().slice(0, 10)}.csv`, toCSV(rows));
-  };
-
   // CSV usage upload
   const onUploadUsage = async (e) => {
     const file = e.target.files?.[0];
@@ -751,13 +726,6 @@ const InventoryPage = () => {
           </button>
           <button className="btn btn-success" onClick={handleAddMaterial}>
             + Add Material
-          </button>
-          <button className="btn btn-outline-secondary" onClick={exportStockReport}>
-            Export Stock CSV
-          </button>
-          <button className="btn btn-outline-primary" onClick={exportReplenishmentPlan}>
-            Export Replenishment CSV
-            Export Usage CSV
           </button>
           <label className="btn btn-outline-success mb-0">
             Upload Usage CSV
@@ -942,6 +910,57 @@ const InventoryPage = () => {
         </div>
       )}
 
+      {/* ALKANSYA DAILY OUTPUT SECTION */}
+      <div className="mb-4">
+        <div className="d-flex align-items-center justify-content-between mb-2">
+          <h5 className="mb-0">🐷 Alkansya Daily Output</h5>
+          <button 
+            className="btn btn-info btn-sm"
+            onClick={() => setShowAlkansyaModal(true)}
+          >
+            <i className="fas fa-plus me-1"></i>
+            Add Daily Output
+          </button>
+        </div>
+        
+        <div className="card shadow-sm">
+          <div className="card-body">
+            <div className="row g-3">
+              <div className="col-md-3">
+                <div className="text-center">
+                  <div className="h4 text-primary mb-1">{alkansyaStats.totalOutput}</div>
+                  <small className="text-muted">Total Produced</small>
+                </div>
+              </div>
+              <div className="col-md-3">
+                <div className="text-center">
+                  <div className="h4 text-success mb-1">{alkansyaStats.averageDaily}</div>
+                  <small className="text-muted">Avg Daily</small>
+                </div>
+              </div>
+              <div className="col-md-3">
+                <div className="text-center">
+                  <div className="h4 text-info mb-1">{alkansyaStats.last7Days}</div>
+                  <small className="text-muted">Last 7 Days</small>
+                </div>
+              </div>
+              <div className="col-md-3">
+                <div className="text-center">
+                  <div className="h4 text-warning mb-1">{alkansyaStats.productionDays}</div>
+                  <small className="text-muted">Production Days</small>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <small className="text-muted">
+                <i className="fas fa-info-circle me-1"></i>
+                Click "Add Daily Output" to record today's Alkansya production and automatically deduct materials from inventory.
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* FINISHED PRODUCTS SECTION */}
       {(filter.type === "all" || filter.type === "finished") && groupedInventory.finished.length > 0 && (
         <div className="mb-4">
@@ -1036,7 +1055,10 @@ const InventoryPage = () => {
       <AlkansyaDailyOutputModal
         show={showAlkansyaModal}
         onHide={() => setShowAlkansyaModal(false)}
-        onSuccess={() => fetchInventory()}
+        onSuccess={() => {
+          fetchInventory();
+          fetchAlkansyaStats();
+        }}
       />
 
       {/* Mini projected stock cards for top 5 critical */}

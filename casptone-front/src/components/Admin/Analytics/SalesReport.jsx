@@ -159,48 +159,48 @@ const SalesReport = () => {
       {/* Summary Cards - Production Style */}
       <div className="row g-3 mb-4">
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #0d6efd' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #0d6efd' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Total Orders</div>
               <div className="h3 mb-0 text-primary">{formatNumber(summary.total_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #28a745' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #28a745' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Total Revenue</div>
-              <div className="h3 mb-0 text-success">{formatCurrency(summary.total_revenue)}</div>
+              <div className="h4 mb-0 text-success" style={{ fontSize: '1.1rem', lineHeight: '1.2' }}>{formatCurrency(summary.total_revenue)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #17a2b8' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #17a2b8' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Paid Orders</div>
               <div className="h3 mb-0 text-info">{formatNumber(summary.paid_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #ffc107' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #ffc107' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Pending Orders</div>
               <div className="h3 mb-0 text-warning">{formatNumber(summary.pending_orders)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #6c757d' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #6c757d' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Avg Order Value</div>
-              <div className="h3 mb-0 text-secondary">{formatCurrency(summary.average_order_value)}</div>
+              <div className="h4 mb-0 text-secondary" style={{ fontSize: '1.1rem', lineHeight: '1.2' }}>{formatCurrency(summary.average_order_value)}</div>
             </div>
           </div>
         </div>
         <div className="col-md-2">
-          <div className="card shadow-sm border-0" style={{ borderLeft: '4px solid #343a40' }}>
-            <div className="card-body">
+          <div className="card shadow-sm border-0 h-100" style={{ borderLeft: '4px solid #343a40' }}>
+            <div className="card-body d-flex flex-column">
               <div className="text-muted small mb-1">Payment Rate</div>
               <div className="h3 mb-0 text-dark">
                 {summary.total_orders > 0 ? Math.round((summary.paid_orders / summary.total_orders) * 100) : 0}%

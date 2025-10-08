@@ -53,6 +53,8 @@ const AdminProductsTable = () => {
 
   const openBomModal = async (product) => {
     setSelectedProduct(product);
+    setBomError("");
+    setPriceCalculation(null); // Reset price calculation
     try {
       const [invRes, bomRes] = await Promise.all([
         api.get("/inventory"),
@@ -173,15 +175,20 @@ const AdminProductsTable = () => {
     const suggestedPrice = Math.round(priceCalculation.suggested_price);
     
     try {
-      await api.put(`/products/${selectedProduct.id}`, {
-        ...selectedProduct,
+      const response = await api.put(`/products/${selectedProduct.id}`, {
         price: suggestedPrice
       });
-      alert(`Price updated to ₱${suggestedPrice}`);
-      fetchProducts();
+      
+      if (response.status === 200) {
+        alert(`✅ Price updated to ₱${suggestedPrice}`);
+        fetchProducts();
+      } else {
+        throw new Error(`Unexpected response status: ${response.status}`);
+      }
     } catch (error) {
       console.error('Error updating price:', error);
-      alert('Failed to update price');
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`❌ Failed to update price: ${errorMessage}`);
     }
   };
 
@@ -288,7 +295,14 @@ const AdminProductsTable = () => {
                   <p className="card-text small text-muted">
                     {product.description}
                   </p>
-                  <p className="fw-bold mb-1">₱{product.price}</p>
+                  <div className="mb-1">
+                    <p className="fw-bold mb-0">₱{product.price}</p>
+                    {product.is_bom_priced && (
+                      <small className="text-success">
+                        <i className="fas fa-calculator me-1"></i>BOM-calculated price
+                      </small>
+                    )}
+                  </div>
                   <div className="mb-2">
                     {product.inventory_stock !== null && product.inventory_stock !== undefined ? (
                       <>
@@ -713,8 +727,18 @@ const AdminProductsTable = () => {
                             <button
                               className="btn btn-success btn-sm flex-grow-1"
                               onClick={applySuggestedPrice}
+                              disabled={calculating}
                             >
-                              ✓ Update Product Price to ₱{Math.round(priceCalculation.suggested_price)}
+                              {calculating ? (
+                                <>
+                                  <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                                  Calculating...
+                                </>
+                              ) : (
+                                <>
+                                  ✓ Update Product Price to ₱{Math.round(priceCalculation.suggested_price)}
+                                </>
+                              )}
                             </button>
                           </div>
 

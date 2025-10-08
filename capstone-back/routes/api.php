@@ -20,6 +20,7 @@ use App\Http\Controllers\OrderAcceptanceController;
 use App\Http\Controllers\PriceCalculatorController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\SalesAnalyticsController;
+use App\Http\Controllers\AlkansyaDailyOutputController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,38 @@ Route::get('/analytics/sales-report', [SalesAnalyticsController::class, 'getSale
 Route::get('/analytics/sales-process', [SalesAnalyticsController::class, 'getSalesProcessAnalytics']);
 Route::get('/analytics/product-performance', [SalesAnalyticsController::class, 'getProductPerformance']);
 Route::get('/analytics/sales-export', [SalesAnalyticsController::class, 'exportSalesData']);
+
+// Test route for debugging
+Route::get('/test-alkansya', function() {
+    $count = \App\Models\AlkansyaDailyOutput::count();
+    $total = \App\Models\AlkansyaDailyOutput::sum('quantity_produced');
+    return response()->json([
+        'count' => $count,
+        'total' => $total,
+        'message' => 'Test successful'
+    ]);
+});
+
+// Test statistics route
+Route::get('/test-alkansya-stats', function() {
+    $totalOutput = \App\Models\AlkansyaDailyOutput::sum('quantity_produced');
+    $totalDays = \App\Models\AlkansyaDailyOutput::count();
+    $averageDaily = $totalDays > 0 ? $totalOutput / $totalDays : 0;
+    
+    $last7Days = \App\Models\AlkansyaDailyOutput::where('date', '>=', \Carbon\Carbon::now()->subDays(7))
+        ->sum('quantity_produced');
+    
+    return response()->json([
+        'total_output' => $totalOutput,
+        'total_days' => $totalDays,
+        'average_daily' => round($averageDaily, 2),
+        'last_7_days' => $last7Days,
+        'message' => 'Statistics test successful'
+    ]);
+});
+
+// Temporary public statistics route for testing
+Route::get('/alkansya-daily-output/statistics', [\App\Http\Controllers\AlkansyaDailyOutputController::class, 'statistics']);
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -107,7 +140,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/inventory/daily-usage', [InventoryController::class, 'getDailyUsage']);
     Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
     Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
-    Route::post('/inventory/alkansya-daily-output', [InventoryController::class, 'addAlkansyaDailyOutput']);
+    Route::get('/inventory/alkansya-daily-output', [AlkansyaDailyOutputController::class, 'index']);
+    Route::post('/inventory/alkansya-daily-output', [AlkansyaDailyOutputController::class, 'store']);
     
     // Price Calculator Routes
     Route::post('/price-calculator/calculate', [PriceCalculatorController::class, 'calculatePrice']);
@@ -210,6 +244,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/dashboard', [StaffController::class, 'getDashboard']);
         Route::get('/my-tasks', [StaffController::class, 'getMyTasks']);
         Route::patch('/production-stage/{stageId}', [StaffController::class, 'updateProductionStage']);
+    });
+
+    // Alkansya Daily Output Routes
+    Route::prefix('alkansya-daily-output')->group(function () {
+        Route::get('/', [AlkansyaDailyOutputController::class, 'index']);
+        Route::post('/', [AlkansyaDailyOutputController::class, 'store']);
+        Route::get('/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
+        Route::get('/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
     });
 });
 

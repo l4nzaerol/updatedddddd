@@ -9,6 +9,7 @@ use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
 use App\Models\Product;
+use App\Models\AlkansyaDailyOutput;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -31,7 +32,8 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info('🗑️  Clearing existing data...');
         InventoryUsage::truncate();
         ProductionAnalytics::truncate();
-        $this->command->info('✓ Cleared inventory usage and production analytics');
+        AlkansyaDailyOutput::truncate();
+        $this->command->info('✓ Cleared inventory usage, production analytics, and alkansya daily output');
         $this->command->info('');
 
         // Part 1: Process Customer Orders
@@ -194,6 +196,11 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info("📋 Materials in BOM: {$materials->count()}");
         $this->command->info('');
 
+        // Ensure sufficient materials for 3-month production + future manual orders
+        $this->command->info('🔧 Ensuring sufficient material stock for production...');
+        $this->ensureSufficientMaterials($materials, $alkansya);
+        $this->command->info('');
+
         // Generate EXACTLY 3 months of daily production (excluding Sundays)
         $startDate = Carbon::now()->subMonths(3)->startOfDay();
         $endDate = Carbon::now()->subDay(); // Up to yesterday
@@ -241,6 +248,32 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
                     'avg_process_duration_minutes' => rand(1000, 1500),
                 ]);
 
+                // Create AlkansyaDailyOutput record
+                $materialsUsed = [];
+                foreach ($materials as $material) {
+                    if ($material->inventoryItem) {
+                        $qtyUsed = $material->qty_per_unit * $dailyOutput;
+                        $materialsUsed[] = [
+                            'inventory_item_id' => $material->inventoryItem->id,
+                            'item_name' => $material->inventoryItem->name,
+                            'sku' => $material->inventoryItem->sku,
+                            'quantity_used' => $qtyUsed,
+                            'unit_cost' => $material->inventoryItem->unit_cost,
+                            'total_cost' => $material->inventoryItem->unit_cost * $qtyUsed,
+                        ];
+                    }
+                }
+
+                AlkansyaDailyOutput::create([
+                    'date' => $currentDate->format('Y-m-d'),
+                    'quantity_produced' => $dailyOutput,
+                    'notes' => "Daily production - {$dailyOutput} units",
+                    'produced_by' => 'Production Staff',
+                    'materials_used' => $materialsUsed,
+                    'efficiency_percentage' => $efficiency,
+                    'defects' => rand(0, 2),
+                ]);
+
                 // Create inventory usage for each material
                 foreach ($materials as $material) {
                     if ($material->inventoryItem) {
@@ -276,8 +309,13 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
             $currentDate->addDay();
         }
 
-        // Update Alkansya finished goods inventory
+        // Verify material deduction and show final levels
         $this->command->info('');
+        $this->command->info('🔍 Verifying material deduction...');
+        $this->verifyMaterialDeduction($materials);
+        $this->command->info('');
+
+        // Update Alkansya finished goods inventory
         $this->command->info('📦 Updating Finished Goods Inventory...');
         
         $alkansyaFinishedGood = InventoryItem::where('sku', 'FG-ALKANSYA')->first();
@@ -413,5 +451,77 @@ class ComprehensiveInventoryUsageSeeder extends Seeder
         $this->command->info('║  • Inventory → Material Usage tab                         ║');
         $this->command->info('║  • Production → Output Analytics                          ║');
         $this->command->info('╚════════════════════════════════════════════════════════════╝');
+    }
+
+    /**
+     * Ensure sufficient materials for 3-month production + future manual orders
+     */
+    private function ensureSufficientMaterials($materials, $alkansya)
+    {
+        // Calculate total materials needed for 3 months of production
+        // Assuming average 40 units per day for 79 days = 3,160 units
+        $estimatedTotalProduction = 3200; // Conservative estimate
+        
+        // Add buffer for future manual orders (additional 1000 units)
+        $bufferForManualOrders = 1000;
+        $totalNeeded = $estimatedTotalProduction + $bufferForManualOrders;
+        
+        $this->command->info("📊 Material Requirements:");
+        $this->command->info("   • 3-month production: ~{$estimatedTotalProduction} units");
+        $this->command->info("   • Future manual orders: {$bufferForManualOrders} units");
+        $this->command->info("   • Total needed per material: {$totalNeeded} units");
+        $this->command->info('');
+
+        foreach ($materials as $material) {
+            if ($material->inventoryItem) {
+                $currentStock = $material->inventoryItem->quantity_on_hand;
+                $requiredStock = $totalNeeded; // 1:1 BOM ratio
+                
+                if ($currentStock < $requiredStock) {
+                    $shortfall = $requiredStock - $currentStock;
+                    $newStock = $currentStock + $shortfall;
+                    
+                    $material->inventoryItem->update([
+                        'quantity_on_hand' => $newStock
+                    ]);
+                    
+                    $this->command->info("   ✓ {$material->inventoryItem->name}: Added {$shortfall} units (now {$newStock})");
+                } else {
+                    $this->command->info("   ✓ {$material->inventoryItem->name}: Sufficient stock ({$currentStock} units)");
+                }
+            }
+        }
+        
+        $this->command->info('✓ All materials have sufficient stock for production + manual orders');
+    }
+
+    /**
+     * Verify material deduction and show final levels
+     */
+    private function verifyMaterialDeduction($materials)
+    {
+        $this->command->info('📊 Final Material Stock Levels:');
+        
+        foreach ($materials as $material) {
+            if ($material->inventoryItem) {
+                $currentStock = $material->inventoryItem->quantity_on_hand;
+                $materialName = $material->inventoryItem->name;
+                
+                // Determine status based on remaining stock
+                if ($currentStock >= 1000) {
+                    $status = "✅ Excellent";
+                } elseif ($currentStock >= 500) {
+                    $status = "✅ Good";
+                } elseif ($currentStock >= 100) {
+                    $status = "⚠️ Low";
+                } else {
+                    $status = "❌ Critical";
+                }
+                
+                $this->command->info("   • {$materialName}: {$currentStock} units {$status}");
+            }
+        }
+        
+        $this->command->info('✓ Material deduction verification complete');
     }
 }

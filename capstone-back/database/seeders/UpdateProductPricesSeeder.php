@@ -7,73 +7,36 @@ use App\Models\Product;
 use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
 
-class ProductsTableSeeder extends Seeder
+class UpdateProductPricesSeeder extends Seeder
 {
     public function run()
     {
-        $this->command->info('Creating products with BOM-calculated prices...');
+        $this->command->info('Updating product prices based on BOM calculations...');
 
-        // Create products first
-        $diningTable = Product::updateOrCreate(
-            ['name' => 'Dining Table'],
-            [
-                'description' => 'High-quality mahogany dining table',
-                'price' => 12500.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Table.jpg',
-            ]
-        );
-
-        $woodenChair = Product::updateOrCreate(
-            ['name' => 'Wooden Chair'],
-            [
-                'description' => 'Comfortable mahogany wooden chair',
-                'price' => 7500.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Chair.jpg',
-            ]
-        );
-
-        $alkansya = Product::updateOrCreate(
-            ['name' => 'Alkansya'],
-            [
-                'description' => 'Traditional Filipino wooden chest',
-                'price' => 159.00, // Will be updated after BOM calculation
-                'stock' => 50,
-                'image' => 'storage/products/Alkansya.jpg',
-            ]
-        );
-
-        $this->command->info('Products created. Attempting to calculate BOM-based prices...');
-
-        // Try to calculate and update prices based on BOM (if available)
-        $this->updateProductPrice($diningTable);
-        $this->updateProductPrice($woodenChair);
-        // Skip Alkansya - it uses fixed pricing of ₱159
-
-        $this->command->info('Products created successfully!');
-    }
-
-    /**
-     * Calculate and update product price based on BOM
-     */
-    private function updateProductPrice($product)
-    {
-        $bomPrice = $this->calculateBomPrice($product->id);
+        $products = Product::all();
         
-        if ($bomPrice) {
-            $oldPrice = $product->price;
-            $product->price = $bomPrice;
-            $product->save();
+        foreach ($products as $product) {
+            $bomPrice = $this->calculateBomPrice($product->id);
             
-            $this->command->info("Updated {$product->name}: ₱{$oldPrice} → ₱{$bomPrice}");
-        } else {
-            $this->command->warn("No BOM price calculated for {$product->name} - keeping original price ₱{$product->price}");
+            if ($bomPrice) {
+                $oldPrice = $product->price;
+                $product->price = $bomPrice;
+                $product->save();
+                
+                $this->command->info("Updated {$product->name}: ₱{$oldPrice} → ₱{$bomPrice}");
+            } else {
+                $this->command->warn("No BOM price calculated for {$product->name} - keeping original price ₱{$product->price}");
+            }
         }
+        
+        $this->command->info('Product prices updated successfully!');
     }
 
     /**
      * Calculate BOM-based price for a product
+     * 
+     * @param int $productId
+     * @return float|null
      */
     private function calculateBomPrice($productId)
     {
@@ -129,6 +92,9 @@ class ProductsTableSeeder extends Seeder
 
     /**
      * Get labor percentage based on product type
+     * 
+     * @param int $productId
+     * @return float
      */
     private function getLaborPercentage($productId)
     {
@@ -152,6 +118,9 @@ class ProductsTableSeeder extends Seeder
 
     /**
      * Get profit margin based on product type
+     * 
+     * @param int $productId
+     * @return float
      */
     private function getProfitMargin($productId)
     {

@@ -24,7 +24,16 @@ class ProductController extends Controller
     public function update(Request $request, $id)
     {
         $product = Product::findOrFail($id);
-        $product->update($request->all());
+        
+        $data = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'description' => 'nullable|string',
+            'price' => 'sometimes|required|numeric|min:0',
+            'stock' => 'sometimes|required|integer|min:0',
+            'image' => 'nullable|string',
+        ]);
+        
+        $product->update($data);
         return response()->json($product);
     }
 
@@ -48,7 +57,7 @@ class ProductController extends Controller
                 return strtolower($item->name);
             });
         
-        // Enrich products with inventory data efficiently
+        // Enrich products with inventory data and BOM-based pricing
         $products = $products->map(function($product) use ($inventoryItems) {
             // Try to find matching inventory item by name (case-insensitive)
             $productName = strtolower($product->name);
@@ -63,6 +72,14 @@ class ProductController extends Controller
                 $product->inventory_location = null;
                 $product->inventory_sku = null;
             }
+            
+            // Add BOM indicator for admin display
+            $hasBom = ProductMaterial::where('product_id', $product->id)->exists();
+            $product->has_bom = $hasBom;
+            
+            // Alkansya uses fixed pricing, others use BOM calculation
+            $isAlkansya = strtolower($product->name) === 'alkansya';
+            $product->is_bom_priced = $hasBom && !$isAlkansya;
             
             return $product;
         });
@@ -137,4 +154,5 @@ class ProductController extends Controller
         }
         return response()->json(['message' => 'BOM imported']);
     }
+
 }

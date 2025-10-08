@@ -18,7 +18,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Pinewood 1x4x8ft',
                 'category' => 'raw',
                 'unit' => 'piece',
-                'unit_cost' => 85.00,
+                'unit_cost' => 100.00,   // Updated for ₱159 target
                 'description' => 'Pine wood board 1x4x8 ft (for Alkansya)',
             ],
             [
@@ -26,7 +26,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Plywood 4.2mm 4x8ft',
                 'category' => 'raw',
                 'unit' => 'sheet',
-                'unit_cost' => 320.00,
+                'unit_cost' => 100.00,   // Updated for ₱159 target
                 'description' => 'Plywood sheet 4.2mm thickness 4x8 ft (for Alkansya)',
             ],
             [
@@ -34,7 +34,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Acrylic 1.5mm 4x8ft',
                 'category' => 'raw',
                 'unit' => 'sheet',
-                'unit_cost' => 450.00,
+                'unit_cost' => 120.00,  // Updated for ₱159 target
                 'description' => 'Acrylic sheet 1.5mm thickness 4x8 ft (for Alkansya)',
             ],
             [
@@ -42,7 +42,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Pin Nail F30',
                 'category' => 'raw',
                 'unit' => 'box',
-                'unit_cost' => 180.00,
+                'unit_cost' => 100.00,   // Updated for ₱159 target
                 'description' => 'F30 pin nails (1000 pcs per box) (for Alkansya)',
             ],
             [
@@ -50,7 +50,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Black Screw 1 1/2',
                 'category' => 'raw',
                 'unit' => 'box',
-                'unit_cost' => 250.00,
+                'unit_cost' => 90.00,  // Updated for ₱159 target
                 'description' => 'Black screw 1.5 inch (500 pcs per box) (for Alkansya)',
             ],
             [
@@ -58,7 +58,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Stikwell 250',
                 'category' => 'raw',
                 'unit' => 'tube',
-                'unit_cost' => 65.00,
+                'unit_cost' => 60.00,   // Updated for ₱159 target
                 'description' => 'Stikwell adhesive 250ml (for Alkansya)',
             ],
             [
@@ -66,7 +66,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Grinder pad 4inch 120 grit',
                 'category' => 'raw',
                 'unit' => 'piece',
-                'unit_cost' => 25.00,
+                'unit_cost' => 30.00,   // Updated for ₱159 target
                 'description' => 'Grinding pad 4 inch, 120 grit (for Alkansya)',
             ],
             [
@@ -74,7 +74,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Sticker 24 inch Car Decals - White',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 850.00,
+                'unit_cost' => 300.00,  // Updated for ₱159 target
                 'description' => 'White sticker roll, 24 inch x 50m (for Alkansya)',
             ],
             [
@@ -82,7 +82,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Sticker 24 inch Car Decals - Black',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 850.00,
+                'unit_cost' => 300.00,  // Updated for ₱159 target
                 'description' => 'Black sticker roll, 24 inch x 50m (for Alkansya)',
             ],
             [
@@ -90,7 +90,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Transfer Tape 24 inch',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 380.00,
+                'unit_cost' => 180.00,  // Updated for ₱159 target
                 'description' => 'Transfer tape, 24 inch x 50m (for Alkansya)',
             ],
             [
@@ -98,7 +98,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'TAPE 2 inch 300m',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 120.00,
+                'unit_cost' => 50.00,   // Updated for ₱159 target
                 'description' => 'General packing tape, 2 inch x 300 m (for Alkansya)',
             ],
             [
@@ -106,7 +106,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Fragile Tape 2inch 300m',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 135.00,
+                'unit_cost' => 55.00,   // Updated for ₱159 target
                 'description' => 'Fragile printed packing tape, 2 inch x 300 m (for Alkansya)',
             ],
             [
@@ -114,7 +114,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Bubble Wrap 40 inch x 100 m',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 680.00,
+                'unit_cost' => 180.00,  // Updated for ₱159 target
                 'description' => 'Bubble wrap roll 40 inch width x 100 m length (for Alkansya)',
             ],
             [
@@ -122,7 +122,7 @@ class InventoryItemsSeeder extends Seeder
                 'name' => 'Insulation 8mm 40 inch x 100 m',
                 'category' => 'raw',
                 'unit' => 'roll',
-                'unit_cost' => 720.00,
+                'unit_cost' => 210.00,  // Updated for ₱159 target
                 'description' => 'Insulation foam 8mm, 40 inch width x 100 m length (for Alkansya)',
             ],
             
@@ -336,52 +336,35 @@ class InventoryItemsSeeder extends Seeder
             'lead_time_days' => 7,
             'location' => 'Windfield 2',
         ];
-
-        // Assign specific quantities for items
-        $qtyMap = [
-            // === Alkansya materials ===
-            'PW-1x4x8' => 800,
-            'PLY-4.2-4x8' => 400,
-            'ACR-1.5-4x8' => 200,
-            'PN-F30' => 30000,
-            'BS-1.5' => 6000,
-            'STKW-250' => 200,
-            'GRP-4-120' => 150,
-            'STK-24-W' => 200,
-            'STK-24-B' => 180,
-            'TFT-24' => 90,
-            'TAPE-2-300' => 300,
-            'FRAG-2-300' => 250,
-            'BWRAP-40-100' => 50,
-            'INS-8-40-100' => 45,
+ouffer
             
-            // === Dining Table materials ===
-            'HW-MAHOG-2x4x8' => 120,
-            'HW-MAHOG-1x6x10' => 180,
-            'PLY-18-4x8' => 80,
-            'WS-3' => 500,
-            'WG-500' => 60,
-            'SAND-80' => 200,
-            'SAND-120' => 180,
-            'SAND-220' => 150,
-            'STAIN-WALNUT-1L' => 40,
-            'POLY-GLOSS-1L' => 35,
-            'TBRACKET-METAL' => 100,
-            'FELT-PAD-LG' => 80,
+            // === Dining Table materials (updated for comprehensive BOM) ===
+            'HW-MAHOG-2x4x8' => 200,      // 4 per table * 50 tables = 200
+            'HW-MAHOG-1x6x10' => 300,     // 6 per table * 50 tables = 300
+            'PLY-18-4x8' => 100,          // 1 per table * 50 tables = 50 + buffer
+            'WS-3' => 2000,               // 32 per table * 50 tables = 1,600 + buffer
+            'WG-500' => 100,              // 1 per table * 50 tables = 50 + buffer
+            'SAND-80' => 300,             // 4 per table * 50 tables = 200 + buffer
+            'SAND-120' => 400,            // 6 per table * 50 tables = 300 + buffer
+            'SAND-220' => 300,            // 4 per table * 50 tables = 200 + buffer
+            'STAIN-WALNUT-1L' => 50,      // 0.3 per table * 50 tables = 15 + buffer
+            'POLY-GLOSS-1L' => 50,        // 0.4 per table * 50 tables = 20 + buffer
+            'TBRACKET-METAL' => 100,      // 1 per table * 50 tables = 50 + buffer
+            'FELT-PAD-LG' => 100,         // 1 per table * 50 tables = 50 + buffer
             
-            // === Wooden Chair materials ===
-            'HW-MAHOG-2x2x6' => 200,
-            'HW-MAHOG-1x4x6' => 180,
-            'PLY-12-2x4' => 100,
-            'WS-2.5' => 600,
-            'WD-8MM' => 800,
-            'FOAM-CUSHION-2' => 120,
-            'FABRIC-UPHOLSTERY' => 150,
-            'STAPLES-UPHOLSTERY' => 300,
-            'WG-250' => 70,
-            'STAIN-WALNUT-500' => 50,
-            'LACQUER-SPRAY' => 90,
-            'FELT-PAD-SM' => 120,
+            // === Wooden Chair materials (updated for comprehensive BOM) ===
+            'HW-MAHOG-2x2x6' => 300,      // 4 per chair * 50 chairs = 200 + buffer
+            'HW-MAHOG-1x4x6' => 200,     // 3 per chair * 50 chairs = 150 + buffer
+            'PLY-12-2x4' => 100,          // 1 per chair * 50 chairs = 50 + buffer
+            'WS-2.5' => 2000,             // 24 per chair * 50 chairs = 1,200 + buffer
+            'WD-8MM' => 1000,             // 8 per chair * 50 chairs = 400 + buffer
+            'FOAM-CUSHION-2' => 100,      // 1 per chair * 50 chairs = 50 + buffer
+            'FABRIC-UPHOLSTERY' => 200,   // 1.5 per chair * 50 chairs = 75 + buffer
+            'STAPLES-UPHOLSTERY' => 500,  // 50 per chair * 50 chairs = 2,500 + buffer
+            'WG-250' => 100,              // 1 per chair * 50 chairs = 50 + buffer
+            'STAIN-WALNUT-500' => 50,     // 0.3 per chair * 50 chairs = 15 + buffer
+            'LACQUER-SPRAY' => 100,       // 1 per chair * 50 chairs = 50 + buffer
+            'FELT-PAD-SM' => 100,         // 1 per chair * 50 chairs = 50 + buffer
         ];
 
         foreach ($items as $item) {

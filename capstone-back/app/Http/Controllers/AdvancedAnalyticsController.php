@@ -24,17 +24,21 @@ class AdvancedAnalyticsController extends Controller
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
         $timeframe = $request->get('timeframe', 'daily'); // daily, weekly, monthly
 
-        // Get production data by product type
+        // Get production data by product type - use both actual_completion_date and date fields
         $tableProductions = Production::where('product_type', 'table')
             ->where('status', 'Completed')
-            ->whereNotNull('actual_completion_date')
-            ->whereBetween('actual_completion_date', [$startDate, $endDate])
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('actual_completion_date', [$startDate, $endDate])
+                      ->orWhereBetween('date', [$startDate, $endDate]);
+            })
             ->get();
 
         $chairProductions = Production::where('product_type', 'chair')
             ->where('status', 'Completed')
-            ->whereNotNull('actual_completion_date')
-            ->whereBetween('actual_completion_date', [$startDate, $endDate])
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('actual_completion_date', [$startDate, $endDate])
+                      ->orWhereBetween('date', [$startDate, $endDate]);
+            })
             ->get();
 
         // Get Alkansya from ProductionAnalytics
@@ -43,9 +47,9 @@ class AdvancedAnalyticsController extends Controller
         // Get ALL Alkansya production for accurate total (matching dashboard/inventory)
         $allAlkansyaProductions = ProductionAnalytics::all();    
 
-        // Aggregate by timeframe
-        $tableOutput = $this->aggregateByTimeframe($tableProductions, 'actual_completion_date', $timeframe);
-        $chairOutput = $this->aggregateByTimeframe($chairProductions, 'actual_completion_date', $timeframe);
+        // Aggregate by timeframe - use actual_completion_date if available, otherwise use date
+        $tableOutput = $this->aggregateByTimeframe($tableProductions, 'actual_completion_date', $timeframe, 'date');
+        $chairOutput = $this->aggregateByTimeframe($chairProductions, 'actual_completion_date', $timeframe, 'date');
         $alkansyaOutput = $this->aggregateAlkansyaByTimeframe($alkansyaProductions, $timeframe);
 
         // Calculate totals and averages
@@ -371,10 +375,16 @@ class AdvancedAnalyticsController extends Controller
 
     // Helper methods
 
-    private function aggregateByTimeframe($productions, $dateField, $timeframe)
+    private function aggregateByTimeframe($productions, $dateField, $timeframe, $fallbackDateField = null)
     {
-        return $productions->groupBy(function($prod) use ($dateField, $timeframe) {
-            $date = Carbon::parse($prod->$dateField);
+        return $productions->groupBy(function($prod) use ($dateField, $timeframe, $fallbackDateField) {
+            // Use primary date field if available, otherwise use fallback
+            $dateValue = $prod->$dateField ?? ($fallbackDateField ? $prod->$fallbackDateField : null);
+            if (!$dateValue) {
+                return 'unknown';
+            }
+            
+            $date = Carbon::parse($dateValue);
             switch($timeframe) {
                 case 'weekly':
                     return $date->format('Y-W');
@@ -417,9 +427,15 @@ class AdvancedAnalyticsController extends Controller
     {
         if ($productions->isEmpty()) return 0;
 
-        $totalEfficiency = $productions->sum(function($prod) {
-            if (!$prod->production_started_at || !$prod->actual_completion_date) return 0;
-            
+        $completedProductions = $productions->filter(function($prod) {
+            return $prod->status === 'Completed' && 
+                   $prod->production_started_at && 
+                   $prod->actual_completion_date;
+        });
+
+        if ($completedProductions->isEmpty()) return 0;
+
+        $totalEfficiency = $completedProductions->sum(function($prod) {
             $estimated = $prod->estimated_completion_date 
                 ? Carbon::parse($prod->production_started_at)->diffInDays(Carbon::parse($prod->estimated_completion_date))
                 : 14;
@@ -429,7 +445,7 @@ class AdvancedAnalyticsController extends Controller
             return $actual > 0 ? min(100, ($estimated / $actual) * 100) : 0;
         });
 
-        return round($totalEfficiency / $productions->count(), 2);
+        return round($totalEfficiency / $completedProductions->count(), 2);
     }
 
     private function calculateMaterialEfficiency($startDate, $endDate)

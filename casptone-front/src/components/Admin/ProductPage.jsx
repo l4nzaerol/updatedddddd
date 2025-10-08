@@ -128,10 +128,37 @@ const ProductPage = () => {
     }
   }, [bomItems, laborPercentage, profitMargin, showAddModal]);
 
+  // Auto-suggest price when calculation is available and price field is empty
+  useEffect(() => {
+    if (priceCalculation && !newProduct.price) {
+      setNewProduct({ ...newProduct, price: Math.round(priceCalculation.suggested_price) });
+    }
+  }, [priceCalculation]);
+
   // Apply suggested price
   const applySuggestedPrice = () => {
     if (priceCalculation) {
       setNewProduct({ ...newProduct, price: Math.round(priceCalculation.suggested_price) });
+    }
+  };
+
+  // Auto-suggest price when user focuses on price field
+  const handlePriceFieldFocus = () => {
+    if (priceCalculation && !newProduct.price) {
+      setNewProduct({ ...newProduct, price: Math.round(priceCalculation.suggested_price) });
+    }
+  };
+
+  // Auto-suggest price when user starts typing in price field
+  const handlePriceFieldChange = (e) => {
+    const { value } = e.target;
+    setNewProduct({ ...newProduct, price: value });
+    
+    // If price field is empty and we have a calculation, suggest the price
+    if (!value && priceCalculation) {
+      setTimeout(() => {
+        setNewProduct({ ...newProduct, price: Math.round(priceCalculation.suggested_price) });
+      }, 100);
     }
   };
 
@@ -236,7 +263,41 @@ const ProductPage = () => {
                 <div className="col-md-6">
                   <Form.Group className="mb-3">
                     <Form.Label className="small fw-bold">Price *</Form.Label>
-                    <Form.Control required min="0" step="0.01" type="number" name="price" value={newProduct.price} onChange={handleInputChange} placeholder="0.00" />
+                    <div className="input-group">
+                      <Form.Control 
+                        required 
+                        min="0" 
+                        step="0.01" 
+                        type="number" 
+                        name="price" 
+                        value={newProduct.price} 
+                        onChange={handlePriceFieldChange}
+                        onFocus={handlePriceFieldFocus}
+                        placeholder={priceCalculation ? `Suggested: ₱${Math.round(priceCalculation.suggested_price)}` : "0.00"}
+                        className={priceCalculation ? "border-success" : ""}
+                      />
+                      {priceCalculation && newProduct.price && (
+                        <Button 
+                          variant="outline-secondary" 
+                          size="sm"
+                          onClick={() => setNewProduct({ ...newProduct, price: "" })}
+                          title="Clear price"
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </div>
+                    {priceCalculation && (
+                      <Form.Text className="text-success small">
+                        💡 Suggested price: ₱{Math.round(priceCalculation.suggested_price)} (auto-calculated from BOM)
+                        <br />
+                        <small className="text-muted">
+                          Material: ₱{priceCalculation.material_cost.toFixed(2)} + 
+                          Labor: ₱{priceCalculation.labor_cost.toFixed(2)} + 
+                          Profit: ₱{priceCalculation.profit_amount.toFixed(2)}
+                        </small>
+                      </Form.Text>
+                    )}
                   </Form.Group>
                 </div>
                 <div className="col-md-6">
