@@ -336,7 +336,24 @@ class InventoryItemsSeeder extends Seeder
             'lead_time_days' => 7,
             'location' => 'Windfield 2',
         ];
-ouffer
+
+        // Quantity mapping for specific items
+        $qtyMap = [
+            // === Alkansya materials ===
+            'PW-1x4x8' => 200,            // 2 per alkansya * 50 units = 100 + buffer
+            'PLY-4.2-4x8' => 100,         // 1 per alkansya * 50 units = 50 + buffer
+            'ACR-1.5-4x8' => 100,         // 1 per alkansya * 50 units = 50 + buffer
+            'PN-F30' => 2000,             // 20 per alkansya * 50 units = 1,000 + buffer
+            'BS-1.5' => 1000,             // 10 per alkansya * 50 units = 500 + buffer
+            'STKW-250' => 100,            // 1 per alkansya * 50 units = 50 + buffer
+            'GRP-4-120' => 200,           // 2 per alkansya * 50 units = 100 + buffer
+            'STK-24-W' => 50,             // 0.5 per alkansya * 50 units = 25 + buffer
+            'STK-24-B' => 50,             // 0.5 per alkansya * 50 units = 25 + buffer
+            'TFT-24' => 50,               // 0.5 per alkansya * 50 units = 25 + buffer
+            'TAPE-2-300' => 100,          // 1 per alkansya * 50 units = 50 + buffer
+            'FRAG-2-300' => 100,          // 1 per alkansya * 50 units = 50 + buffer
+            'BWRAP-40-100' => 50,         // 0.5 per alkansya * 50 units = 25 + buffer
+            'INS-8-40-100' => 50,         // 0.5 per alkansya * 50 units = 25 + buffer
             
             // === Dining Table materials (updated for comprehensive BOM) ===
             'HW-MAHOG-2x4x8' => 200,      // 4 per table * 50 tables = 200

@@ -108,3 +108,4 @@ The system now has:
 - **Real-time inventory** updates
 
 The enhanced seeder ensures that materials are properly managed for both historical production data and future manual orders, providing a robust foundation for Alkansya production management.
+

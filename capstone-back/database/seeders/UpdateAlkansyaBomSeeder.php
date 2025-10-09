@@ -42,3 +42,4 @@ class UpdateAlkansyaBomSeeder extends Seeder
         $this->command->info('Alkansya BOM update completed successfully!');
     }
 }
+
