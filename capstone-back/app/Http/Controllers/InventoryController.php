@@ -308,14 +308,20 @@ class InventoryController extends Controller
     {
         $startDate = $request->get('start_date', Carbon::now()->subDays(30)->format('Y-m-d'));
         $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
+        $productFilter = $request->get('product_filter', 'all');
         
         // Cache report data for 2 minutes to improve performance
-        $cacheKey = "inventory_report_{$startDate}_{$endDate}";
+        $cacheKey = "inventory_report_{$startDate}_{$endDate}_{$productFilter}";
         
-        return cache()->remember($cacheKey, 120, function () use ($startDate, $endDate) {
+        return cache()->remember($cacheKey, 120, function () use ($startDate, $endDate, $productFilter) {
             $items = InventoryItem::with(['usages' => function($query) use ($startDate, $endDate) {
                 $query->whereBetween('date', [$startDate, $endDate]);
             }])->get();
+
+            // Filter items based on product relationship
+            if ($productFilter !== 'all') {
+                $items = $this->filterItemsByProduct($items, $productFilter);
+            }
 
         $report = $items->map(function($item) use ($startDate, $endDate) {
             $totalUsage = $item->usages->sum('qty_used');
@@ -352,6 +358,49 @@ class InventoryController extends Controller
                 ],
                 'items' => $report
             ];
+        });
+    }
+
+    /**
+     * Filter inventory items by product relationship
+     */
+    private function filterItemsByProduct($items, $productFilter)
+    {
+        // Get product IDs based on filter
+        $productIds = [];
+        
+        switch ($productFilter) {
+            case 'alkansya':
+                $productIds = \App\Models\Product::where('name', 'like', '%alkansya%')
+                    ->orWhere('name', 'like', '%Alkansya%')
+                    ->pluck('id')->toArray();
+                break;
+            case 'dining-table':
+                $productIds = \App\Models\Product::where('name', 'like', '%table%')
+                    ->orWhere('name', 'like', '%Table%')
+                    ->pluck('id')->toArray();
+                break;
+            case 'wooden-chair':
+                $productIds = \App\Models\Product::where('name', 'like', '%chair%')
+                    ->orWhere('name', 'like', '%Chair%')
+                    ->pluck('id')->toArray();
+                break;
+            default:
+                return $items;
+        }
+
+        if (empty($productIds)) {
+            return collect();
+        }
+
+        // Get inventory item IDs that are used by these products
+        $inventoryItemIds = \App\Models\ProductMaterial::whereIn('product_id', $productIds)
+            ->pluck('inventory_item_id')
+            ->toArray();
+
+        // Filter items to only include those used by the selected products
+        return $items->filter(function($item) use ($inventoryItemIds) {
+            return in_array($item->id, $inventoryItemIds);
         });
     }
 

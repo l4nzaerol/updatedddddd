@@ -120,16 +120,17 @@ class OrderAcceptanceController extends Controller
             \Log::info("Accepting order #{$orderId}");
             
             // Update order acceptance status
-            // Order status changes to 'processing' when accepted and production starts
+            // All orders (including Alkansya) go to 'processing' when accepted
+            // Alkansya orders will be manually updated to 'ready_for_delivery' when ready
             $order->update([
                 'acceptance_status' => 'accepted',
                 'accepted_by' => $admin->id,
                 'accepted_at' => now(),
                 'admin_notes' => $data['admin_notes'] ?? null,
-                'status' => 'processing', // Changed from 'pending' to 'processing' when accepted
+                'status' => 'processing', // All orders go to processing when accepted
             ]);
             
-            \Log::info("Order #{$orderId} status updated to accepted");
+            \Log::info("Order #{$orderId} status updated to accepted and processing");
 
             // Create production records for each item that requires production
             foreach ($order->items as $item) {
@@ -137,6 +138,9 @@ class OrderAcceptanceController extends Controller
                 $isAlkansya = str_contains(strtolower($product->name), 'alkansya');
 
                 \Log::info("Creating production for product: {$product->name}, isAlkansya: " . ($isAlkansya ? 'yes' : 'no'));
+
+                // Deduct materials from inventory when order is accepted
+                $this->deductMaterialsFromInventory($product, $item->quantity);
 
                 // Determine product type and tracking requirements
                 $productType = $isAlkansya ? 'alkansya' : 
@@ -334,6 +338,51 @@ class OrderAcceptanceController extends Controller
                 ['stage' => 'Finishing', 'description' => 'Applying professional finish, stain, and polish', 'estimated_duration' => '2.8 days', 'status' => 'pending'],
                 ['stage' => 'Quality Check & Packaging', 'description' => 'Final quality inspection and packaging', 'estimated_duration' => '0.7 days', 'status' => 'pending'],
             ];
+        }
+    }
+
+    /**
+     * Deduct materials from inventory when order is accepted
+     */
+    private function deductMaterialsFromInventory($product, $quantity)
+    {
+        // Get BOM (Bill of Materials) for the product
+        $materials = \App\Models\ProductMaterial::where('product_id', $product->id)
+            ->with('inventoryItem')
+            ->get();
+
+        if ($materials->isEmpty()) {
+            \Log::warning("No BOM found for {$product->name}");
+            return;
+        }
+
+        \Log::info("Deducting materials for {$product->name} (Qty: {$quantity})");
+
+        foreach ($materials as $material) {
+            if (!$material->inventoryItem) {
+                continue;
+            }
+
+            $requiredQty = $material->qty_per_unit * $quantity;
+            $inventoryItem = $material->inventoryItem;
+            
+            // Check if sufficient stock
+            if ($inventoryItem->quantity_on_hand < $requiredQty) {
+                \Log::warning("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQty}, Available: {$inventoryItem->quantity_on_hand}");
+                throw new \Exception("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQty}, Available: {$inventoryItem->quantity_on_hand}");
+            }
+
+            // Deduct from inventory
+            $inventoryItem->decrement('quantity_on_hand', $requiredQty);
+
+            // Create inventory usage record
+            \App\Models\InventoryUsage::create([
+                'inventory_item_id' => $inventoryItem->id,
+                'date' => now()->format('Y-m-d'),
+                'qty_used' => $requiredQty,
+            ]);
+
+            \Log::info("Deducted {$requiredQty} {$inventoryItem->unit} of {$inventoryItem->name} (Remaining: {$inventoryItem->fresh()->quantity_on_hand})");
         }
     }
 }

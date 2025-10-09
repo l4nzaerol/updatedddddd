@@ -100,31 +100,17 @@ class OrderController extends Controller
                     'price' => $item->product->price
                 ]);
 
-                // Reduce finished product stock (if applicable)
-                $item->product->decrement('stock', $item->quantity);
-
-                // Deduct raw materials per BOM (at order time)
-                $bom = ProductMaterial::where('product_id', $item->product_id)->get();
-                foreach ($bom as $mat) {
-                    $requiredQty = (int) ($mat->qty_per_unit * $item->quantity);
-                    $inv = InventoryItem::find($mat->inventory_item_id);
-                    if ($inv) {
-                        // Ensure sufficient stock; otherwise abort with error
-                        if ($inv->quantity_on_hand < $requiredQty) {
-                            throw new \RuntimeException("Insufficient stock for SKU {$inv->sku}");
-                        }
-                        $inv->decrement('quantity_on_hand', $requiredQty);
-                        // record usage row
-                        InventoryUsage::create([
-                            'inventory_item_id' => $inv->id,
-                            'date' => now()->toDateString(),
-                            'qty_used' => $requiredQty,
-                        ]);
-                    }
+                // Only reduce finished product stock for Alkansya (pre-made items)
+                // For custom furniture (tables/chairs), stock will be deducted when production is completed
+                if (str_contains(strtolower($item->product->name), 'alkansya')) {
+                    $item->product->decrement('stock', $item->quantity);
                 }
 
-                // Production records will be created when admin accepts the order
-                // No longer auto-creating production here
+                // NOTE: Raw materials are NOT deducted during checkout
+                // Materials will only be deducted when:
+                // 1. Order is accepted by admin
+                // 2. Production begins for custom furniture
+                // 3. This ensures materials are only consumed for confirmed orders
             }
 
             // Clear cart

@@ -33,6 +33,7 @@ const Report = () => {
     const [forecastReport, setForecastReport] = useState(null);
     const [dailyUsage, setDailyUsage] = useState(null);
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [materialFilter, setMaterialFilter] = useState('all');
     
     // Production report data states
     const [productionAnalytics, setProductionAnalytics] = useState(null);
@@ -54,12 +55,51 @@ const Report = () => {
 
     // useEffect moved after fetchAllReports definition
 
+    // Filter materials based on product type
+    const filterMaterials = (items) => {
+        if (!items) return [];
+        
+        console.log('🔍 Filtering materials:', { materialFilter, totalItems: items.length });
+        
+        let filteredItems;
+        switch (materialFilter) {
+            case 'alkansya':
+                filteredItems = items.filter(item => 
+                    item.name.toLowerCase().includes('alkansya') ||
+                    item.sku.toLowerCase().includes('alkansya')
+                );
+                break;
+            case 'dining-table':
+                filteredItems = items.filter(item => 
+                    item.name.toLowerCase().includes('table') ||
+                    item.sku.toLowerCase().includes('table')
+                );
+                break;
+            case 'wooden-chair':
+                filteredItems = items.filter(item => 
+                    item.name.toLowerCase().includes('chair') ||
+                    item.sku.toLowerCase().includes('chair')
+                );
+                break;
+            default:
+                filteredItems = items;
+        }
+        
+        console.log('🔍 Filtered result:', { filteredCount: filteredItems.length, filter: materialFilter });
+        return filteredItems;
+    };
+
     // Debug logging for tab changes and data availability
     useEffect(() => {
         console.log('🔍 Tab State:', { mainTab, activeTab });
         console.log('🔍 Resource Utilization:', resourceUtilization);
         console.log('🔍 Has material_usage_by_product?', !!resourceUtilization?.material_usage_by_product);
     }, [activeTab, mainTab, resourceUtilization]);
+
+    // Debug logging for material filter changes
+    useEffect(() => {
+        console.log('🔍 Material Filter Changed:', materialFilter);
+    }, [materialFilter]);
 
     const fetchAllReports = useCallback(async () => {
         setLoading(true);
@@ -1177,61 +1217,112 @@ const Report = () => {
                             </div>
                         )}
                         
-                        {/* Inventory Status Tab - ENHANCED ANALYTICS */}
+                        {/* Inventory Status Tab - ENHANCED MINIMALIST DESIGN */}
                         {activeTab === "inventory" && (
                             inventoryReport ? (
                             <div>
-                                {/* Enhanced Summary Cards with Analytics */}
+                                {/* Simple Summary Cards */}
                                 <div className="row mb-4">
-                                        <div className="col-md-3">
-                                        <div className="card border-primary shadow-sm h-100">
+                                    <div className="col-md-3">
+                                        <div className="card border-0 shadow-sm h-100">
                                             <div className="card-body text-center">
                                                 <div className="text-primary mb-2">
                                                     <i className="fas fa-boxes" style={{ fontSize: '2rem' }}></i>
                                                 </div>
                                                 <h3 className="text-primary mb-1">{inventoryReport.summary.total_items}</h3>
                                                 <p className="text-muted small mb-0">Total Items</p>
-                                                <span className="badge bg-primary mt-2">All Inventory</span>
                                             </div>
-                                        </div>
-                                        </div>
-                                        <div className="col-md-3">
-                                        <div className="card border-danger shadow-sm h-100">
-                                            <div className="card-body text-center">
-                                                <div className="text-danger mb-2">
-                                                    <i className="fas fa-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
-                                                </div>
-                                                <h3 className="text-danger mb-1">{inventoryReport.summary.items_needing_reorder}</h3>
-                                                <p className="text-muted small mb-0">Need Reorder</p>
-                                                <span className="badge bg-danger mt-2">Urgent Action</span>
-                                            </div>
-                                        </div>
-                                        </div>
-                                        <div className="col-md-3">
-                                        <div className="card border-warning shadow-sm h-100">
-                                            <div className="card-body text-center">
-                                                <div className="text-warning mb-2">
-                                                    <i className="fas fa-exclamation-circle" style={{ fontSize: '2rem' }}></i>
-                                                </div>
-                                                <h3 className="text-warning mb-1">{inventoryReport.items.filter(i => i.stock_status === 'low').length}</h3>
-                                                <p className="text-muted small mb-0">Low Items</p>
-                                                <span className="badge bg-warning text-dark mt-2">Low Stock Alert</span>
-                                            </div>
-                                        </div>
-                                        </div>
-                                        <div className="col-md-3">
-                                        <div className="card border-success shadow-sm h-100">
-                                            <div className="card-body text-center">
-                                                <div className="text-success mb-2">
-                                                    <i className="fas fa-chart-line" style={{ fontSize: '2rem' }}></i>
-                                                </div>
-                                                <h3 className="text-success mb-1">{inventoryReport.summary.total_usage}</h3>
-                                                <p className="text-muted small mb-0">Total Usage</p>
-                                                <span className="badge bg-success mt-2">Period Total</span>
-                                            </div>
-                                        </div>
                                         </div>
                                     </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-0 shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-warning mb-2">
+                                                    <i className="fas fa-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
+                                                </div>
+                                                <h3 className="text-warning mb-1">{inventoryReport.summary.items_needing_reorder}</h3>
+                                                <p className="text-muted small mb-0">Need Reorder</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-0 shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-danger mb-2">
+                                                    <i className="fas fa-exclamation-circle" style={{ fontSize: '2rem' }}></i>
+                                                </div>
+                                                <h3 className="text-danger mb-1">{inventoryReport.items.filter(i => i.stock_status === 'critical').length}</h3>
+                                                <p className="text-muted small mb-0">Critical Items</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card border-0 shadow-sm h-100">
+                                            <div className="card-body text-center">
+                                                <div className="text-info mb-2">
+                                                    <i className="fas fa-chart-bar" style={{ fontSize: '2rem' }}></i>
+                                                </div>
+                                                <h3 className="text-info mb-1">{inventoryReport.summary.total_usage}</h3>
+                                                <p className="text-muted small mb-0">Total Usage</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Simple Material Filter Section */}
+                                <div className="card border-0 shadow-sm mb-4">
+                                    <div className="card-body">
+                                        <div className="row align-items-center">
+                                            <div className="col-md-6">
+                                                <h6 className="mb-0">🔍 Material Filter</h6>
+                                                <small className="text-muted">Filter materials by product type</small>
+                                            </div>
+                                            <div className="col-md-6">
+                                                <div className="btn-group w-100" role="group">
+                                                    <input 
+                                                        type="radio" 
+                                                        className="btn-check" 
+                                                        name="materialFilter" 
+                                                        id="all" 
+                                                        checked={materialFilter === 'all'}
+                                                        onChange={() => setMaterialFilter('all')}
+                                                    />
+                                                    <label className="btn btn-outline-primary" htmlFor="all">All Materials</label>
+                                                    
+                                                    <input 
+                                                        type="radio" 
+                                                        className="btn-check" 
+                                                        name="materialFilter" 
+                                                        id="alkansya" 
+                                                        checked={materialFilter === 'alkansya'}
+                                                        onChange={() => setMaterialFilter('alkansya')}
+                                                    />
+                                                    <label className="btn btn-outline-success" htmlFor="alkansya">Alkansya</label>
+                                                    
+                                                    <input 
+                                                        type="radio" 
+                                                        className="btn-check" 
+                                                        name="materialFilter" 
+                                                        id="dining-table" 
+                                                        checked={materialFilter === 'dining-table'}
+                                                        onChange={() => setMaterialFilter('dining-table')}
+                                                    />
+                                                    <label className="btn btn-outline-warning" htmlFor="dining-table">Dining Table</label>
+                                                    
+                                                    <input 
+                                                        type="radio" 
+                                                        className="btn-check" 
+                                                        name="materialFilter" 
+                                                        id="wooden-chair" 
+                                                        checked={materialFilter === 'wooden-chair'}
+                                                        onChange={() => setMaterialFilter('wooden-chair')}
+                                                    />
+                                                    <label className="btn btn-outline-info" htmlFor="wooden-chair">Wooden Chair</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                     
                                 {/* Enhanced Analytics Charts Section */}
                                 <div className="row mb-4">
@@ -1487,158 +1578,132 @@ const Report = () => {
                                     </div>
                                 </div>
 
-                                {/* Ultra Minimalist Inventory Status Table */}
-                                <div className="card border-0" style={{ backgroundColor: '#ffffff' }}>
-                                    <div className="card-header bg-white border-0 pb-2">
+                                {/* Simple Inventory Table */}
+                                <div className="card border-0 shadow-sm">
+                                    <div className="card-header bg-white border-0 py-3">
                                         <div className="d-flex justify-content-between align-items-center">
                                             <div>
-                                                <h6 className="mb-0 fw-bold" style={{ color: '#2c3e50' }}>Inventory Status</h6>
-                                                <small style={{ color: '#7f8c8d' }}>Real-time overview</small>
+                                                <h5 className="mb-1 fw-bold">📋 Inventory Status</h5>
+                                                <small className="text-muted">
+                                                    Real-time overview of all materials
+                                                    {materialFilter !== 'all' && (
+                                                        <span className="ms-2">
+                                                            • Filtered by: <span className="badge bg-primary">{materialFilter.replace('-', ' ').toUpperCase()}</span>
+                                                        </span>
+                                                    )}
+                                                </small>
                                             </div>
                                             <div className="d-flex gap-2">
-                                                <button 
-                                                    className="btn btn-sm px-3 py-1" 
-                                                    onClick={() => exportReport("inventory_status", inventoryReport.items)}
-                                                    style={{ 
-                                                        backgroundColor: '#3498db', 
-                                                        color: 'white', 
-                                                        border: 'none',
-                                                        borderRadius: '4px',
-                                                        fontSize: '0.8rem'
-                                                    }}
-                                                >
-                                                    Export
+                                                <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("inventory_status", filterMaterials(inventoryReport.items))}>
+                                                    📥 Export
                                                 </button>
-                                                <span className="px-3 py-1" style={{ 
-                                                    backgroundColor: '#ecf0f1', 
-                                                    color: '#2c3e50',
-                                                    borderRadius: '4px',
-                                                    fontSize: '0.8rem'
-                                                }}>
-                                                    Analytics
-                                                </span>
+                                                <button className="btn btn-sm btn-outline-secondary">
+                                                    📊 Analytics
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
                                     
-                                    {/* Ultra Simple Metrics */}
-                                    <div className="card-body pt-2">
-                                        <div className="row g-2 mb-3">
-                                            <div className="col-3">
-                                                <div className="text-center p-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                                                    <div style={{ color: '#7f8c8d', fontSize: '0.75rem' }}>Coverage</div>
-                                                    <div className="fw-bold" style={{ color: '#2c3e50' }}>
-                                                        {Math.round((inventoryReport.items.length / inventoryReport.summary.total_items) * 100)}%
-                                                    </div>
+                                    <div className="card-body p-0">
+                                        {/* Quick Stats Row */}
+                                        <div className="row g-0 bg-light">
+                                            <div className="col-md-3 text-center py-3">
+                                                <div className="text-muted small">Filtered Items</div>
+                                                <div className="h6 text-primary mb-0">{filterMaterials(inventoryReport.items).length}</div>
+                                            </div>
+                                            <div className="col-md-3 text-center py-3">
+                                                <div className="text-muted small">Avg Days</div>
+                                                <div className="h6 text-info mb-0">
+                                                    {(() => {
+                                                        const filteredItems = filterMaterials(inventoryReport.items);
+                                                        const validItems = filteredItems.filter(item => item.days_until_stockout > 0);
+                                                        return validItems.length > 0 ? 
+                                                            Math.round(validItems.reduce((sum, item) => sum + item.days_until_stockout, 0) / validItems.length) :
+                                                            'N/A';
+                                                    })()}
                                                 </div>
                                             </div>
-                                            <div className="col-3">
-                                                <div className="text-center p-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                                                    <div style={{ color: '#7f8c8d', fontSize: '0.75rem' }}>Avg Days</div>
-                                                    <div className="fw-bold" style={{ color: '#2c3e50' }}>
-                                                        {Math.round(inventoryReport.items.reduce((sum, item) => sum + (item.days_until_stockout || 0), 0) / inventoryReport.items.length)}
-                                                    </div>
-                                                </div>
+                                            <div className="col-md-3 text-center py-3">
+                                                <div className="text-muted small">High Usage</div>
+                                                <div className="h6 text-warning mb-0">{filterMaterials(inventoryReport.items).filter(i => i.avg_daily_usage > 5).length}</div>
                                             </div>
-                                            <div className="col-3">
-                                                <div className="text-center p-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                                                    <div style={{ color: '#7f8c8d', fontSize: '0.75rem' }}>High Usage</div>
-                                                    <div className="fw-bold" style={{ color: '#e67e22' }}>
-                                                        {inventoryReport.items.filter(i => i.avg_daily_usage > 5).length}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="col-3">
-                                                <div className="text-center p-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-                                                    <div style={{ color: '#7f8c8d', fontSize: '0.75rem' }}>Low Usage</div>
-                                                    <div className="fw-bold" style={{ color: '#27ae60' }}>
-                                                        {inventoryReport.items.filter(i => i.avg_daily_usage <= 1).length}
-                                                    </div>
-                                                </div>
+                                            <div className="col-md-3 text-center py-3">
+                                                <div className="text-muted small">Low Usage</div>
+                                                <div className="h6 text-success mb-0">{filterMaterials(inventoryReport.items).filter(i => i.avg_daily_usage <= 1).length}</div>
                                             </div>
                                         </div>
-                                        
-                                        {/* Ultra Clean Table */}
+
+                                        {/* Simple Table */}
                                         <div className="table-responsive">
-                                            <table className="table table-sm mb-0">
-                                                <thead>
-                                                    <tr style={{ backgroundColor: '#f8f9fa' }}>
-                                                        <th className="border-0 fw-semibold" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>SKU</th>
-                                                        <th className="border-0 fw-semibold" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Material</th>
-                                                        <th className="border-0 fw-semibold text-end" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Stock</th>
-                                                        <th className="border-0 fw-semibold text-end" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Usage</th>
-                                                        <th className="border-0 fw-semibold text-end" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Days Left</th>
-                                                        <th className="border-0 fw-semibold text-center" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Status</th>
-                                                        <th className="border-0 fw-semibold text-center" style={{ color: '#2c3e50', fontSize: '0.85rem' }}>Analytics</th>
+                                            <table className="table table-hover mb-0">
+                                                <thead className="table-light">
+                                                    <tr>
+                                                        <th className="border-0 py-3">SKU</th>
+                                                        <th className="border-0 py-3">Material</th>
+                                                        <th className="border-0 py-3 text-end">Stock</th>
+                                                        <th className="border-0 py-3 text-end">Usage</th>
+                                                        <th className="border-0 py-3 text-end">Days Left</th>
+                                                        <th className="border-0 py-3 text-center">Status</th>
+                                                        <th className="border-0 py-3 text-center">Analytics</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {inventoryReport.items.slice(0, 20).map((item, idx) => (
-                                                        <tr 
-                                                            key={idx} 
-                                                            style={{ 
-                                                                backgroundColor: item.stock_status === 'out_of_stock' ? '#2c3e50' : 
-                                                                               item.stock_status === 'critical' ? '#fff5f5' : 
-                                                                               item.stock_status === 'low' ? '#fffbf0' : '#ffffff',
-                                                                color: item.stock_status === 'out_of_stock' ? 'white' : '#2c3e50'
-                                                            }}
-                                                        >
-                                                            <td className="fw-semibold" style={{ fontSize: '0.8rem' }}>{item.sku}</td>
-                                                            <td style={{ fontSize: '0.8rem' }}>{item.name}</td>
-                                                            <td className="text-end fw-bold" style={{ fontSize: '0.8rem' }}>{item.current_stock}</td>
-                                                            <td className="text-end" style={{ fontSize: '0.8rem' }}>{item.avg_daily_usage}</td>
-                                                            <td className="text-end">
-                                                                <span className="fw-bold" style={{ 
-                                                                    fontSize: '0.8rem',
-                                                                    color: item.days_until_stockout <= 7 ? '#e74c3c' :
-                                                                           item.days_until_stockout <= 14 ? '#f39c12' : '#27ae60'
-                                                                }}>
-                                                                    {item.days_until_stockout || 'N/A'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="text-center">
-                                                                <span className="px-2 py-1" style={{ 
-                                                                    backgroundColor: item.stock_status === 'critical' ? '#e74c3c' :
-                                                                                   item.stock_status === 'low' ? '#f39c12' :
-                                                                                   item.stock_status === 'out_of_stock' ? '#34495e' : '#27ae60',
-                                                                    color: 'white',
-                                                                    borderRadius: '3px',
-                                                                    fontSize: '0.7rem',
-                                                                    fontWeight: '500'
-                                                                }}>
-                                                                    {item.stock_status === 'out_of_stock' ? 'Out of Stock' : 
-                                                                     item.stock_status === 'critical' ? 'Critical' :
-                                                                     item.stock_status === 'low' ? 'Low' : 'Normal'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="text-center">
-                                                                <div className="d-flex flex-column gap-1 align-items-center">
-                                                                    <span className="px-2 py-1" style={{ 
-                                                                        backgroundColor: item.avg_daily_usage > 5 ? '#3498db' : 
-                                                                                       item.avg_daily_usage > 2 ? '#9b59b6' : '#95a5a6',
-                                                                        color: 'white',
-                                                                        borderRadius: '3px',
-                                                                        fontSize: '0.65rem',
-                                                                        fontWeight: '500'
-                                                                    }}>
-                                                                        {item.avg_daily_usage > 5 ? 'High Usage' : 
-                                                                         item.avg_daily_usage > 2 ? 'Medium Usage' : 'Low Usage'}
+                                                    {filterMaterials(inventoryReport.items).map((item, idx) => {
+                                                        const isCritical = item.days_until_stockout <= 7;
+                                                        const isLow = item.days_until_stockout <= 14;
+                                                        const needsReorder = item.will_need_reorder;
+                                                        
+                                                        return (
+                                                            <tr key={idx} className={`${isCritical ? 'table-danger' : isLow ? 'table-warning' : ''}`}>
+                                                                <td className="fw-semibold py-3">{item.sku}</td>
+                                                                <td className="py-3">
+                                                                    <div className="d-flex align-items-center">
+                                                                        <span className="me-2">{item.name}</span>
+                                                                        {isCritical && <span className="badge bg-danger">CRITICAL</span>}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="text-end fw-bold py-3">{item.current_stock}</td>
+                                                                <td className="text-end py-3">{item.avg_daily_usage}</td>
+                                                                <td className="text-end">
+                                                                    <span className={`badge ${
+                                                                        item.current_stock === 0 ? 'bg-danger' :
+                                                                        isCritical ? 'bg-danger' :
+                                                                        isLow ? 'bg-warning' : 'bg-success'
+                                                                    }`}>
+                                                                        {item.current_stock === 0 ? 'Out of Stock' :
+                                                                         item.days_until_stockout === 0 ? '0 days' :
+                                                                         item.days_until_stockout ? `${item.days_until_stockout} days` : 'N/A'}
                                                                     </span>
-                                                                    {item.days_until_stockout <= 7 && (
-                                                                        <span className="px-2 py-1" style={{ 
-                                                                            backgroundColor: '#e74c3c',
-                                                                            color: 'white',
-                                                                            borderRadius: '3px',
-                                                                            fontSize: '0.65rem',
-                                                                            fontWeight: '500'
-                                                                        }}>
-                                                                            Urgent
+                                                                </td>
+                                                                <td className="text-center py-3">
+                                                                    <span className={`badge ${
+                                                                        item.stock_status === 'critical' ? 'bg-danger' :
+                                                                        item.stock_status === 'low' ? 'bg-warning' :
+                                                                        item.stock_status === 'out_of_stock' ? 'bg-dark' : 'bg-success'
+                                                                    }`}>
+                                                                        {item.current_stock === 0 ? 'Out of Stock' :
+                                                                         item.stock_status === 'critical' ? 'Critical' :
+                                                                         item.stock_status === 'low' ? 'Low Stock' :
+                                                                         item.stock_status === 'out_of_stock' ? 'Out of Stock' : 'Normal'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="text-center">
+                                                                    <div className="d-flex flex-column gap-1 align-items-center">
+                                                                        <span className={`badge ${
+                                                                            item.avg_daily_usage > 5 ? 'bg-primary' : 
+                                                                            item.avg_daily_usage > 2 ? 'bg-info' : 'bg-secondary'
+                                                                        }`}>
+                                                                            {item.avg_daily_usage > 5 ? 'High Usage' : 
+                                                                             item.avg_daily_usage > 2 ? 'Medium Usage' : 'Low Usage'}
                                                                         </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
+                                                                        {item.days_until_stockout <= 7 && (
+                                                                            <span className="badge bg-danger">Urgent</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
                                                 </tbody>
                                             </table>
                                         </div>

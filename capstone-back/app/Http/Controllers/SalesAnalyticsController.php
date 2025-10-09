@@ -25,8 +25,14 @@ class SalesAnalyticsController extends Controller
         $startDateTime = Carbon::parse($startDate)->startOfDay();
         $endDateTime = Carbon::parse($endDate)->endOfDay();
 
-        // Overall sales metrics - include all orders for comprehensive reporting
+        // Overall sales metrics - only include paid, delivered, and completed orders
+        // Exclude COD orders (cod_pending) as they haven't been actually paid yet
         $totalRevenue = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
+            ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid')
+            ->where('acceptance_status', 'accepted') // Only accepted orders
+            ->whereNotNull('accepted_at') // Must have been accepted
+            ->where('payment_method', '!=', 'cod') // Exclude COD orders
             ->sum('total_price');
 
         $totalOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])->count();
@@ -92,6 +98,11 @@ class SalesAnalyticsController extends Controller
                 DB::raw('COUNT(*) as orders')
             )
             ->whereBetween('checkout_date', [$startDate, $endDate])
+            ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid')
+            ->where('acceptance_status', 'accepted')
+            ->whereNotNull('accepted_at')
+            ->where('payment_method', '!=', 'cod')
             ->groupBy(DB::raw('DATE(checkout_date)'))
             ->orderBy('date');
 
@@ -103,6 +114,10 @@ class SalesAnalyticsController extends Controller
                     DB::raw('COUNT(*) as orders')
                 )
                 ->whereBetween('checkout_date', [$startDate, $endDate])
+                ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+                ->where('payment_status', 'paid')
+                ->where('acceptance_status', 'accepted')
+                ->whereNotNull('accepted_at')
                 ->groupBy(DB::raw('YEAR(checkout_date)'), DB::raw('WEEK(checkout_date)'))
                 ->orderBy('year', 'week');
         } elseif ($timeframe === 'monthly') {
@@ -113,6 +128,10 @@ class SalesAnalyticsController extends Controller
                     DB::raw('COUNT(*) as orders')
                 )
                 ->whereBetween('checkout_date', [$startDate, $endDate])
+                ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+                ->where('payment_status', 'paid')
+                ->where('acceptance_status', 'accepted')
+                ->whereNotNull('accepted_at')
                 ->groupBy(DB::raw('YEAR(checkout_date)'), DB::raw('MONTH(checkout_date)'))
                 ->orderBy('year', 'month');
         }
@@ -135,6 +154,10 @@ class SalesAnalyticsController extends Controller
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->whereBetween('orders.checkout_date', [$startDate, $endDate])
+            ->whereIn('orders.status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('orders.payment_status', 'paid')
+            ->where('orders.acceptance_status', 'accepted')
+            ->whereNotNull('orders.accepted_at')
             ->groupBy('products.id', 'products.name', 'products.price')
             ->orderBy('total_quantity', 'desc')
             ->limit(10)
@@ -168,6 +191,11 @@ class SalesAnalyticsController extends Controller
                 DB::raw('AVG(total_price) as average_value')
             )
             ->whereBetween('checkout_date', [$startDate, $endDate])
+            ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid')
+            ->where('acceptance_status', 'accepted')
+            ->whereNotNull('accepted_at')
+            ->where('payment_method', '!=', 'cod')
             ->groupBy('payment_method')
             ->get();
     }
@@ -220,10 +248,15 @@ class SalesAnalyticsController extends Controller
         $currentMonth = Carbon::now()->startOfMonth();
         $lastMonth = Carbon::now()->subMonth()->startOfMonth();
 
+        // Only count orders that are truly completed and paid
         $currentMonthData = Order::whereBetween('checkout_date', [
                 $currentMonth,
                 $currentMonth->copy()->endOfMonth()
             ])
+            ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid')
+            ->where('acceptance_status', 'accepted') // Only accepted orders
+            ->whereNotNull('accepted_at') // Must have been accepted
             ->select(
                 DB::raw('SUM(total_price) as revenue'),
                 DB::raw('COUNT(*) as orders')
@@ -234,6 +267,10 @@ class SalesAnalyticsController extends Controller
                 $lastMonth,
                 $lastMonth->copy()->endOfMonth()
             ])
+            ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid')
+            ->where('acceptance_status', 'accepted') // Only accepted orders
+            ->whereNotNull('accepted_at') // Must have been accepted
             ->select(
                 DB::raw('SUM(total_price) as revenue'),
                 DB::raw('COUNT(*) as orders')
@@ -291,13 +328,16 @@ class SalesAnalyticsController extends Controller
 
         $orders = $query->orderBy('checkout_date', 'desc')->get();
 
-        // Calculate summary statistics - include all orders
+        // Calculate summary statistics - only include paid, delivered, and completed orders for revenue
+        $completedOrders = $orders->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
+            ->where('payment_status', 'paid');
+        
         $summary = [
             'total_orders' => $orders->count(),
-            'total_revenue' => $orders->sum('total_price'),
+            'total_revenue' => $completedOrders->sum('total_price'), // Only count completed orders
             'paid_orders' => $orders->where('payment_status', 'paid')->count(),
             'pending_orders' => $orders->where('status', 'pending')->count(),
-            'average_order_value' => $orders->avg('total_price') ?? 0
+            'average_order_value' => $completedOrders->avg('total_price') ?? 0 // Only completed orders
         ];
 
         return response()->json([
@@ -404,6 +444,10 @@ class SalesAnalyticsController extends Controller
                 ->join('orders', 'order_items.order_id', '=', 'orders.id')
                 ->join('products', 'order_items.product_id', '=', 'products.id')
                 ->whereBetween('orders.checkout_date', [$startDateTime, $endDateTime])
+                ->whereIn('orders.status', ['ready_for_delivery', 'delivered', 'completed'])
+                ->where('orders.payment_status', 'paid')
+                ->where('orders.acceptance_status', 'accepted')
+                ->whereNotNull('orders.accepted_at')
                 ->groupBy('products.id', 'products.name', 'products.price')
                 ->orderBy('total_revenue', 'desc')
                 ->get();

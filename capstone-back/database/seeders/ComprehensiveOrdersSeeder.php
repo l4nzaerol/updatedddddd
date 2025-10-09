@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Production;
 use App\Models\ProductionProcess;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class ComprehensiveOrdersSeeder extends Seeder
 {
@@ -22,10 +23,31 @@ class ComprehensiveOrdersSeeder extends Seeder
      * - Ready-to-deliver Alkansya order
      * - Pending Alkansya order
      * - Various stages of production completion
+     * - Accurate dates for demo purposes
+     * - Proper material stock deduction
      */
     public function run(): void
     {
         $this->command->info('=== Creating Comprehensive Orders with Production Tracking & Delays ===');
+        
+        // Clear existing orders to ensure fresh demo data
+        $this->command->info('🗑️  Clearing existing orders and related data...');
+        
+        // Disable foreign key checks temporarily
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        
+        // Delete in correct order to respect foreign key constraints
+        \App\Models\OrderTracking::truncate();
+        \App\Models\ProductionProcess::truncate();
+        \App\Models\Production::truncate();
+        \App\Models\OrderItem::truncate();
+        \App\Models\Order::truncate();
+        
+        // Re-enable foreign key checks
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        
+        $this->command->info('✓ Cleared existing orders and production data');
+        $this->command->info('');
         
         // Find or create customer
         $customer = User::firstOrCreate(
@@ -84,30 +106,40 @@ class ComprehensiveOrdersSeeder extends Seeder
             return;
         }
 
-        $this->command->info("\n--- Creating Sample Orders with Delays ---\n");
+        $this->command->info("\n--- Creating Sample Orders with Accurate Dates ---\n");
+
+        // Define realistic date ranges for demo with proper production timelines
+        $today = Carbon::now();
+        $oneWeekAgo = $today->copy()->subWeek();
+        $twoWeeksAgo = $today->copy()->subWeeks(2);
+        $threeWeeksAgo = $today->copy()->subWeeks(3);
+        $oneMonthAgo = $today->copy()->subMonth();
 
         // Order 1: PENDING Alkansya - Just placed, awaiting acceptance (OLDEST ORDER)
         $this->command->info("1. Creating PENDING Alkansya order (awaiting acceptance)");
         $this->createOrder($customer, $admin, $staff, $alkansya, 3, [
-            'days_ago_placed' => 20,
+            'placed_date' => $oneMonthAgo,
             'is_accepted' => false,
         ]);
 
-        // Order 2: READY TO DELIVER Alkansya - Completed and ready
+        // Order 2: READY TO DELIVER Alkansya - Completed and ready (started 3 weeks ago, completed 2 weeks ago)
         $this->command->info("2. Creating READY TO DELIVER Alkansya order");
         $this->createOrder($customer, $admin, $staff, $alkansya, 5, [
-            'days_ago_placed' => 18,
-            'days_ago_accepted' => 17,
+            'placed_date' => $threeWeeksAgo,
+            'accepted_date' => $threeWeeksAgo->copy()->addDay(),
+            'production_started' => $threeWeeksAgo->copy()->addDay(),
+            'production_completed' => $twoWeeksAgo, // Completed 2 weeks ago
             'is_accepted' => true,
             'progress' => 100,
             'is_alkansya_ready' => true,
         ]);
 
-        // Order 3: PROCESSING - Wooden Chair with delays (20% complete)
+        // Order 3: PROCESSING - Wooden Chair with delays (20% complete, started 2.5 weeks ago)
         $this->command->info("3. Creating PROCESSING Wooden Chair with early delay");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
-            'days_ago_placed' => 16,
-            'days_ago_accepted' => 15,
+            'placed_date' => $threeWeeksAgo->copy()->addDays(2),
+            'accepted_date' => $threeWeeksAgo->copy()->addDays(3),
+            'production_started' => $threeWeeksAgo->copy()->addDays(3),
             'is_accepted' => true,
             'progress' => 20,
             'has_delays' => true,
@@ -119,11 +151,12 @@ class ComprehensiveOrdersSeeder extends Seeder
             ]
         ]);
 
-        // Order 4: PROCESSING - Dining Table with multiple delays (45% complete)
+        // Order 4: PROCESSING - Dining Table with multiple delays (45% complete, started 2 weeks ago)
         $this->command->info("4. Creating PROCESSING Dining Table with multiple delays");
         $this->createOrder($customer, $admin, $staff, $diningTable, 2, [
-            'days_ago_placed' => 14,
-            'days_ago_accepted' => 13,
+            'placed_date' => $twoWeeksAgo,
+            'accepted_date' => $twoWeeksAgo->copy()->addDay(),
+            'production_started' => $twoWeeksAgo->copy()->addDay(),
             'is_accepted' => true,
             'progress' => 45,
             'has_delays' => true,
@@ -139,20 +172,22 @@ class ComprehensiveOrdersSeeder extends Seeder
             ]
         ]);
 
-        // Order 5: PROCESSING - Wooden Chair mid-production (60% complete)
+        // Order 5: PROCESSING - Wooden Chair mid-production (60% complete, started 1.5 weeks ago)
         $this->command->info("5. Creating PROCESSING Wooden Chair at 60% (no delays)");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 2, [
-            'days_ago_placed' => 12,
-            'days_ago_accepted' => 11,
+            'placed_date' => $twoWeeksAgo->copy()->addDays(2),
+            'accepted_date' => $twoWeeksAgo->copy()->addDays(3),
+            'production_started' => $twoWeeksAgo->copy()->addDays(3),
             'is_accepted' => true,
             'progress' => 60,
         ]);
 
-        // Order 6: PROCESSING - Dining Table with delay (75% complete)
+        // Order 6: PROCESSING - Dining Table with delay (75% complete, started 1 week ago)
         $this->command->info("6. Creating PROCESSING Dining Table with assembly delay");
         $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
-            'days_ago_placed' => 10,
-            'days_ago_accepted' => 9,
+            'placed_date' => $oneWeekAgo,
+            'accepted_date' => $oneWeekAgo->copy()->addDay(),
+            'production_started' => $oneWeekAgo->copy()->addDay(),
             'is_accepted' => true,
             'progress' => 75,
             'has_delays' => true,
@@ -164,11 +199,12 @@ class ComprehensiveOrdersSeeder extends Seeder
             ]
         ]);
 
-        // Order 7: PROCESSING - Wooden Chair near completion with delays (90% complete)
+        // Order 7: PROCESSING - Wooden Chair near completion with delays (90% complete, started 5 days ago)
         $this->command->info("7. Creating PROCESSING Wooden Chair with finishing delay");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
-            'days_ago_placed' => 8,
-            'days_ago_accepted' => 7,
+            'placed_date' => $oneWeekAgo->copy()->addDays(2),
+            'accepted_date' => $oneWeekAgo->copy()->addDays(3),
+            'production_started' => $oneWeekAgo->copy()->addDays(3),
             'is_accepted' => true,
             'progress' => 90,
             'has_delays' => true,
@@ -180,11 +216,13 @@ class ComprehensiveOrdersSeeder extends Seeder
             ]
         ]);
 
-        // Order 8: COMPLETED - Dining Table ready for delivery (100% complete)
+        // Order 8: COMPLETED - Dining Table ready for delivery (100% complete, finished 3 days ago)
         $this->command->info("8. Creating COMPLETED Dining Table (ready for delivery)");
         $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
-            'days_ago_placed' => 6,
-            'days_ago_accepted' => 5,
+            'placed_date' => $oneWeekAgo->copy()->addDays(4),
+            'accepted_date' => $oneWeekAgo->copy()->addDays(5),
+            'production_started' => $oneWeekAgo->copy()->addDays(5),
+            'production_completed' => $today->copy()->subDays(3), // Completed 3 days ago
             'is_accepted' => true,
             'progress' => 100,
         ]);
@@ -192,7 +230,14 @@ class ComprehensiveOrdersSeeder extends Seeder
         // Order 9: PENDING - Regular furniture awaiting acceptance (NEWEST ORDER)
         $this->command->info("9. Creating PENDING Wooden Chair order");
         $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
-            'days_ago_placed' => 1,
+            'placed_date' => $today->copy()->subDays(2),
+            'is_accepted' => false,
+        ]);
+
+        // Order 10: NEWEST PENDING - Just placed today
+        $this->command->info("10. Creating NEWEST PENDING Alkansya order (placed today)");
+        $this->createOrder($customer, $admin, $staff, $alkansya, 2, [
+            'placed_date' => $today,
             'is_accepted' => false,
         ]);
 
@@ -200,17 +245,27 @@ class ComprehensiveOrdersSeeder extends Seeder
         $this->command->info("✓ All comprehensive orders created successfully!");
         $this->command->info("");
         $this->command->info("=== Order Summary ===");
-        $this->command->info("PENDING (2 orders): Orders 1, 9");
-        $this->command->info("  - Order 1: Alkansya (no production tracking)");
-        $this->command->info("  - Order 9: Wooden Chair (awaiting acceptance)");
+        $this->command->info("PENDING (3 orders): Orders 1, 9, 10");
+        $this->command->info("  - Order 1: Alkansya (oldest pending - 1 month ago)");
+        $this->command->info("  - Order 9: Wooden Chair (recent pending - 2 days ago)");
+        $this->command->info("  - Order 10: Alkansya (newest pending - today)");
         $this->command->info("");
         $this->command->info("READY TO DELIVER (2 orders): Orders 2, 8");
-        $this->command->info("  - Order 2: Alkansya (completed, ready to deliver)");
-        $this->command->info("  - Order 8: Dining Table (100% complete)");
+        $this->command->info("  - Order 2: Alkansya (completed 2 weeks ago)");
+        $this->command->info("  - Order 8: Dining Table (completed 3 days ago)");
         $this->command->info("");
         $this->command->info("PROCESSING (5 orders): Orders 3-7");
         $this->command->info("  - Orders with delays: 3, 4, 6, 7");
-        $this->command->info("  - Order without delays: 5");
+        $this->command->info("  - Orders without delays: 5");
+        $this->command->info("");
+        $this->command->info("Realistic Timeline:");
+        $this->command->info("  - Order 2: Started 3 weeks ago, completed 2 weeks ago");
+        $this->command->info("  - Order 3: Started 2.5 weeks ago, 20% complete (delayed)");
+        $this->command->info("  - Order 4: Started 2 weeks ago, 45% complete (delayed)");
+        $this->command->info("  - Order 5: Started 1.5 weeks ago, 60% complete");
+        $this->command->info("  - Order 6: Started 1 week ago, 75% complete (delayed)");
+        $this->command->info("  - Order 7: Started 5 days ago, 90% complete (delayed)");
+        $this->command->info("  - Order 8: Started 6 days ago, completed 3 days ago");
         $this->command->info("");
         $this->command->info("Delay Information:");
         $this->command->info("  - Order 3: Material Preparation delayed");
@@ -224,8 +279,10 @@ class ComprehensiveOrdersSeeder extends Seeder
      */
     private function createOrder($customer, $admin, $staff, $product, $quantity, $config)
     {
-        $daysAgoPlaced = $config['days_ago_placed'] ?? 0;
-        $daysAgoAccepted = $config['days_ago_accepted'] ?? $daysAgoPlaced;
+        $placedDate = $config['placed_date'] ?? Carbon::now();
+        $acceptedDate = $config['accepted_date'] ?? $placedDate;
+        $productionStarted = $config['production_started'] ?? $acceptedDate;
+        $productionCompleted = $config['production_completed'] ?? null;
         $isAccepted = $config['is_accepted'] ?? false;
         $progress = $config['progress'] ?? 0;
         $hasDelays = $config['has_delays'] ?? false;
@@ -245,21 +302,21 @@ class ComprehensiveOrdersSeeder extends Seeder
             }
         }
 
-        // Create order
+        // Create order with accurate dates
         $order = Order::create([
             'user_id' => $customer->id,
             'total_price' => $product->price * $quantity,
             'status' => $orderStatus,
             'acceptance_status' => $isAccepted ? 'accepted' : 'pending',
             'accepted_by' => $isAccepted ? $admin->id : null,
-            'accepted_at' => $isAccepted ? now()->subDays($daysAgoAccepted) : null,
-            'checkout_date' => now()->subDays($daysAgoPlaced),
+            'accepted_at' => $isAccepted ? $acceptedDate : null,
+            'checkout_date' => $placedDate,
             'payment_method' => 'Maya',
             'payment_status' => 'paid',
             'shipping_address' => '456 Woodcraft Avenue, Furniture District, Metro Manila',
             'contact_phone' => '+63 917 123 4567',
-            'created_at' => now()->subDays($daysAgoPlaced),
-            'updated_at' => now(),
+            'created_at' => $placedDate,
+            'updated_at' => Carbon::now(),
         ]);
 
         // Create order item
@@ -270,13 +327,28 @@ class ComprehensiveOrdersSeeder extends Seeder
             'price' => $product->price,
         ]);
 
+        // Deduct materials from inventory if order is accepted
+        if ($isAccepted) {
+            $this->deductMaterialsFromInventory($product, $quantity, $acceptedDate);
+        }
+
         // Determine current stage based on progress
         $currentStage = $this->determineStageFromProgress($progress, $isAlkansya);
 
-        // Calculate dates
-        $productionStartedAt = $isAccepted ? now()->subDays($daysAgoAccepted) : null;
+        // Calculate dates with realistic production timelines
+        $productionStartedAt = $isAccepted ? $productionStarted : null;
         $estimatedCompletion = $isAccepted ? $productionStartedAt->copy()->addDays($totalProductionDays) : null;
-        $actualCompletion = ($isAccepted && ($progress >= 100 || $isAlkansyaReady)) ? $productionStartedAt->copy()->addDays($totalProductionDays): null;
+        $actualCompletion = null;
+        
+        // Only set actual completion if production is truly completed
+        if ($isAccepted && ($progress >= 100 || $isAlkansyaReady)) {
+            if ($productionCompleted) {
+                $actualCompletion = $productionCompleted;
+            } else {
+                // Calculate realistic completion date based on production start
+                $actualCompletion = $productionStartedAt->copy()->addDays($totalProductionDays);
+            }
+        }
 
         // Create production if accepted
         $production = null;
@@ -289,11 +361,11 @@ class ComprehensiveOrdersSeeder extends Seeder
                 'user_id' => $admin->id,
                 'product_id' => $product->id,
                 'product_name' => $product->name,
-                'date' => now()->subDays($daysAgoAccepted)->format('Y-m-d'),
+                'date' => $productionStarted->format('Y-m-d'),
                 'current_stage' => $currentStage,
                 'status' => $productionStatus,
                 'quantity' => $quantity,
-                'priority' => $daysAgoAccepted <= 5 ? 'high' : 'medium',
+                'priority' => $productionStarted->diffInDays(Carbon::now()) <= 5 ? 'high' : 'medium',
                 'requires_tracking' => !$isAlkansya,
                 'product_type' => $isAlkansya ? 'alkansya' : (str_contains(strtolower($product->name), 'table') ? 'table' : 'chair'),
                 'production_started_at' => $productionStartedAt,
@@ -333,8 +405,8 @@ class ComprehensiveOrdersSeeder extends Seeder
             'actual_start_date' => $isAccepted ? $productionStartedAt : null,
             'actual_completion_date' => $actualCompletion,
             'process_timeline' => $this->generateProcessTimeline($trackingType, $currentStage, $trackingStatus, $actualProgress, $isAccepted),
-            'created_at' => now()->subDays($daysAgoPlaced),
-            'updated_at' => now(),
+            'created_at' => $placedDate,
+            'updated_at' => Carbon::now(),
         ]);
 
         // Sync tracking with production if production exists
@@ -353,6 +425,7 @@ class ComprehensiveOrdersSeeder extends Seeder
         
         $this->command->info("   ✓ Order #{$order->id} | {$product->name} x{$quantity}{$delayInfo}");
         $this->command->info("     Status: {$order->status} | Progress: {$displayProgress}%");
+        $this->command->info("     Placed: {$placedDate->format('Y-m-d H:i')}");
         
         if ($production) {
             $this->command->info("     🏭 Production: #{$production->id} | Stage: {$currentStage}");
@@ -529,5 +602,53 @@ class ComprehensiveOrdersSeeder extends Seeder
                 'status' => $stageStatus,
             ];
         }, $stages, array_keys($stages));
+    }
+
+    /**
+     * Deduct materials from inventory when order is accepted
+     */
+    private function deductMaterialsFromInventory($product, $quantity, $acceptedDate)
+    {
+        // Get BOM (Bill of Materials) for the product
+        $materials = \App\Models\ProductMaterial::where('product_id', $product->id)
+            ->with('inventoryItem')
+            ->get();
+
+        if ($materials->isEmpty()) {
+            $this->command->warn("  ⚠️  No BOM found for {$product->name}");
+            return;
+        }
+
+        $this->command->info("  📦 Deducting materials for {$product->name} (Qty: {$quantity})");
+
+        foreach ($materials as $material) {
+            if (!$material->inventoryItem) {
+                continue;
+            }
+
+            $requiredQty = $material->qty_per_unit * $quantity;
+            $inventoryItem = $material->inventoryItem;
+            
+            // Check if sufficient stock
+            if ($inventoryItem->quantity_on_hand < $requiredQty) {
+                $this->command->warn("    ⚠️  Insufficient stock for {$inventoryItem->name}. Required: {$requiredQty}, Available: {$inventoryItem->quantity_on_hand}");
+                // For demo purposes, we'll still deduct what we can
+                $actualDeduction = $inventoryItem->quantity_on_hand;
+            } else {
+                $actualDeduction = $requiredQty;
+            }
+
+            // Deduct from inventory
+            $inventoryItem->decrement('quantity_on_hand', $actualDeduction);
+
+            // Create inventory usage record
+            \App\Models\InventoryUsage::create([
+                'inventory_item_id' => $inventoryItem->id,
+                'date' => $acceptedDate->format('Y-m-d'),
+                'qty_used' => $actualDeduction,
+            ]);
+
+            $this->command->info("    ✓ {$inventoryItem->name}: {$actualDeduction} {$inventoryItem->unit} (Remaining: {$inventoryItem->fresh()->quantity_on_hand})");
+        }
     }
 }

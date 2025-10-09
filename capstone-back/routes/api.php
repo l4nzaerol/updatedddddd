@@ -112,6 +112,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/orders/{id}/accept', [OrderAcceptanceController::class, 'acceptOrder']);
     Route::post('/orders/{id}/reject', [OrderAcceptanceController::class, 'rejectOrder']);
     
+    // Order Delivery Routes (Admin only)
+    Route::post('/orders/{id}/mark-ready-for-delivery', [\App\Http\Controllers\OrderDeliveryController::class, 'markReadyForDelivery']);
+    Route::post('/orders/{id}/mark-delivered', [\App\Http\Controllers\OrderDeliveryController::class, 'markDelivered']);
+    
     // Specific order routes
     Route::get('/orders/{id}/tracking', [OrderController::class, 'tracking']);
     Route::get('/orders/{id}/payment-status', function($id){

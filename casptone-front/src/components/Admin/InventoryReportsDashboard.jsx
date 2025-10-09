@@ -32,6 +32,7 @@ export default function InventoryReportsDashboard() {
   const [reportDays, setReportDays] = useState(30);
   const [forecastDays, setForecastDays] = useState(30);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [materialFilter, setMaterialFilter] = useState('all');
 
   // useEffect moved after loadAllReports definition
 
@@ -55,7 +56,11 @@ export default function InventoryReportsDashboard() {
       // Load other reports with delays
       try {
         const inventory = await api.get("/inventory/report", { 
-          params: { start_date: getStartDate(reportDays), end_date: new Date().toISOString().split('T')[0] } 
+          params: { 
+            start_date: getStartDate(reportDays), 
+            end_date: new Date().toISOString().split('T')[0],
+            product_filter: materialFilter
+          } 
         });
         setInventoryReport(inventory.data);
       } catch (e) {
@@ -124,7 +129,7 @@ export default function InventoryReportsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [reportDays, forecastDays, selectedDate]);
+  }, [reportDays, forecastDays, selectedDate, materialFilter]);
 
   useEffect(() => {
     loadAllReports();
@@ -158,6 +163,12 @@ export default function InventoryReportsDashboard() {
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     link.click();
+  };
+
+  // Get filtered materials from backend response
+  const getFilteredMaterials = () => {
+    if (!inventoryReport || !inventoryReport.items) return [];
+    return inventoryReport.items;
   };
 
   if (loading) {
@@ -329,319 +340,233 @@ export default function InventoryReportsDashboard() {
             </div>
           )}
 
-          {/* Inventory Status Report Tab - ENHANCED ANALYTICS */}
+          {/* Inventory Status Report Tab - ENHANCED MINIMALIST DESIGN */}
           {activeTab === "inventory" && inventoryReport && (
             <div>
-              {/* Enhanced Summary Cards with Analytics */}
+              {/* Enhanced Summary Cards */}
               <div className="row mb-4">
                 <div className="col-md-3">
-                  <div className="card border-primary shadow-sm h-100">
-                    <div className="card-body text-center">
-                      <div className="text-primary mb-2">
-                        <i className="fas fa-boxes" style={{ fontSize: '2rem' }}></i>
-                      </div>
-                      <h3 className="text-primary mb-1">{inventoryReport.summary.total_items}</h3>
-                      <p className="text-muted small mb-0">Total Items</p>
-                      <span className="badge bg-primary mt-2">All Inventory</span>
-                    </div>
+                  <div className="summary-card">
+                    <div className="card-icon">📦</div>
+                    <div className="card-value">{inventoryReport.summary.total_items}</div>
+                    <div className="card-label">Total Items</div>
                   </div>
                 </div>
                 <div className="col-md-3">
-                  <div className="card border-danger shadow-sm h-100">
-                    <div className="card-body text-center">
-                      <div className="text-danger mb-2">
-                        <i className="fas fa-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
-                      </div>
-                      <h3 className="text-danger mb-1">{inventoryReport.summary.items_needing_reorder}</h3>
-                      <p className="text-muted small mb-0">Need Reorder</p>
-                      <span className="badge bg-danger mt-2">Urgent Action</span>
-                    </div>
+                  <div className="summary-card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+                    <div className="card-icon">⚠️</div>
+                    <div className="card-value">{inventoryReport.summary.items_needing_reorder}</div>
+                    <div className="card-label">Need Reorder</div>
                   </div>
                 </div>
                 <div className="col-md-3">
-                  <div className="card border-warning shadow-sm h-100">
-                    <div className="card-body text-center">
-                      <div className="text-warning mb-2">
-                        <i className="fas fa-clock" style={{ fontSize: '2rem' }}></i>
-                      </div>
-                      <h3 className="text-warning mb-1">{inventoryReport.summary.critical_items}</h3>
-                      <p className="text-muted small mb-0">Critical Items</p>
-                      <span className="badge bg-warning text-dark mt-2">Monitor Closely</span>
-                    </div>
+                  <div className="summary-card" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
+                    <div className="card-icon">🚨</div>
+                    <div className="card-value">{inventoryReport.summary.critical_items}</div>
+                    <div className="card-label">Critical Items</div>
                   </div>
                 </div>
                 <div className="col-md-3">
-                  <div className="card border-success shadow-sm h-100">
-                    <div className="card-body text-center">
-                      <div className="text-success mb-2">
-                        <i className="fas fa-chart-line" style={{ fontSize: '2rem' }}></i>
-                      </div>
-                      <h3 className="text-success mb-1">{inventoryReport.summary.total_usage}</h3>
-                      <p className="text-muted small mb-0">Total Usage</p>
-                      <span className="badge bg-success mt-2">Period Total</span>
+                  <div className="summary-card" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' }}>
+                    <div className="card-icon">📊</div>
+                    <div className="card-value">{inventoryReport.summary.total_usage}</div>
+                    <div className="card-label">Total Usage</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced Material Filter Section */}
+              <div className="material-filter">
+                <div className="row align-items-center">
+                  <div className="col-md-6">
+                    <h6 className="mb-0">🔍 Material Filter</h6>
+                    <small className="text-muted">Filter materials by product type</small>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="btn-group w-100" role="group">
+                      <input 
+                        type="radio" 
+                        className="btn-check" 
+                        name="materialFilter" 
+                        id="all" 
+                        checked={materialFilter === 'all'}
+                        onChange={() => setMaterialFilter('all')}
+                      />
+                      <label className="btn btn-outline-primary" htmlFor="all">All Materials</label>
+                      
+                      <input 
+                        type="radio" 
+                        className="btn-check" 
+                        name="materialFilter" 
+                        id="alkansya" 
+                        checked={materialFilter === 'alkansya'}
+                        onChange={() => setMaterialFilter('alkansya')}
+                      />
+                      <label className="btn btn-outline-success" htmlFor="alkansya">Alkansya</label>
+                      
+                      <input 
+                        type="radio" 
+                        className="btn-check" 
+                        name="materialFilter" 
+                        id="dining-table" 
+                        checked={materialFilter === 'dining-table'}
+                        onChange={() => setMaterialFilter('dining-table')}
+                      />
+                      <label className="btn btn-outline-warning" htmlFor="dining-table">Dining Table</label>
+                      
+                      <input 
+                        type="radio" 
+                        className="btn-check" 
+                        name="materialFilter" 
+                        id="wooden-chair" 
+                        checked={materialFilter === 'wooden-chair'}
+                        onChange={() => setMaterialFilter('wooden-chair')}
+                      />
+                      <label className="btn btn-outline-info" htmlFor="wooden-chair">Wooden Chair</label>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Enhanced Analytics Charts Section */}
-              <div className="row mb-4">
-                {/* Stock Status Distribution - Enhanced */}
-                <div className="col-md-6">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-header d-flex justify-content-between align-items-center">
-                      <h6 className="mb-0 fw-bold">📊 Stock Status Distribution</h6>
-                      <span className="badge bg-info">Analytics</span>
+              {/* Enhanced Minimalist Inventory Table */}
+              <div className="card inventory-status-table">
+                <div className="card-header">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h5 className="mb-1">📋 Inventory Status</h5>
+                      <small>
+                        Real-time overview of all materials
+                        {materialFilter !== 'all' && (
+                          <span className="ms-2">
+                            • Filtered by: <span className="badge bg-primary">{materialFilter.replace('-', ' ').toUpperCase()}</span>
+                          </span>
+                        )}
+                      </small>
                     </div>
-                    <div className="card-body">
-                      <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: 'Normal Stock', value: inventoryReport.items.filter(i => i.stock_status === 'normal').length, color: '#28a745' },
-                              { name: 'Low Stock', value: inventoryReport.items.filter(i => i.stock_status === 'low').length, color: '#ffc107' },
-                              { name: 'Critical Stock', value: inventoryReport.items.filter(i => i.stock_status === 'critical').length, color: '#dc3545' },
-                              { name: 'Out of Stock', value: inventoryReport.items.filter(i => i.stock_status === 'out_of_stock').length, color: '#6c757d' },
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={(entry) => `${entry.name}: ${entry.value}`}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {inventoryReport.items.filter(i => i.stock_status === 'normal').length > 0 && <Cell fill="#28a745" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'low').length > 0 && <Cell fill="#ffc107" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'critical').length > 0 && <Cell fill="#dc3545" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'out_of_stock').length > 0 && <Cell fill="#6c757d" />}
-                          </Pie>
-                          <Tooltip />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
+                    <div className="d-flex gap-2">
+                      <button className="btn btn-sm btn-outline-light" onClick={() => exportReport("inventory_status", getFilteredMaterials())}>
+                        📥 Export
+                      </button>
+                      <button className="btn btn-sm btn-outline-light">
+                        📊 Analytics
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                {/* Stock Level Analytics - NEW */}
-                <div className="col-md-6">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-header d-flex justify-content-between align-items-center">
-                      <h6 className="mb-0 fw-bold">📈 Stock Level Analytics</h6>
-                      <span className="badge bg-primary">Trends</span>
-                    </div>
-                    <div className="card-body">
-                      <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={[
-                          { category: 'Normal', count: inventoryReport.items.filter(i => i.stock_status === 'normal').length, color: '#28a745' },
-                          { category: 'Low', count: inventoryReport.items.filter(i => i.stock_status === 'low').length, color: '#ffc107' },
-                          { category: 'Critical', count: inventoryReport.items.filter(i => i.stock_status === 'critical').length, color: '#dc3545' },
-                          { category: 'Out of Stock', count: inventoryReport.items.filter(i => i.stock_status === 'out_of_stock').length, color: '#6c757d' }
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="category" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="count" fill="#8884d8">
-                            {inventoryReport.items.filter(i => i.stock_status === 'normal').length > 0 && <Cell fill="#28a745" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'low').length > 0 && <Cell fill="#ffc107" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'critical').length > 0 && <Cell fill="#dc3545" />}
-                            {inventoryReport.items.filter(i => i.stock_status === 'out_of_stock').length > 0 && <Cell fill="#6c757d" />}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Enhanced Inventory Status Table */}
-              <div className="card shadow-sm">
-                <div className="card-header d-flex justify-content-between align-items-center">
-                  <h5 className="mb-1 fw-bold">📋 Detailed Inventory Status</h5>
-                  <div className="d-flex gap-2">
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => exportReport("inventory_status", inventoryReport.items)}>
-                      📥 Export CSV
-                    </button>
-                    <span className="badge bg-secondary">Analytics Type: Inventory Status</span>
-                  </div>
-                </div>
-                <div className="card-body">
-                  {/* Analytics Summary Row */}
-                  <div className="row mb-3 p-3 bg-light rounded">
-                    <div className="col-md-3 text-center">
-                      <div className="text-muted small">Analytics Coverage</div>
-                      <div className="h6 text-primary">{Math.round((inventoryReport.items.length / inventoryReport.summary.total_items) * 100)}%</div>
-                    </div>
-                    <div className="col-md-3 text-center">
-                      <div className="text-muted small">Avg Days Until Stockout</div>
-                      <div className="h6 text-info">
-                        {(() => {
-                          const validItems = inventoryReport.items.filter(item => item.days_until_stockout > 0);
-                          return validItems.length > 0 ? 
-                            Math.round(validItems.reduce((sum, item) => sum + item.days_until_stockout, 0) / validItems.length) + ' days' :
-                            'No usage data';
-                        })()}
+                
+                <div className="card-body p-0">
+                  {/* Quick Stats Row */}
+                  <div className="quick-stats">
+                    <div className="row g-0">
+                      <div className="col-md-3">
+                        <div className="stat-item">
+                          <div className="stat-value text-primary">{getFilteredMaterials().length}</div>
+                          <div className="stat-label">Filtered Items</div>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="stat-item">
+                          <div className="stat-value text-info">
+                            {(() => {
+                              const filteredItems = getFilteredMaterials();
+                              const validItems = filteredItems.filter(item => item.days_until_stockout > 0);
+                              return validItems.length > 0 ? 
+                                Math.round(validItems.reduce((sum, item) => sum + item.days_until_stockout, 0) / validItems.length) :
+                                'N/A';
+                            })()}
+                          </div>
+                          <div className="stat-label">Avg Days</div>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="stat-item">
+                          <div className="stat-value text-warning">{getFilteredMaterials().filter(i => i.avg_daily_usage > 5).length}</div>
+                          <div className="stat-label">High Usage</div>
+                        </div>
+                      </div>
+                      <div className="col-md-3">
+                        <div className="stat-item">
+                          <div className="stat-value text-success">{getFilteredMaterials().filter(i => i.avg_daily_usage <= 1).length}</div>
+                          <div className="stat-label">Low Usage</div>
+                        </div>
                       </div>
                     </div>
-                    <div className="col-md-3 text-center">
-                      <div className="text-muted small">High Usage Items</div>
-                      <div className="h6 text-warning">{inventoryReport.items.filter(i => i.avg_daily_usage > 5).length}</div>
-                    </div>
-                    <div className="col-md-3 text-center">
-                      <div className="text-muted small">Low Usage Items</div>
-                      <div className="h6 text-success">{inventoryReport.items.filter(i => i.avg_daily_usage <= 1).length}</div>
-                    </div>
                   </div>
 
+                  {/* Enhanced Table */}
                   <div className="table-responsive">
-                    <table className="table table-sm table-hover">
-                      <thead className="table-dark">
+                    <table className="table inventory-table mb-0">
+                      <thead>
                         <tr>
                           <th>SKU</th>
-                          <th>Name</th>
-                          <th className="text-end">Current Stock</th>
-                          <th className="text-end">Avg Daily Usage</th>
-                          <th className="text-end">Days Until Stockout</th>
-                          <th>Status</th>
-                          <th>Analytics</th>
+                          <th>Material</th>
+                          <th className="text-end">Stock</th>
+                          <th className="text-end">Usage</th>
+                          <th className="text-end">Forecasted</th>
+                          <th className="text-end">Projected</th>
+                          <th className="text-end">Days Left</th>
+                          <th className="text-end">Order Qty</th>
+                          <th className="text-center">Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {inventoryReport.items.slice(0, 20).map((item, idx) => (
-                          <tr key={idx} className={item.stock_status === 'critical' ? 'table-danger' : item.stock_status === 'low' ? 'table-warning' : ''}>
-                            <td className="fw-semibold">{item.sku}</td>
-                            <td>{item.name}</td>
-                            <td className="text-end fw-bold">{item.current_stock}</td>
-                            <td className="text-end">{item.avg_daily_usage}</td>
-                            <td className="text-end">
-                              <span className={`fw-bold ${
-                                item.current_stock === 0 ? 'text-danger' :
-                                item.days_until_stockout <= 7 ? 'text-danger' :
-                                item.days_until_stockout <= 14 ? 'text-warning' : 'text-success'
-                              }`}>
-                                {item.current_stock === 0 ? 'Out of Stock' :
-                                 item.days_until_stockout === 0 ? '0 days' :
-                                 item.days_until_stockout || 'No usage data'}
-                              </span>
-                            </td>
-                            <td>
-                              <span className={`badge ${
-                                item.stock_status === 'critical' ? 'bg-danger' :
-                                item.stock_status === 'low' ? 'bg-warning' :
-                                item.stock_status === 'out_of_stock' ? 'bg-dark' : 'bg-success'
-                              }`}>
-                                {item.current_stock === 0 ? 'Out of Stock' :
-                                 item.stock_status === 'critical' ? 'Critical' :
-                                 item.stock_status === 'low' ? 'Low Stock' :
-                                 item.stock_status === 'out_of_stock' ? 'Out of Stock' : 'Normal'}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="d-flex flex-column gap-1">
-                                <span className={`badge badge-sm ${
-                                  item.avg_daily_usage > 5 ? 'bg-primary' : 
-                                  item.avg_daily_usage > 2 ? 'bg-info' : 'bg-secondary'
-                                }`}>
-                                  {item.avg_daily_usage > 5 ? 'High Usage' : 
-                                   item.avg_daily_usage > 2 ? 'Medium Usage' : 'Low Usage'}
+                        {getFilteredMaterials().map((item, idx) => {
+                          const isCritical = item.days_until_stockout <= 7;
+                          const isLow = item.days_until_stockout <= 14;
+                          const needsReorder = item.will_need_reorder;
+                          
+                          return (
+                            <tr key={idx} className={`${isCritical ? 'table-danger' : isLow ? 'table-warning' : ''}`}>
+                              <td className="fw-semibold py-3">{item.sku}</td>
+                              <td className="py-3">
+                                <div className="d-flex align-items-center">
+                                  <span className="me-2">{item.name}</span>
+                                  {isCritical && <span className="badge bg-danger">CRITICAL</span>}
+                                </div>
+                              </td>
+                              <td className="text-end fw-bold py-3">{item.current_stock}</td>
+                              <td className="text-end py-3">{item.avg_daily_usage}</td>
+                              <td className="text-end py-3">{item.forecasted_usage_30_days || 'N/A'}</td>
+                              <td className="text-end py-3">
+                                <span className={`fw-bold ${item.projected_stock < 0 ? 'text-danger' : 'text-warning'}`}>
+                                  {item.projected_stock || 'N/A'}
                                 </span>
-                                {item.days_until_stockout <= 7 && (
-                                  <span className="badge badge-sm bg-danger">Urgent Reorder</span>
+                              </td>
+                              <td className="text-end">
+                                <span className={`badge ${
+                                  item.current_stock === 0 ? 'bg-danger' :
+                                  isCritical ? 'bg-danger' :
+                                  isLow ? 'bg-warning' : 'bg-success'
+                                }`}>
+                                  {item.current_stock === 0 ? 'Out of Stock' :
+                                   item.days_until_stockout === 0 ? '0 days' :
+                                   item.days_until_stockout ? `${item.days_until_stockout} days` : 'N/A'}
+                                </span>
+                              </td>
+                              <td className="text-end">
+                                {needsReorder && (
+                                  <span className="badge bg-primary">
+                                    {item.recommended_order_qty || 'Auto'}
+                                  </span>
                                 )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              <td className="text-center">
+                                <span className={`status-indicator ${
+                                  item.current_stock === 0 ? 'status-out' :
+                                  item.stock_status === 'critical' ? 'status-critical' :
+                                  item.stock_status === 'low' ? 'status-warning' : 'status-safe'
+                                }`}>
+                                  {item.current_stock === 0 ? '🚨 Out of Stock' :
+                                   item.stock_status === 'critical' ? '🚨 Critical' :
+                                   item.stock_status === 'low' ? '⚠️ Low Stock' :
+                                   item.stock_status === 'out_of_stock' ? '🚨 Out of Stock' : '✅ Normal'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
-                  </div>
-
-                  {/* Analytics Insights */}
-                  <div className="mt-3 p-3 bg-light rounded">
-                    <h6 className="text-primary mb-2">📊 Analytics Insights</h6>
-                    <div className="row">
-                      <div className="col-md-4">
-                        <div className="text-muted small">Critical Items Analysis</div>
-                        <div className="text-danger fw-bold">
-                          {inventoryReport.items.filter(i => i.stock_status === 'critical').length} items need immediate attention
-                        </div>
-                      </div>
-                      <div className="col-md-4">
-                        <div className="text-muted small">Usage Pattern</div>
-                        <div className="text-info fw-bold">
-                          {inventoryReport.items.filter(i => i.avg_daily_usage > 3).length} high-usage items identified
-                        </div>
-                      </div>
-                      <div className="col-md-4">
-                        <div className="text-muted small">Reorder Efficiency</div>
-                        <div className="text-success fw-bold">
-                          {inventoryReport.items.filter(i => i.days_until_stockout > 30).length} items have good stock levels
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Analytics Type Alignment Section */}
-                  <div className="mt-3 p-3 bg-primary bg-opacity-10 rounded">
-                    <h6 className="text-primary mb-3">🎯 Analytics Type Alignment for Inventory Status</h6>
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="card border-0 bg-white">
-                          <div className="card-body">
-                            <h6 className="text-primary mb-2">📈 Descriptive Analytics</h6>
-                            <ul className="list-unstyled small">
-                              <li>✅ Current stock levels across all items</li>
-                              <li>✅ Stock status distribution (Normal/Low/Critical/Out)</li>
-                              <li>✅ Average daily usage patterns</li>
-                              <li>✅ Days until stockout calculations</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="card border-0 bg-white">
-                          <div className="card-body">
-                            <h6 className="text-success mb-2">🔮 Predictive Analytics</h6>
-                            <ul className="list-unstyled small">
-                              <li>✅ Stockout prediction based on usage trends</li>
-                              <li>✅ Reorder point recommendations</li>
-                              <li>✅ Usage pattern forecasting</li>
-                              <li>✅ Critical item identification</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="row mt-3">
-                      <div className="col-md-6">
-                        <div className="card border-0 bg-white">
-                          <div className="card-body">
-                            <h6 className="text-warning mb-2">📊 Diagnostic Analytics</h6>
-                            <ul className="list-unstyled small">
-                              <li>✅ Root cause analysis for low stock</li>
-                              <li>✅ Usage pattern analysis by item type</li>
-                              <li>✅ Performance metrics evaluation</li>
-                              <li>✅ Trend analysis and comparisons</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="card border-0 bg-white">
-                          <div className="card-body">
-                            <h6 className="text-info mb-2">🎯 Prescriptive Analytics</h6>
-                            <ul className="list-unstyled small">
-                              <li>✅ Automated reorder recommendations</li>
-                              <li>✅ Priority-based action items</li>
-                              <li>✅ Optimal stock level suggestions</li>
-                              <li>✅ Strategic inventory management insights</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
