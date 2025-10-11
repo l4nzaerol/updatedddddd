@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import AppLayout from "../Header";
-import StageBreakdownCards from "./Analytics/StageBreakdownCards";
+import { toast } from "sonner";
 
 import {
   BarChart,
@@ -17,7 +17,6 @@ import {
 } from "recharts";
 import api from "../../api/client";
 import Pusher from "pusher-js";
-import { exportProductionCsv } from "../../api/productionApi";
 
 // Simple CSV export helper
 const toCSV = (rows, columns) => {
@@ -53,16 +52,14 @@ const getStageDescription = (stageName) => {
 
 export default function ProductionTrackingSystem() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [productions, setProductions] = useState([]);
   const [filtered, setFiltered] = useState([]);
-  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("current"); // 'current', 'ready', 'alkansya', 'completion', 'analytics'
-  const [selectedOrder, setSelectedOrder] = useState("all"); // Filter by order
   const [analyticsData, setAnalyticsData] = useState({
     stage_breakdown: [],
     kpis: {},
@@ -123,9 +120,22 @@ export default function ProductionTrackingSystem() {
     }
   }, []);
 
+  // Read URL parameters and set filters
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const status = searchParams.get('status');
+    if (status) {
+      setStatusFilter(status);
+      // If status is 'completed', also set the active tab to 'completed'
+      if (status === 'completed') {
+        setActiveTab('completed');
+      }
+    }
+  }, [location.search]);
+
   useEffect(() => {
     applyFilters();
-  }, [productions, search, statusFilter, selectedOrder, dateRange]);
+  }, [productions, statusFilter]);
 
   const fetchProductions = async () => {
     setLoading(true);
@@ -167,14 +177,30 @@ export default function ProductionTrackingSystem() {
       const productionStatus = await api.get(`/orders/${orderId}/production-status`);
       
       if (!productionStatus.data.isCompleted) {
-        alert(`❌ Cannot mark as ready for delivery: ${productionStatus.data.message}`);
+        toast.error("❌ Cannot Mark as Ready for Delivery", {
+          description: productionStatus.data.message,
+          duration: 5000,
+          style: {
+            background: '#fee2e2',
+            border: '1px solid #fca5a5',
+            color: '#dc2626'
+          }
+        });
         return;
       }
       
       const response = await api.put(`/orders/${orderId}/ready-for-delivery`);
       console.log('Response:', response.data);
       
-      alert('✅ Order marked as ready for delivery! Customer will be notified.');
+      toast.success("✅ Order Ready for Delivery!", {
+        description: "Order has been marked as ready for delivery. Customer will be notified.",
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
       
       await fetchProductions();
       await fetchAnalytics();
@@ -184,7 +210,15 @@ export default function ProductionTrackingSystem() {
       
       const errorMsg = err.response?.data?.message || 'Failed to mark order as ready for delivery';
       setError(errorMsg);
-      alert('❌ Error: ' + errorMsg);
+      toast.error("❌ Ready for Delivery Failed", {
+        description: errorMsg,
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -194,7 +228,15 @@ export default function ProductionTrackingSystem() {
       const response = await api.put(`/orders/${orderId}/delivered`);
       console.log('Response:', response.data);
       
-      alert('✅ Order marked as delivered! Customer will be notified.');
+      toast.success("✅ Order Delivered!", {
+        description: "Order has been marked as delivered. Customer will be notified.",
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
       
       await fetchProductions();
       await fetchAnalytics();
@@ -204,7 +246,15 @@ export default function ProductionTrackingSystem() {
       
       const errorMsg = err.response?.data?.message || 'Failed to mark order as delivered';
       setError(errorMsg);
-      alert('❌ Error: ' + errorMsg);
+      toast.error("❌ Delivery Marking Failed", {
+        description: errorMsg,
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -278,30 +328,8 @@ export default function ProductionTrackingSystem() {
   const applyFilters = () => {
     let data = [...productions];
     
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      data = data.filter((p) =>
-        (p.product_name || "").toLowerCase().includes(q) || 
-        (p.id && String(p.id).includes(q)) ||
-        (p.order_id && String(p.order_id).includes(q)) ||
-        (p.date || "").includes(q)
-      );
-    }
-    
-    if (selectedOrder !== "all") {
-      data = data.filter((p) => p.order_id && String(p.order_id) === String(selectedOrder));
-    }
-    
     if (statusFilter !== "all") {
       data = data.filter((p) => p.status === statusFilter);
-    }
-    
-    if (dateRange.start) {
-      data = data.filter((p) => new Date(p.date) >= new Date(dateRange.start));
-    }
-    
-    if (dateRange.end) {
-      data = data.filter((p) => new Date(p.date) <= new Date(dateRange.end));
     }
     
     console.log('Filtered data:', data); // Debug log
@@ -523,19 +551,29 @@ export default function ProductionTrackingSystem() {
       await fetchProductions();
       await fetchAnalytics();
       
-      // Show success message
-      const message = newStatus === 'completed' 
-        ? `✅ ${processName} marked as completed!${delayInfo ? ' (Delay recorded)' : ''}`
-        : `↩️ ${processName} marked as pending.`;
-      
-      // Use a non-blocking notification
+      // Show success toast notification
       setError('');
-      const successDiv = document.createElement('div');
-      successDiv.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
-      successDiv.style.zIndex = '9999';
-      successDiv.innerHTML = `${message} <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>`;
-      document.body.appendChild(successDiv);
-      setTimeout(() => successDiv.remove(), 3000);
+      if (newStatus === 'completed') {
+        toast.success("✅ Process Completed!", {
+          description: `${processName} has been marked as completed.${delayInfo ? ' Delay reason recorded.' : ''}`,
+          duration: 4000,
+          style: {
+            background: '#f0fdf4',
+            border: '1px solid #86efac',
+            color: '#166534'
+          }
+        });
+      } else {
+        toast.info("↩️ Process Reverted", {
+          description: `${processName} has been marked as pending.`,
+          duration: 4000,
+          style: {
+            background: '#eff6ff',
+            border: '1px solid #93c5fd',
+            color: '#1e40af'
+          }
+        });
+      }
       
     } catch (err) {
       console.error("Update process error:", err);
@@ -547,7 +585,15 @@ export default function ProductionTrackingSystem() {
   
   const handleDelayModalSubmit = async () => {
     if (!delayModalData.delayReason.trim()) {
-      alert('Please provide a reason for the delay.');
+      toast.warning("⚠️ Delay Reason Required", {
+        description: "Please provide a reason for the delay.",
+        duration: 3000,
+        style: {
+          background: '#fef3c7',
+          border: '1px solid #fbbf24',
+          color: '#92400e'
+        }
+      });
       return;
     }
     
@@ -580,6 +626,17 @@ export default function ProductionTrackingSystem() {
       
       console.log('✅ Data refreshed successfully');
       
+      // Show success toast for delay submission
+      toast.success("⏰ Delay Reason Submitted", {
+        description: `Process "${delayModalData.processName}" marked as completed with delay reason.`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
+      
       // Reset modal data after successful submission
       setDelayModalData({
         productionId: null,
@@ -600,7 +657,15 @@ export default function ProductionTrackingSystem() {
       
       // Show detailed error message
       const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown error';
-      alert(`Failed to submit delay reason: ${errorMsg}\n\nPlease check console for details.`);
+      toast.error("❌ Delay Submission Failed", {
+        description: `Failed to submit delay reason: ${errorMsg}`,
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
       
       // Reopen modal on error
       setShowDelayModal(true);
@@ -645,37 +710,24 @@ export default function ProductionTrackingSystem() {
 
   return (
     <AppLayout>
-      <div className="container-fluid py-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-      {/* Header Section */}
-      <button className="btn btn-outline-secondary mb-3" onClick={() => navigate("/dashboard")}>
-                    ← Back to Dashboard
-                  </button>
-      <div className="row mb-4">
-        <div className="col-12">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
+      <div className="container-fluid py-4">
+      {/* Navigation Buttons */}
+      <div className="d-flex gap-2 mb-3">
+        <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
+          ← Back to Dashboard
+        </button>
+      </div>
 
-                  <h1 id="prod-track-heading" className="text-primary mb-2">
-                    Production Tracking System
-                  </h1>
-                  
-                </div>
-                <div className="text-end">
-                  <div className="d-flex gap-2 mb-3">
-                    <button className="btn btn-outline-primary" onClick={bulkExportCSV}>
-                      Export CSV
-                    </button>
-                    <button className="btn btn-outline-secondary" onClick={bulkExportPDF}>
-                      Export Report
-                    </button>
-                  </div>
-                  
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Header */}
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <h2 id="prod-track-heading" className="mb-0">Production Tracking System</h2>
+        <div className="d-flex gap-2 flex-wrap">
+          <button className="btn btn-outline-primary" onClick={bulkExportCSV}>
+            Export CSV
+          </button>
+          <button className="btn btn-outline-secondary" onClick={bulkExportPDF}>
+            Export Report
+          </button>
         </div>
       </div>
 
@@ -760,80 +812,6 @@ export default function ProductionTrackingSystem() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="card mb-3 shadow-sm">
-        <div className="card-body py-3">
-          <div className="row g-2 align-items-end">
-            <div className="col-md-3">
-              <label className="form-label small mb-1">Search</label>
-              <input 
-                className="form-control" 
-                placeholder="Search product, prod ID, order ID, or date" 
-                value={search} 
-                onChange={(e) => setSearch(e.target.value)} 
-              />
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small mb-1">Order Filter</label>
-              <select 
-                className="form-select" 
-                value={selectedOrder} 
-                onChange={(e) => setSelectedOrder(e.target.value)}
-                aria-label="Order filter"
-              >
-                <option value="all">All Orders</option>
-                {[...new Set(productions.filter(p => p.order_id).map(p => p.order_id))].map(orderId => (
-                  <option key={orderId} value={orderId}>Order #{orderId}</option>
-                ))}
-              </select>
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small mb-1">Status</label>
-              <select 
-                className="form-select" 
-                value={statusFilter} 
-                onChange={(e) => setStatusFilter(e.target.value)}
-                aria-label="Status filter"
-              >
-                <option value="all">All Status</option>
-                <option value="Pending">Pending</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Completed">Completed</option>
-                <option value="Hold">Hold</option>
-              </select>
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small mb-1">Start Date</label>
-              <input 
-                type="date" 
-                className="form-control" 
-                value={dateRange.start} 
-                onChange={(e) => setDateRange((d) => ({ ...d, start: e.target.value }))} 
-                aria-label="Start date"
-              />
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small mb-1">End Date</label>
-              <input 
-                type="date" 
-                className="form-control" 
-                value={dateRange.end} 
-                onChange={(e) => setDateRange((d) => ({ ...d, end: e.target.value }))} 
-                aria-label="End date"
-              />
-            </div>
-            <div className="col-md-1">
-              <button 
-                className="btn btn-outline-secondary w-100" 
-                onClick={() => { setSearch(""); setStatusFilter("all"); setSelectedOrder("all"); setDateRange({ start: "", end: "" }); applyFilters(); }}
-                title="Reset filters"
-              >
-                <i className="fas fa-redo"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Current Production Tab */}
       {activeTab === 'current' && (
@@ -1824,9 +1802,7 @@ export default function ProductionTrackingSystem() {
           </div>
         </div>
         </>
-      ) : (
-        console.log('❌ Modal NOT showing - showDelayModal is false')
-      )}
+      ) : null}
       </div>
     </AppLayout>
   );

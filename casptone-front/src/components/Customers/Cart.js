@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import CartTable from "./CartTable";
 import OrderTable from "../OrderTable";
 
@@ -16,7 +17,15 @@ const Cart = () => {
     if (payment && provider && orderId) {
       // Stay on cart tab and show a small notice
       if (payment === 'success') {
-        alert('✅ Payment successful!\n\n📋 Your order is being confirmed.\n\n📱 You can track your order progress in the "My Orders" tab.\n\n📧 You will receive email notifications for all updates.');
+        toast.success('Payment successful! Your order is being confirmed. You can track your order progress in the "My Orders" tab.', {
+          duration: 6000,
+          description: 'You will receive email notifications for all updates.'
+        });
+        
+        // Clear cart on successful payment
+        localStorage.removeItem('cart_cleared_on_payment_success');
+        localStorage.setItem('cart_cleared_on_payment_success', 'true');
+        
         // Ask backend to confirm in case webhook is delayed
         import('../../api/client').then(({ default: api }) => {
           api.post('/payments/confirm', { order_id: Number(orderId), provider })
@@ -26,7 +35,8 @@ const Cart = () => {
             });
         });
       } else if (payment === 'failed') {
-        alert('Payment failed or canceled. You can try again.');
+        toast.error('Payment failed or canceled. You can try again.');
+        // Don't clear cart on payment failure - items should remain
       }
       // remove query params without reload
       const url = window.location.origin + window.location.pathname;

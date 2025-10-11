@@ -5,6 +5,7 @@ import api from "../../api/client";
 import { motion } from "framer-motion";
 import { Modal, Button, Form, Table, Alert } from "react-bootstrap"; //
 import "bootstrap/dist/css/bootstrap.min.css";
+import { toast } from "sonner";
 import AppLayout from "../Header";
 
 const ProductPage = () => {
@@ -175,7 +176,15 @@ const ProductPage = () => {
   const handleAddProduct = async () => {
     // Basic client-side validation
     if (!newProduct.name?.trim() || !newProduct.price || !newProduct.stock) {
-      alert("Please fill in Name, Price, and Stock.");
+      toast.error("Product Creation Failed", {
+        description: "Please fill in Name, Price, and Stock fields.",
+        duration: 4000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
       return;
     }
 
@@ -209,10 +218,30 @@ const ProductPage = () => {
       setNewProduct({ name: "", description: "", price: "", stock: "", image: "" });
       setBomItems([]);
       setRefreshProducts((prev) => !prev);
-      alert(`Product added successfully!${validBomItems.length > 0 ? ` with ${validBomItems.length} material(s)` : ''}`);
+      
+      // Unique success toast for product creation
+      toast.success("🎉 Product Created Successfully!", {
+        description: validBomItems.length > 0 
+          ? `"${newProduct.name}" has been added with ${validBomItems.length} material(s) configured.`
+          : `"${newProduct.name}" has been added to the product catalog.`,
+        duration: 5000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (error) {
       console.error("Error adding product:", error);
-      alert("Failed to add product. Please try again.");
+      toast.error("❌ Product Creation Failed", {
+        description: "Unable to create the product. Please check your inputs and try again.",
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     } finally {
       setLoading(false);
     }

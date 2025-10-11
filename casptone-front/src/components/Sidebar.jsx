@@ -21,7 +21,7 @@ const Sidebar = () => {
     },
     {
       name: 'Productions',
-      path: '/production',
+      path: '/productions',
       icon: '🏭',
       roles: ['employee', 'staff'] // Both admin and staff can access
     },

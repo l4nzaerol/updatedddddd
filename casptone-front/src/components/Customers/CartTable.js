@@ -1,5 +1,6 @@
 // src/components/CartTable.js
 import React, { useState, useEffect } from "react";
+import { toast } from "sonner";
 import api from "../../api/client";
 
 const CartTable = () => {
@@ -18,6 +19,13 @@ const CartTable = () => {
 
   useEffect(() => {
     fetchCartItems();
+    
+    // Check if cart should be cleared due to successful payment
+    const cartClearedFlag = localStorage.getItem('cart_cleared_on_payment_success');
+    if (cartClearedFlag === 'true') {
+      setCartItems([]);
+      localStorage.removeItem('cart_cleared_on_payment_success');
+    }
   }, []);
 
   // Close checkout modal on Escape for better accessibility
@@ -68,7 +76,7 @@ const CartTable = () => {
         ...prev,
         [itemId]: cartItems.find(item => item.id === itemId)?.quantity || 1
       }));
-      alert("Failed to update item quantity.");
+      toast.error("Failed to update item quantity.");
     } finally {
       setUpdatingItems(prev => {
         const newSet = new Set(prev);
@@ -89,7 +97,7 @@ const CartTable = () => {
       await api.delete(`/cart/${itemId}`);
       await fetchCartItems();
     } catch (err) {
-      alert("Failed to remove item.");
+      toast.error("Failed to remove item.");
       setRemovingItems(prev => {
         const newSet = new Set(prev);
         newSet.delete(itemId);
@@ -110,9 +118,12 @@ const CartTable = () => {
       // Show success message with clear instructions
       const orderId = response.data?.order?.id || response.data?.id;
       console.log("🎉 CHECKOUT SUCCESS - Showing NEW message!");
-      alert(`🎉 ORDER PLACED SUCCESSFULLY!\n\n📋 Order ID: #${orderId}\n\n `);
+      toast.success(`Order placed successfully! Order ID: #${orderId}`, {
+        duration: 5000,
+        description: 'Your order is being processed.'
+      });
 
-      // Clear cart on successful checkout
+      // Clear cart on successful checkout (COD doesn't need payment verification)
       setCartItems([]);
       setShowCheckout(false);
 
@@ -122,9 +133,12 @@ const CartTable = () => {
       const shortages = err.response?.status === 422 ? (err.response?.data?.shortages || []) : [];
       if (shortages.length > 0) {
         const lines = shortages.map(s => `• ${s.material_name} (SKU ${s.sku}): need ${s.required}, on hand ${s.on_hand}, deficit ${s.deficit} for ${s.product_name}`).join("\n");
-        alert(`Cannot place order due to insufficient materials:\n\n${lines}\n\nPlease reduce quantity or wait for replenishment.`);
+        toast.error(`Cannot place order due to insufficient materials: ${lines}`, {
+          duration: 8000,
+          description: 'Please reduce quantity or wait for replenishment.'
+        });
       } else {
-        alert(`Checkout failed: ${msg}`);
+        toast.error(`Checkout failed: ${msg}`);
       }
     }
   };
@@ -273,7 +287,7 @@ const CartTable = () => {
                     <button
                       className="btn-wishlist"
                       title="Save for later"
-                      onClick={() => alert('Wishlist feature coming soon!')}
+                      onClick={() => toast.info('Wishlist feature coming soon!')}
                     >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M8 14.5L6.6 13.3C3.4 10.36 1.5 8.28 1.5 5.75 1.5 3.92 2.92 2.5 4.75 2.5c1.04 0 2.04.52 2.71 1.36C8.14 3.02 9.14 2.5 10.25 2.5c1.83 0 3.25 1.42 3.25 3.25 0 2.53-1.9 4.61-5.1 7.55L8 14.5z"/>
@@ -436,22 +450,6 @@ const CartTable = () => {
                       </div>
                     </label>
                     
-                    <label className={`payment-option ${paymentMethod==='gcash'?'selected':''}`}>
-                      <input 
-                        type="radio" 
-                        name="payment" 
-                        value="gcash" 
-                        checked={paymentMethod==='gcash'} 
-                        onChange={() => setPaymentMethod('gcash')} 
-                      />
-                      <div className="payment-content">
-                        <div className="payment-icon">📱</div>
-                        <div className="payment-text">
-                          <span className="payment-title">GCash</span>
-                          <span className="payment-desc">Pay securely with GCash</span>
-                        </div>
-                      </div>
-                    </label>
                     
                     <label className={`payment-option ${paymentMethod==='maya'?'selected':''}`}>
                       <input 
@@ -493,7 +491,7 @@ const CartTable = () => {
                 className="btn-primary-enhanced btn-wood" 
                 onClick={async () => {
                   if (!address.trim() || !phone.trim()) {
-                    alert('Please fill in all required fields.');
+                    toast.error('Please fill in all required fields.');
                     return;
                   }
                   
@@ -529,10 +527,11 @@ const CartTable = () => {
                       setRedirecting(true);
                       
                       // Success message
-                      alert(`Order #${orderId} created successfully! Redirecting to ${paymentMethod.toUpperCase()} payment...`);
+                      toast.success(`Order #${orderId} created successfully! Redirecting to ${paymentMethod.toUpperCase()} payment...`, {
+                        duration: 4000
+                      });
                       
-                      // Clear cart and close modal
-                      setCartItems([]);
+                      // Close modal but DON'T clear cart yet - wait for payment success
                       setShowCheckout(false);
                       
                       // Small delay to show the redirect message, then redirect
@@ -550,7 +549,9 @@ const CartTable = () => {
                             window.open(paymentUrl, '_blank');
                           } else {
                             navigator.clipboard.writeText(paymentUrl).then(() => {
-                              alert(`Payment link copied to clipboard:\n\n${paymentUrl}`);
+                              toast.success(`Payment link copied to clipboard!`, {
+                                description: 'You can now paste it in your browser.'
+                              });
                             }).catch(() => {
                               prompt('Payment URL (copy this):', paymentUrl);
                             });
@@ -561,7 +562,7 @@ const CartTable = () => {
                     }
                   } catch (e) {
                     const msg = e?.response?.data?.message || e.message || 'Payment failed';
-                    alert(`Checkout failed: ${msg}`);
+                    toast.error(`Checkout failed: ${msg}`);
                   } finally {
                     setPayLoading(false);
                   }

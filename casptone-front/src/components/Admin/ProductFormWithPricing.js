@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'sonner';
 
 const ProductFormWithPricing = ({ onClose, onSave, existingProduct = null }) => {
   const [formData, setFormData] = useState({
@@ -74,7 +75,15 @@ const ProductFormWithPricing = ({ onClose, onSave, existingProduct = null }) => 
 
   const addMaterial = () => {
     if (!selectedMaterial || quantity <= 0) {
-      alert('Please select a material and enter quantity');
+      toast.warning("⚠️ Material Selection Required", {
+        description: "Please select a material and enter a valid quantity.",
+        duration: 3000,
+        style: {
+          background: '#fef3c7',
+          border: '1px solid #fbbf24',
+          color: '#92400e'
+        }
+      });
       return;
     }
 
@@ -139,7 +148,15 @@ const ProductFormWithPricing = ({ onClose, onSave, existingProduct = null }) => 
       setShowPriceBreakdown(true);
     } catch (error) {
       console.error('Error calculating price:', error);
-      alert('Failed to calculate price. Please check your materials.');
+      toast.error("💸 Price Calculation Failed", {
+        description: "Unable to calculate price. Please check your materials and try again.",
+        duration: 4000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     } finally {
       setCalculating(false);
     }
@@ -149,12 +166,28 @@ const ProductFormWithPricing = ({ onClose, onSave, existingProduct = null }) => 
     e.preventDefault();
     
     if (materials.length === 0) {
-      alert('Please add at least one material');
+      toast.warning("⚠️ Materials Required", {
+        description: "Please add at least one material to create the product.",
+        duration: 3000,
+        style: {
+          background: '#fef3c7',
+          border: '1px solid #fbbf24',
+          color: '#92400e'
+        }
+      });
       return;
     }
 
     if (!formData.price || formData.price <= 0) {
-      alert('Please set a valid price');
+      toast.warning("💰 Valid Price Required", {
+        description: "Please set a valid price for the product.",
+        duration: 3000,
+        style: {
+          background: '#fef3c7',
+          border: '1px solid #fbbf24',
+          color: '#92400e'
+        }
+      });
       return;
     }
 

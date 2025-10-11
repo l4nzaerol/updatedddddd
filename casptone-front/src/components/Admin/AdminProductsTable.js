@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import api from "../../api/client";
+import { toast } from "sonner";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./admin_products.css";
 
@@ -180,7 +181,15 @@ const AdminProductsTable = () => {
       });
       
       if (response.status === 200) {
-        alert(`✅ Price updated to ₱${suggestedPrice}`);
+        toast.success("💰 Price Updated Successfully!", {
+          description: `Product price has been updated to ₱${suggestedPrice}`,
+          duration: 4000,
+          style: {
+            background: '#f0fdf4',
+            border: '1px solid #86efac',
+            color: '#166534'
+          }
+        });
         fetchProducts();
       } else {
         throw new Error(`Unexpected response status: ${response.status}`);
@@ -188,7 +197,15 @@ const AdminProductsTable = () => {
     } catch (error) {
       console.error('Error updating price:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
-      alert(`❌ Failed to update price: ${errorMessage}`);
+      toast.error("💸 Price Update Failed", {
+        description: `Unable to update price: ${errorMessage}`,
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -214,7 +231,15 @@ const AdminProductsTable = () => {
       await openBomModal(selectedProduct);
     } catch (e) {
       console.error(e);
-      alert('Import failed');
+      toast.error("📥 Import Failed", {
+        description: "Unable to import BOM data. Please check your file format and try again.",
+        duration: 4000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -233,13 +258,32 @@ const AdminProductsTable = () => {
   const confirmDelete = async () => {
     try {
       await api.delete(`/products/${deleteId}`);
+      const deletedProduct = products.find(p => p.id === deleteId);
       setProducts(products.filter((product) => product.id !== deleteId));
       setShowDeleteModal(false);
+      toast.success("🗑️ Product Deleted Successfully!", {
+        description: `"${deletedProduct?.name || 'Product'}" has been removed from the catalog.`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (error) {
       setDeleteError(
         "Error: This product is linked to an order and cannot be deleted."
       );
       console.error("Error deleting product:", error);
+      toast.error("🚫 Product Deletion Failed", {
+        description: "This product is linked to an order and cannot be deleted.",
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -256,8 +300,26 @@ const AdminProductsTable = () => {
       );
       setShowEditModal(false);
       fetchProducts();
+      toast.success("✏️ Product Updated Successfully!", {
+        description: `"${formData.name}" has been updated in the product catalog.`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (error) {
       console.error("Error updating product:", error);
+      toast.error("❌ Product Update Failed", {
+        description: "Unable to update the product. Please try again.",
+        duration: 4000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     }
   };
 
@@ -571,7 +633,15 @@ const AdminProductsTable = () => {
                                   onChange={(e) => {
                                     const val = Number(e.target.value);
                                     if (val && selectedIds.has(val) && val !== row.inventory_item_id) {
-                                      alert("This material is already selected.");
+                                      toast.warning("⚠️ Duplicate Material", {
+                                        description: "This material is already selected in another row.",
+                                        duration: 3000,
+                                        style: {
+                                          background: '#fef3c7',
+                                          border: '1px solid #fbbf24',
+                                          color: '#92400e'
+                                        }
+                                      });
                                       return;
                                     }
                                     updateBomRow(idx, 'inventory_item_id', val);

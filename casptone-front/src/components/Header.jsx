@@ -69,7 +69,25 @@ const Header = ({ role, username }) => {
                     </button>
                     </>
                 )}
-                <span style={styles.username}><User size={20} /> {username}</span>
+                <div style={styles.userSection}>
+                    <span 
+                        style={styles.username} 
+                        onClick={() => navigate("/profile")}
+                        title="Click to view your profile"
+                        onMouseEnter={(e) => {
+                            e.target.style.background = "rgba(255,255,255,0.2)";
+                            e.target.style.transform = "translateY(-1px)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.background = "rgba(255,255,255,0.1)";
+                            e.target.style.transform = "translateY(0)";
+                            e.target.style.boxShadow = "none";
+                        }}
+                    >
+                        <User size={20} /> {username}
+                    </span>
+                </div>
                 
                 <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
             </div>
@@ -212,12 +230,24 @@ const styles = {
         fontWeight: "bold",
         color: "#333",
     },
+    userSection: {
+        display: "flex",
+        alignItems: "center",
+    },
     username: {
         display: "flex",
         alignItems: "center",
         fontSize: "1rem",
         gap: "0.5rem",
         color: "#333",
+        cursor: "pointer",
+        padding: "8px 12px",
+        borderRadius: "8px",
+        background: "rgba(255,255,255,0.1)",
+        border: "1px solid rgba(255,255,255,0.2)",
+        transition: "all 0.3s ease",
+        fontWeight: "500",
+        userSelect: "none",
     },
     iconBtn: {
         background: "none",

@@ -21,6 +21,7 @@ import OrderAcceptance from "./components/Admin/OrderAcceptance";
 import MyOrders from "./components/Customers/MyOrders";
 import OrderTracking from "./components/Customers/OrderTracking";
 import SimpleOrderTracking from "./components/Customers/SimpleOrderTracking";
+import UserProfile from "./components/Customers/UserProfile";
 
 // ✅ Authentication Check
 const isAuthenticated = () => !!localStorage.getItem("token");
@@ -38,6 +39,7 @@ function App() {
                 {/* Protected Routes */}
                 <Route path="/cart" element={isAuthenticated() ? <Cart /> : <Navigate to="/login" />} />
                 <Route path="/my-orders" element={isAuthenticated() ? <MyOrders /> : <Navigate to="/login" />} />
+                <Route path="/profile" element={isAuthenticated() ? <UserProfile /> : <Navigate to="/login" />} />
                 <Route path="/dashboard" element={isAuthenticated() ? <Dashboard /> : <Navigate to="/login" />} />
                 <Route path="/inventory" element={isAuthenticated() ? <InventoryPage /> : <Navigate to="/login" />} /> 
                 <Route path="/product" element={isAuthenticated() ? <ProductPage /> : <Navigate to="/login" />} /> 

@@ -63,3 +63,4 @@ if (!empty($productIds)) {
 }
 
 echo "\nDebug completed!\n";
+

@@ -1,36 +1,49 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function KPICards({ kpis }) {
+  const navigate = useNavigate();
+  
   const allMetrics = [
-    { 
-      label: "Total Productions", 
-      value: kpis.total, 
-      icon: "fa-industry",
-      isPrimary: false
-    },
     { 
       label: "Completed Productions OF Table and Chair", 
       value: kpis.completed_productions, 
       icon: "fa-check-circle",
-      isPrimary: false
+      isPrimary: false,
+      route: "/productions?status=completed",
+      description: "View completed table and chair productions"
     },
     { 
       label: "In Progress", 
       value: kpis.in_progress, 
       icon: "fa-spinner",
-      isPrimary: false
+      isPrimary: false,
+      route: "/productions",
+      description: "View productions currently in progress"
     },
     { 
       label: "Pending Orders", 
       value: kpis.pending_orders, 
       icon: "fa-clock",
-      isPrimary: false
+      isPrimary: false,
+      route: "/orders?status=pending",
+      description: "View pending customer orders"
     },
     { 
       label: "Completed Orders", 
       value: kpis.completed_orders, 
       icon: "fa-box-check",
-      isPrimary: false
+      isPrimary: false,
+      route: "/orders?status=completed",
+      description: "View completed customer orders"
+    },
+    { 
+      label: "Total Sales Revenue", 
+      value: kpis.total_sales_revenue || "₱0", 
+      icon: "fa-dollar-sign",
+      isPrimary: false,
+      route: "/reports?tab=sales",
+      description: "View sales dashboard and revenue analytics"
     },
   ];
 
@@ -45,8 +58,11 @@ export default function KPICards({ kpis }) {
               border: item.isPrimary ? 'none' : '2px solid #e5d5c3',
               borderRadius: '12px',
               transition: 'all 0.3s ease',
-              boxShadow: item.isPrimary ? '0 4px 12px rgba(139, 94, 52, 0.2)' : 'none'
+              boxShadow: item.isPrimary ? '0 4px 12px rgba(139, 94, 52, 0.2)' : 'none',
+              cursor: 'pointer'
             }}
+            onClick={() => navigate(item.route)}
+            title={item.description}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-6px)';
               e.currentTarget.style.boxShadow = item.isPrimary 

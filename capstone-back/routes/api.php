@@ -21,6 +21,7 @@ use App\Http\Controllers\PriceCalculatorController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\SalesAnalyticsController;
 use App\Http\Controllers\AlkansyaDailyOutputController;
+use App\Http\Controllers\ProfileController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,10 @@ use Illuminate\Support\Facades\DB;
 // Auth
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// Public Profile Routes (no auth required)
+Route::post('/profile/send-reset-otp', [ProfileController::class, 'sendPasswordResetOtp']);
+Route::post('/profile/reset-password', [ProfileController::class, 'resetPasswordWithOtp']);
 
 // Advanced Analytics Routes (Public for testing - move inside auth if needed)
 Route::get('/analytics/production-output', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getProductionOutputAnalytics']);
@@ -257,6 +262,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
         Route::get('/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
     });
+
+    // Profile Routes
+    Route::get('/profile', [ProfileController::class, 'getProfile']);
+    Route::put('/profile', [ProfileController::class, 'updateProfile']);
+    Route::post('/profile/change-password', [ProfileController::class, 'changePassword']);
 });
 
 // Webhooks (no auth)

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
 import Pusher from "pusher-js";
+import { toast } from "sonner";
 import AlkansyaDailyOutputModal from "./AlkansyaDailyOutputModal";
 
 
@@ -192,9 +193,30 @@ const MaterialModal = ({ show, onHide, material, onSave }) => {
     try {
       await onSave({ ...formData, category: sanitizedCategory });
       onHide();
+      
+      // Success toast notification
+      toast.success("📦 Material Saved Successfully!", {
+        description: material 
+          ? `"${formData.name}" has been updated in the inventory.`
+          : `"${formData.name}" has been added to the inventory.`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (error) {
       console.error("Save failed:", error);
-      alert("Failed to save material. Please try again.");
+      toast.error("❌ Material Save Failed", {
+        description: "Unable to save the material. Please check your inputs and try again.",
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     } finally {
       setSaving(false);
     }
@@ -531,21 +553,148 @@ const InventoryPage = () => {
     }
   };
 
-  const handleDeleteMaterial = async (materialId) => {
+  // Use a more robust approach with a Map to track deletion state
+  const deletionState = useRef(new Map());
+
+  const handleDeleteMaterial = async (materialId, event) => {
+    // Prevent event bubbling
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    // Check if this material is already being deleted
+    const deletionInfo = deletionState.current.get(materialId);
+    if (deletionInfo && deletionInfo.status === 'deleting') {
+      console.log('Material is already being deleted, ignoring duplicate call');
+      return;
+    }
+
+    console.log('Delete material called for ID:', materialId);
+    
     if (!window.confirm("Are you sure you want to delete this material? This action cannot be undone.")) {
       return;
     }
 
+    // Check if material still exists in inventory
+    const materialExists = inventory.find(item => item.id === materialId);
+    if (!materialExists) {
+      console.log('Material no longer exists in inventory, skipping deletion');
+      return;
+    }
+
+    // Mark this material as being deleted with timestamp
+    deletionState.current.set(materialId, {
+      status: 'deleting',
+      timestamp: Date.now(),
+      promise: null
+    });
+
+    // Disable the button to prevent multiple clicks
+    if (event && event.target) {
+      event.target.disabled = true;
+      event.target.textContent = 'Deleting...';
+    }
+
     try {
-      await apiCall(`/inventory/${materialId}`, {
-        method: 'DELETE'
+      console.log('Deleting material with ID:', materialId);
+      
+      // Add a small delay to prevent rapid successive calls
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check again if material still exists after delay
+      const materialStillExists = inventory.find(item => item.id === materialId);
+      if (!materialStillExists) {
+        console.log('Material was deleted during delay, skipping API call');
+        return;
+      }
+      
+      // Create a unique promise for this deletion
+      const deletePromise = (async () => {
+        console.log('Making DELETE request to:', `/inventory/${materialId}`);
+        const response = await apiCall(`/inventory/${materialId}`, {
+          method: 'DELETE'
+        });
+        return response;
+      })();
+
+      // Store the promise in deletion state
+      deletionState.current.set(materialId, {
+        ...deletionState.current.get(materialId),
+        promise: deletePromise
       });
-      setInventory(prev => prev.filter(item => item.id !== materialId));
+
+      const response = await deletePromise;
+      
+      console.log('Delete response:', response);
+      console.log('Material deleted successfully, updating state');
+      
+      // Update state to remove the deleted item
+      setInventory(prev => {
+        const updated = prev.filter(item => item.id !== materialId);
+        console.log('Updated inventory count:', updated.length);
+        return updated;
+      });
+      
+      // Success toast notification
+      toast.success("🗑️ Material Deleted Successfully!", {
+        description: "Material has been removed from the inventory.",
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (error) {
       console.error("Delete material error:", error);
-      alert("Failed to delete material. Please try again.");
+      
+      // If it's a 404 error, the material might already be deleted
+      if (error.message.includes('404')) {
+        console.log('Material already deleted (404), updating UI');
+        setInventory(prev => {
+          const updated = prev.filter(item => item.id !== materialId);
+          console.log('Updated inventory count after 404:', updated.length);
+          return updated;
+        });
+        
+        toast.success("🗑️ Material Deleted Successfully!", {
+          description: "Material has been removed from the inventory.",
+          duration: 4000,
+          style: {
+            background: '#f0fdf4',
+            border: '1px solid #86efac',
+            color: '#166534'
+          }
+        });
+      } else {
+        toast.error("❌ Material Deletion Failed", {
+          description: "Unable to delete the material. Please try again.",
+          duration: 5000,
+          style: {
+            background: '#fee2e2',
+            border: '1px solid #fca5a5',
+            color: '#dc2626'
+          }
+        });
+      }
+    } finally {
+      // Remove from deletion state and re-enable the button
+      deletionState.current.delete(materialId);
+      if (event && event.target) {
+        event.target.disabled = false;
+        event.target.textContent = 'Delete';
+      }
     }
   };
+
+  // Cleanup deletion state on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all pending deletion states
+      deletionState.current.clear();
+    };
+  }, []);
 
   // Real-time tracking via Pusher with polling fallback
   useEffect(() => {
@@ -695,8 +844,27 @@ const InventoryPage = () => {
     try {
       const rows = parseUsageCSV(text);
       setUsage((prev) => [...prev, ...rows]);
+      
+      // Success toast notification
+      toast.success("📊 Usage Data Imported Successfully!", {
+        description: `${rows.length} usage records have been imported from the CSV file.`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
     } catch (err) {
-      alert(err.message);
+      toast.error("❌ CSV Import Failed", {
+        description: `Unable to import usage data: ${err.message}`,
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
     } finally {
       e.target.value = "";
     }
@@ -896,7 +1064,12 @@ const InventoryPage = () => {
                         </button>
                         <button 
                           className="btn btn-sm btn-outline-danger"
-                          onClick={() => handleDeleteMaterial(item.id)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteMaterial(item.id, e);
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
                         >
                           Delete
                         </button>
@@ -1018,7 +1191,12 @@ const InventoryPage = () => {
                         </button>
                         <button 
                           className="btn btn-sm btn-outline-danger"
-                          onClick={() => handleDeleteMaterial(item.id)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteMaterial(item.id, e);
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
                         >
                           Delete
                         </button>

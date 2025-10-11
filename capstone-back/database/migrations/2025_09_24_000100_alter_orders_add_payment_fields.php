@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->enum('payment_method', ['cod','gcash','maya'])->default('cod')->after('status');
+            $table->enum('payment_method', ['cod','maya'])->default('cod')->after('status');
             $table->enum('payment_status', ['unpaid','cod_pending','paid','failed','refunded'])->default('unpaid')->after('payment_method');
             $table->string('transaction_ref')->nullable()->after('payment_status');
             $table->string('shipping_address')->nullable()->after('transaction_ref');

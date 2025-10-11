@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import api from "../../api/client";
 import AppLayout from "../Header";
 import DailyOutputChart from "./Analytics/DailyOutputChart.js";
@@ -18,6 +18,7 @@ import "./InventoryReportsDashboard.css";
 
 const Report = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [windowDays, setWindowDays] = useState(30);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -100,6 +101,16 @@ const Report = () => {
     useEffect(() => {
         console.log('🔍 Material Filter Changed:', materialFilter);
     }, [materialFilter]);
+
+    // Read URL parameters and set tabs
+    useEffect(() => {
+        const searchParams = new URLSearchParams(location.search);
+        const tab = searchParams.get('tab');
+        if (tab === 'sales') {
+            setMainTab('sales');
+            setActiveTab('dashboard');
+        }
+    }, [location.search]);
 
     const fetchAllReports = useCallback(async () => {
         setLoading(true);

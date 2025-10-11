@@ -15,7 +15,6 @@ use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
 use App\Models\OrderTracking;
 use App\Services\XenditService;
-use App\Services\StripeService;
 use App\Services\MayaService;
 
 class OrderController extends Controller
@@ -69,7 +68,7 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'payment_method' => 'nullable|in:cod,gcash,maya',
+            'payment_method' => 'nullable|in:cod,maya',
             'shipping_address' => 'nullable|string|max:500',
             'contact_phone' => 'nullable|string|max:64',
             'transaction_ref' => 'nullable|string|max:128',
@@ -284,33 +283,11 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'provider' => 'required|in:gcash,maya',
+            'provider' => 'required|in:maya',
         ]);
 
         $order = Order::where('id', $validated['order_id'])->where('user_id', $user->id)->firstOrFail();
 
-        if ($validated['provider'] === 'gcash') {
-            $stripe = new StripeService();
-            $session = $stripe->createCheckoutSessionForGcash([
-                'amount' => (int) round($order->total_price),
-                'currency' => 'php',
-                'name' => 'Order #'.$order->id,
-                'success_url' => config('app.url').'/payment/success?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => config('app.url').'/payment/failed',
-                'metadata' => [ 'order_id' => $order->id, 'user_id' => $user->id ],
-            ]);
-
-            $order->update([
-                'payment_method' => 'gcash',
-                'payment_status' => 'unpaid',
-                'transaction_ref' => $session['id'] ?? null,
-            ]);
-
-            return response()->json([
-                'checkout_url' => $session['url'] ?? null,
-                'transaction_ref' => $order->transaction_ref,
-            ]);
-        }
 
         // Maya via Maya Checkout (sandbox)
         if ($validated['provider'] === 'maya') {
@@ -386,7 +363,7 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'order_id' => 'required|exists:orders,id',
-            'provider' => 'required|in:gcash,maya',
+            'provider' => 'required|in:maya',
         ]);
 
         $order = Order::where('id', $validated['order_id'])->where('user_id', $user->id)->firstOrFail();

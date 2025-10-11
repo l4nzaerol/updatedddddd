@@ -29,4 +29,9 @@ class User extends Authenticatable
     return $this->hasMany(Production::class);
 }
 
+    public function profile()
+    {
+        return $this->hasOne(UserProfile::class);
+    }
+
 }

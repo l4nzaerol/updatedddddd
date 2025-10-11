@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import api from "../../api/client";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -22,6 +22,7 @@ import {
 
 const UnifiedOrderManagement = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   
   // State Management
   const [orders, setOrders] = useState([]);
@@ -64,6 +65,15 @@ const UnifiedOrderManagement = () => {
     const interval = setInterval(fetchOrders, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
   }, []);
+
+  // Read URL parameters and set filters
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const status = searchParams.get('status');
+    if (status) {
+      setFilters(prev => ({ ...prev, status: status }));
+    }
+  }, [location.search]);
 
   useEffect(() => {
     applyFilters();
@@ -301,8 +311,7 @@ const UnifiedOrderManagement = () => {
 
   return (
     <AppLayout>
-      <div className="container-fluid py-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           
           {/* Header */}
           <div className="row mb-4">
@@ -320,15 +329,14 @@ const UnifiedOrderManagement = () => {
               </div>
               
               <div className="card border-0 shadow-sm">
-                <div className="card-body bg-gradient" style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}>
-                  <h2 className="text-white mb-1 fw-bold">
-                    🛒 Unified Order Management
-                  </h2>
+                <div className=" bg-gradient" style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}>
 
                 </div>
               </div>
             </div>
           </div>
+
+          <h2 className="mb-0">Orders</h2>
 
           {/* Statistics Cards */}
           <div className="row mb-4">
@@ -649,9 +657,7 @@ const UnifiedOrderManagement = () => {
               </div>
             </div>
           </div>
-
-        </motion.div>
-      </div>
+      </motion.div>
 
       {/* Details Modal */}
       {showDetailsModal && selectedOrder && (

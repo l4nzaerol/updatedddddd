@@ -577,6 +577,11 @@ class ProductionController extends Controller
         }
         $orderData = $orderQuery->get();
 
+        // Calculate total sales revenue from completed orders
+        $totalSalesRevenue = $allOrders->where('status', 'completed')
+            ->where('payment_status', 'paid')
+            ->sum('total_price');
+
         // KPIs from Production data + Order data
         // Use allOrders for pending/completed counts to show current state
         // Only count Table/Chair productions (exclude Alkansya)
@@ -588,6 +593,7 @@ class ProductionController extends Controller
             'pending_orders' => $allOrders->where('acceptance_status', 'pending')->count(),
             'completed_orders' => $allOrders->where('status', 'completed')->count(),
             'completed_productions' => $productionData->where('status', 'Completed')->where('product_type', '!=', 'alkansya')->count(),
+            'total_sales_revenue' => '₱' . number_format($totalSalesRevenue, 2),
         ];
 
         // Daily output - SEPARATED by product type

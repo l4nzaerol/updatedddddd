@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useNavigate } from "react-router-dom";
 
 // Helper functions
 const parseDate = (s) => {
@@ -60,6 +61,7 @@ const aggregate = (rows, timeframe) => {
 };
 
 export default function DailyOutputChart({ data }) {
+  const navigate = useNavigate();
   const [timeframe, setTimeframe] = useState("daily"); // daily | weekly | monthly | yearly
 
   const title = useMemo(() => ({
@@ -116,21 +118,72 @@ export default function DailyOutputChart({ data }) {
         {/* Summary Stats */}
         <div className="row g-2 mb-3">
           <div className="col-4">
-            <div className="text-center p-2 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+            <div 
+              className="text-center p-2 rounded" 
+              style={{ 
+                backgroundColor: '#e8f5e9',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+              onClick={() => navigate('/inventory')}
+              title="View Alkansya production details"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
               <div className="small text-muted">🐷 Alkansya</div>
               <div className="h5 mb-0 fw-bold" style={{ color: '#17a2b8' }}>{totals.alkansya}</div>
               <div className="small text-muted">Avg: {totals.avgAlkansya}</div>
             </div>
           </div>
           <div className="col-4">
-            <div className="text-center p-2 rounded" style={{ backgroundColor: '#fff3e0' }}>
+            <div 
+              className="text-center p-2 rounded" 
+              style={{ 
+                backgroundColor: '#fff3e0',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+              onClick={() => navigate('/productions')}
+              title="View furniture production details"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
               <div className="small text-muted">🪑 Furniture</div>
               <div className="h5 mb-0 fw-bold" style={{ color: '#8b5e34' }}>{totals.furniture}</div>
               <div className="small text-muted">Avg: {totals.avgFurniture}</div>
             </div>
           </div>
           <div className="col-4">
-            <div className="text-center p-2 rounded" style={{ backgroundColor: '#f3e5f5' }}>
+            <div 
+              className="text-center p-2 rounded" 
+              style={{ 
+                backgroundColor: '#f3e5f5',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+              onClick={() => navigate('/reports')}
+              title="View comprehensive production reports"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
               <div className="small text-muted">📊 Total</div>
               <div className="h5 mb-0 fw-bold text-success">{totals.total}</div>
               <div className="small text-muted">Avg: {totals.avgTotal}</div>
