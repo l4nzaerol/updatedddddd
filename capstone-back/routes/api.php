@@ -81,6 +81,9 @@ Route::get('/test-alkansya-stats', function() {
 // Temporary public statistics route for testing
 Route::get('/alkansya-daily-output/statistics', [\App\Http\Controllers\AlkansyaDailyOutputController::class, 'statistics']);
 
+// Public product routes for customer dashboard
+Route::get('/products', [ProductController::class, 'index']);
+
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -88,7 +91,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
-    Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/{id}', [ProductController::class, 'show']);
     Route::get('/products/{id}/materials', [ProductController::class, 'getMaterials']);
     Route::post('/products/{id}/materials', [ProductController::class, 'setMaterials']);

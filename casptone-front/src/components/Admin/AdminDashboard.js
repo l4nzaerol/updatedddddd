@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { getAnalytics } from "../../api/productionApi";
-import { getAdminOverview } from "../../api/inventoryApi";
 import KPICards from "./Analytics/KPICards";
 import DailyOutputChart from "./Analytics/DailyOutputChart";
 import TopProductsChart from "./Analytics/TopProductsChart";
@@ -9,34 +8,18 @@ import TopStaffChart from "./Analytics/TopStaffChart";
 
 const AdminDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
-  const [filters, setFilters] = useState({
-    start_date: "",
-    end_date: "",
-    status: "",
-  });
-  const [overview, setOverview] = useState(null);
-  const [forecastSort, setForecastSort] = useState({ key: "days_to_depletion", dir: "asc" });
-  const [forecastFilter, setForecastFilter] = useState({ text: "", onlyReorder: false });
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
   const fetchAnalytics = async () => {
-    const data = await getAnalytics(filters);
+    const data = await getAnalytics({});
     setAnalytics(data);
-  };
-
-  const fetchOverview = async () => {
-    const data = await getAdminOverview();
-    setOverview(data);
   };
 
   useEffect(() => {
     fetchAnalytics();
-    fetchOverview();
   }, []); // fetch on mount
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#faf8f5' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: 'transparent' }}>
       {/* Simple Brown Header */}
       <div style={{ 
         backgroundColor: '#8b5e34',
@@ -56,8 +39,8 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* Analytics */}
-      <div className="container" style={{ maxWidth: '1200px' }}>
+      {/* Analytics - No container background */}
+      <div className="container-fluid" style={{ maxWidth: '100%', padding: '0 1rem' }}>
         {!analytics ? (
           <div className="text-center py-5">
             <div className="spinner-border" style={{ color: '#8b5e34' }} role="status">

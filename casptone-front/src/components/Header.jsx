@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, createContext, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { ShoppingCart, User, Sun, Moon } from "lucide-react";
-import { LayoutDashboard, Package, ClipboardList, Boxes, Factory, BarChart, CheckCircle, FileText } from "lucide-react";
+import { ShoppingCart, User } from "lucide-react";
+import { LayoutDashboard, Package, ClipboardList, Boxes, Factory, BarChart } from "lucide-react";
 import NotificationBell from "./Customers/NotificationBell";
 
 
@@ -13,6 +13,18 @@ const getUserData = () => ({
     role: localStorage.getItem("role") || "User",
     token: localStorage.getItem("token") || null,
 });
+
+// 📱 Sidebar Context for minimize functionality
+const SidebarContext = createContext();
+
+export const useSidebar = () => {
+    const context = useContext(SidebarContext);
+    if (!context) {
+        // Return default values if not within provider (for customer pages)
+        return { isMinimized: false, toggleSidebar: () => {} };
+    }
+    return context;
+};
 
 // 🔷 Header Component
 const Header = ({ role, username }) => {
@@ -50,7 +62,7 @@ const Header = ({ role, username }) => {
 
     const handleLogout = () => {
         localStorage.clear();
-        navigate("/login");
+        navigate("/");
     };
 
     return (
@@ -95,67 +107,177 @@ const Header = ({ role, username }) => {
     );
 };
 
-// 🔸 Sidebar for Admin
-const Sidebar = () => {
+// 🔸 Sidebar for Admin with minimize functionality
+const Sidebar = ({ isMinimized, toggleSidebar }) => {
     const navigate = useNavigate();
     const role = localStorage.getItem("role");
+    const [hoveredItem, setHoveredItem] = useState(null);
 
     const handleLogout = () => {
         localStorage.clear();
-        navigate("/login");
+        navigate("/");
+    };
+
+    const navItems = [
+        { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["employee", "admin"] },
+        { path: "/product", icon: Package, label: "Products", roles: ["employee"] },
+        { path: "/orders", icon: ClipboardList, label: "Orders", roles: ["employee"] },
+        { path: "/inventory", icon: Boxes, label: "Inventory", roles: ["employee"] },
+        { path: "/productions", icon: Factory, label: "Productions", roles: ["employee", "admin"] },
+        { path: "/reports", icon: BarChart, label: "Reports", roles: ["employee"] },
+    ];
+
+    const filteredNavItems = navItems.filter(item => 
+        item.roles.includes(role) || item.roles.includes("admin")
+    );
+
+    return (
+        <div style={{
+            ...styles.sidebarModern,
+            width: isMinimized ? "80px" : "280px",
+            transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
+        }}>
+            <div>
+                {/* Brand Section with Simple Toggle Button */}
+                <div style={styles.brandSection}>
+                    <div 
+                        style={{
+                            ...styles.brandModern,
+                            padding: isMinimized ? "1rem 0.5rem" : "2rem 1.5rem 2rem 1.5rem",
+                            justifyContent: isMinimized ? "center" : "flex-start",
+                            cursor: "default", // Make non-clickable
+                            position: "relative",
+                            paddingRight: isMinimized ? "0.5rem" : "4rem" // Add space for button
+                        }}
+                        onMouseEnter={(e) => {
+                            if (!isMinimized) {
+                                e.target.style.transform = "scale(1.02)";
+                                e.target.style.background = "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 100%)";
+                            }
+                        }}
+                        onMouseLeave={(e) => {
+                            if (!isMinimized) {
+                                e.target.style.transform = "scale(1)";
+                                e.target.style.background = "linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)";
+                            }
+                        }}
+                    >
+                        {/* Removed Factory icon - text only */}
+                        {!isMinimized && <span>Unick Furniture</span>}
+                    </div>
+                    
+                    {/* Simple Toggle Button - Positioned to avoid overlap */}
+                    <button 
+                        style={{
+                            ...styles.simpleToggleButton,
+                            ...(isMinimized ? styles.simpleToggleButtonMinimized : {})
+                        }}
+                        onClick={toggleSidebar}
+                        title={isMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
+                        onMouseEnter={(e) => {
+                            e.target.style.background = "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)";
+                            e.target.style.transform = "scale(1.1)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(255, 215, 0, 0.4)";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.background = isMinimized 
+                                ? "linear-gradient(135deg, #8B4513 0%, #A0522D 100%)"
+                                : "linear-gradient(135deg, #2C1810 0%, #3D2817 100%)";
+                            e.target.style.transform = "scale(1)";
+                            e.target.style.boxShadow = isMinimized 
+                                ? "0 2px 8px rgba(139, 69, 19, 0.3)"
+                                : "0 3px 10px rgba(139, 69, 19, 0.2)";
+                        }}
+                    >
+                        {isMinimized ? "→" : "←"}
+                    </button>
+                </div>
+
+                <nav style={{
+                    ...styles.navModern,
+                    padding: isMinimized ? "1rem 0.5rem" : "1.5rem"
+                }}>
+                    {filteredNavItems.map((item, index) => {
+                        const IconComponent = item.icon;
+                        return (
+                            <button 
+                                key={index}
+                                style={{
+                                    ...styles.navItem,
+                                    ...(hoveredItem === index ? styles.navItemHover : {}),
+                                    padding: isMinimized ? "1rem 0.5rem" : "1rem 1.25rem",
+                                    justifyContent: isMinimized ? "center" : "flex-start"
+                                }}
+                                onClick={() => navigate(item.path)}
+                                onMouseEnter={() => setHoveredItem(index)}
+                                onMouseLeave={() => setHoveredItem(null)}
+                                title={isMinimized ? item.label : ""}
+                            >
+                                <IconComponent size={20} style={{ 
+                                    color: hoveredItem === index ? "#FFD700" : "#FFF8DC",
+                                    transition: "color 0.3s ease"
+                                }} />
+                                {!isMinimized && <span>{item.label}</span>}
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
+
+            <button 
+                style={{
+                    ...styles.logoutModern,
+                    padding: isMinimized ? "1rem 0.5rem" : "1rem 1.5rem",
+                    margin: isMinimized ? "1.5rem 0.5rem" : "1.5rem",
+                    justifyContent: isMinimized ? "center" : "flex-start"
+                }}
+                onClick={handleLogout}
+                title={isMinimized ? "Logout" : ""}
+                onMouseEnter={(e) => {
+                    e.target.style.transform = "translateY(-2px)";
+                    e.target.style.boxShadow = "0 8px 24px rgba(139, 69, 19, 0.4)";
+                    e.target.style.background = "linear-gradient(135deg, #8B4513 0%, #2C1810 100%)";
+                    e.target.style.borderColor = "#FFD700";
+                }}
+                onMouseLeave={(e) => {
+                    e.target.style.transform = "translateY(0)";
+                    e.target.style.boxShadow = "0 4px 16px rgba(139, 69, 19, 0.3)";
+                    e.target.style.background = "linear-gradient(135deg, #2C1810 0%, #3D2817 100%)";
+                    e.target.style.borderColor = "#F4E4BC";
+                }}
+            >
+                {!isMinimized && "Logout"}
+            </button>
+        </div>
+    );
+};
+
+// 📦 Sidebar Provider Component
+const SidebarProvider = ({ children }) => {
+    // Load initial state from localStorage or default to false
+    const [isMinimized, setIsMinimized] = useState(() => {
+        const saved = localStorage.getItem('sidebarMinimized');
+        return saved ? JSON.parse(saved) : false;
+    });
+
+    const toggleSidebar = () => {
+        const newState = !isMinimized;
+        setIsMinimized(newState);
+        // Save to localStorage
+        localStorage.setItem('sidebarMinimized', JSON.stringify(newState));
     };
 
     return (
-        <div style={styles.sidebarModern}>
-            <div>
-                <div style={styles.brandModern} onClick={() => navigate("/dashboard")}>
-                    <Factory size={30} style={{ marginRight: "10px" }} />
-                    <span>Unick</span>
-                </div>
-
-                
-
-                <nav style={styles.navModern}>
-                    <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
-                        <LayoutDashboard size={20} /> Dashboard
-                    </button>
-                    {role === "employee" && (
-                        <button style={styles.navItem} onClick={() => navigate("/product")}>
-                            <Package size={20} /> Products
-                        </button>
-                    )}
-                    {role === "employee" && (
-                        <button style={styles.navItem} onClick={() => navigate("/orders")}>
-                            <ClipboardList size={20} /> Orders
-                        </button>
-                    )}
-                    {role === "employee" && (
-                        <button style={styles.navItem} onClick={() => navigate("/inventory")}>
-                            <Boxes size={20} /> Inventory
-                        </button>
-                    )}
-                    <button style={styles.navItem} onClick={() => navigate("/productions")}>
-                        <Factory size={20} /> Productions
-                    </button>
-                    {role === "employee" && (
-                        <button style={styles.navItem} onClick={() => navigate("/reports")}>
-                            <BarChart size={20} /> Reports
-                        </button>
-                    )}
-                </nav>
-                
-            </div>
-
-            <button style={styles.logoutModern} onClick={handleLogout}>
-                Logout
-            </button>
-        </div>
+        <SidebarContext.Provider value={{ isMinimized, toggleSidebar }}>
+            {children}
+        </SidebarContext.Provider>
     );
 };
 
 // 📦 Final Layout
 const AppLayout = ({ children }) => {
     const { role, username } = getUserData();
+    const { isMinimized, toggleSidebar } = useSidebar();
 
     return (
         <>
@@ -163,24 +285,44 @@ const AppLayout = ({ children }) => {
             {role === "customer" && <Header role={role} username={username} />}
             
             {/* Show sidebar only for employees/admins */}
-            {role !== "customer" && <Sidebar />}
+            {role !== "customer" && <Sidebar isMinimized={isMinimized} toggleSidebar={toggleSidebar} />}
 
             {/* Adjust layout spacing depending on role */}
             <div
                 style={{
-                    marginLeft: role !== "customer" ? "250px" : 0,
+                    marginLeft: role !== "customer" ? (isMinimized ? "80px" : "280px") : 0,
                     marginTop: role === "customer" ? "60px" : 0,
                     padding: "1rem",
+                    transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    minHeight: "100vh"
                 }}
             >
                 {children}
             </div>
-            <footer className="footer-wood text-center" style={{ marginLeft: role !== "customer" ? "250px" : 0 }}>
+            <footer className="footer-wood text-center" style={{ 
+                marginLeft: role !== "customer" ? (isMinimized ? "80px" : "280px") : 0,
+                transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
+            }}>
                 <div className="container">
                     <small>© {new Date().getFullYear()} Unick Furniture — Crafted with care</small>
                 </div>
             </footer>
         </>
+    );
+};
+
+// 📦 Main App Layout with Sidebar Provider
+const AppLayoutWithProvider = ({ children }) => {
+    const { role } = getUserData();
+    
+    if (role === "customer") {
+        return <AppLayout>{children}</AppLayout>;
+    }
+    
+    return (
+        <SidebarProvider>
+            <AppLayout>{children}</AppLayout>
+        </SidebarProvider>
     );
 };
 
@@ -286,32 +428,39 @@ const styles = {
 
     
     sidebarModern: {
-        background: "linear-gradient(to bottom, #4b2e1d, #2e1a10)", // Deep wood tone
-        color: "#f5e8d6",
-        width: "260px",
+        background: "linear-gradient(135deg, #8B4513 0%, #A0522D 50%, #D2691E 100%)",
+        color: "#FFF8DC",
+        width: "280px",
         height: "100vh",
-        padding: "2rem 1.5rem",
+        padding: "0",
         position: "fixed",
         top: 0,
         left: 0,
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        boxShadow: "4px 0 15px rgba(0, 0, 0, 0.5)",
-        fontFamily: "'Georgia', serif",
+        boxShadow: "8px 0 32px rgba(139, 69, 19, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)",
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        backdropFilter: "blur(20px)",
+        borderRight: "2px solid #F4E4BC",
+        zIndex: 1000,
     },
     
     brandModern: {
         display: "flex",
         alignItems: "center",
-        fontSize: "1.6rem",
-        fontWeight: "bold",
-        color: "#fff3dc",
-        marginBottom: "2rem",
+        fontSize: "1.8rem",
+        fontWeight: "700",
+        color: "#FFF8DC",
+        marginBottom: "0",
         cursor: "pointer",
-        gap: "0.5rem",
-        borderBottom: "1px solid rgba(255,255,255,0.2)",
-        paddingBottom: "1rem",
+        gap: "0.75rem",
+        padding: "2rem 1.5rem",
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 100%)",
+        borderBottom: "2px solid #F4E4BC",
+        position: "relative",
+        transition: "all 0.3s ease",
+        textShadow: "2px 2px 4px rgba(0, 0, 0, 0.3)",
     },
     
     userModern: {
@@ -329,48 +478,134 @@ const styles = {
     navModern: {
         display: "flex",
         flexDirection: "column",
-        gap: "1rem",
+        gap: "0.5rem",
+        padding: "1.5rem",
+        flex: 1,
     },
     
     navItem: {
-        background: "rgba(255,255,255,0.05)",
-        color: "#fff3dc",
+        background: "transparent",
+        color: "#FFF8DC",
         border: "none",
-        padding: "0.85rem 1rem",
+        padding: "1rem 1.25rem",
         borderRadius: "12px",
-        fontSize: "1rem",
+        fontSize: "0.95rem",
         display: "flex",
         alignItems: "center",
-        gap: "0.75rem",
-        fontWeight: "600",
-        letterSpacing: "0.4px",
+        gap: "1rem",
+        fontWeight: "500",
+        letterSpacing: "0.2px",
         cursor: "pointer",
-        transition: "all 0.3s ease",
+        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        position: "relative",
+        overflow: "hidden",
+        borderLeft: "3px solid transparent",
     },
     navItemHover: {
-        background: "rgba(255,255,255,0.15)",
-        transform: "translateX(6px)",
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%)",
+        transform: "translateX(8px)",
+        color: "#FFF8DC",
+        borderLeft: "3px solid #FFD700",
+        boxShadow: "0 4px 20px rgba(139, 69, 19, 0.2)",
     },
     
     logoutModern: {
-        backgroundColor: "#a3472b",
-        color: "#fff4e0",
-        border: "none",
-        padding: "0.85rem 1.2rem",
-        fontSize: "1rem",
-        fontWeight: "bold",
+        background: "linear-gradient(135deg, #2C1810 0%, #3D2817 100%)",
+        color: "#FFF8DC",
+        border: "2px solid #F4E4BC",
+        padding: "1rem 1.5rem",
+        fontSize: "0.95rem",
+        fontWeight: "600",
         borderRadius: "12px",
         cursor: "pointer",
-        fontFamily: "'Georgia', serif",
-        letterSpacing: "0.5px",
-        transition: "all 0.3s ease",
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        letterSpacing: "0.3px",
+        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        margin: "1.5rem",
+        position: "relative",
+        overflow: "hidden",
+        boxShadow: "0 4px 16px rgba(139, 69, 19, 0.3)",
     },
     
+    brandSection: {
+        position: "relative",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.1)"
+    },
     
+    simpleToggleButton: {
+        position: "absolute",
+        top: "1rem",
+        right: "1rem",
+        background: "linear-gradient(135deg, #2C1810 0%, #3D2817 100%)",
+        color: "#FFF8DC",
+        border: "1px solid #F4E4BC",
+        borderRadius: "4px",
+        padding: "0.5rem",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "all 0.3s ease",
+        boxShadow: "0 3px 10px rgba(139, 69, 19, 0.2)",
+        zIndex: 10,
+        width: "32px",
+        height: "32px",
+        fontSize: "14px",
+        fontWeight: "bold"
+    },
     
-
-
+    simpleToggleButtonMinimized: {
+        top: "0.5rem",
+        right: "0.5rem",
+        width: "28px",
+        height: "28px",
+        background: "linear-gradient(135deg, #8B4513 0%, #A0522D 100%)",
+        border: "1px solid #FFD700",
+        boxShadow: "0 2px 8px rgba(139, 69, 19, 0.3)",
+        fontSize: "12px"
+    },
+    
+    toggleButtonIntegrated: {
+        position: "absolute",
+        top: "1rem",
+        right: "1rem",
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 100%)",
+        color: "#FFF8DC",
+        border: "1px solid rgba(255, 255, 255, 0.3)",
+        borderRadius: "6px",
+        padding: "0.4rem",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "all 0.3s ease",
+        boxShadow: "0 2px 8px rgba(139, 69, 19, 0.3)",
+        zIndex: 10,
+        width: "32px",
+        height: "32px"
+    },
+    
+    toggleContainer: {
+        display: "flex",
+        justifyContent: "flex-end",
+        padding: "1rem 1rem 0.5rem 1rem",
+        borderBottom: "1px solid rgba(255, 255, 255, 0.1)"
+    },
+    
+    toggleButton: {
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)",
+        color: "#FFF8DC",
+        border: "1px solid rgba(255, 255, 255, 0.2)",
+        borderRadius: "8px",
+        padding: "0.5rem",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "all 0.3s ease",
+        boxShadow: "0 2px 8px rgba(139, 69, 19, 0.2)"
+    }
 };
 
 
-export default AppLayout;
+export default AppLayoutWithProvider;

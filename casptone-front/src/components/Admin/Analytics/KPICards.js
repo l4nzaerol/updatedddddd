@@ -54,12 +54,13 @@ export default function KPICards({ kpis }) {
           <div 
             className="card h-100"
             style={{ 
-              backgroundColor: item.isPrimary ? '#8b5e34' : '#ffffff',
-              border: item.isPrimary ? 'none' : '2px solid #e5d5c3',
+              backgroundColor: item.isPrimary ? '#8b5e34' : 'rgba(255, 255, 255, 0.1)',
+              border: item.isPrimary ? 'none' : '2px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '12px',
               transition: 'all 0.3s ease',
-              boxShadow: item.isPrimary ? '0 4px 12px rgba(139, 94, 52, 0.2)' : 'none',
-              cursor: 'pointer'
+              boxShadow: item.isPrimary ? '0 4px 12px rgba(139, 94, 52, 0.2)' : '0 2px 8px rgba(139, 94, 52, 0.1)',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)'
             }}
             onClick={() => navigate(item.route)}
             title={item.description}
@@ -83,7 +84,7 @@ export default function KPICards({ kpis }) {
                   style={{ 
                     width: 48, 
                     height: 48, 
-                    backgroundColor: item.isPrimary ? 'rgba(255,255,255,0.2)' : '#f5ebe0',
+                    backgroundColor: item.isPrimary ? 'rgba(255,255,255,0.2)' : 'rgba(139, 69, 19, 0.1)',
                     transition: 'all 0.3s ease'
                   }}
                   onMouseEnter={(e) => {
@@ -107,7 +108,7 @@ export default function KPICards({ kpis }) {
                 style={{ 
                   fontSize: '0.875rem', 
                   fontWeight: '600',
-                  color: item.isPrimary ? 'rgba(255,255,255,0.9)' : '#6b4423',
+                  color: item.isPrimary ? 'rgba(255,255,255,0.9)' : '#2C1810',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px'
                 }}
@@ -116,7 +117,7 @@ export default function KPICards({ kpis }) {
               </div>
               <div 
                 className="display-6 mb-0 fw-bold" 
-                style={{ color: item.isPrimary ? '#ffffff' : '#3d2817' }}
+                style={{ color: item.isPrimary ? '#ffffff' : '#2C1810' }}
               >
                 {item.value || 0}
               </div>

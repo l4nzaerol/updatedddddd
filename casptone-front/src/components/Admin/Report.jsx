@@ -473,7 +473,7 @@ const Report = () => {
                     doc.text(`Conversion Rate: ${data.overview.conversion_rate}%`, 20, yPosition);
                 }
                 break;
-            case 'process':
+            case 'process': 
                 if (data.stages) {
                     doc.text('Sales Process Stages:', 20, yPosition);
                     yPosition += 10;

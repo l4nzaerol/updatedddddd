@@ -15,7 +15,7 @@ const Dashboard = () => {
         const storedRole = localStorage.getItem("role");
 
         if (!token || !storedUsername || !storedRole) {
-            navigate("/login");
+            navigate("/");
             return;
         }
 

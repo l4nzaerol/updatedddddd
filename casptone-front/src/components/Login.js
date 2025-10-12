@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import "./login.css";
 
-const Login = () => {
+const Login = ({ onLoginSuccess }) => {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({ email: "", password: "" });
     const [error, setError] = useState("");
@@ -20,14 +20,21 @@ const Login = () => {
             localStorage.setItem("token", response.data.token);
             localStorage.setItem("username", response.data.user.name);
             localStorage.setItem("role", response.data.user.role);
-            navigate("/dashboard");
+            
+            // If onLoginSuccess callback is provided (from modal), use it
+            if (onLoginSuccess) {
+                onLoginSuccess();
+            } else {
+                // Otherwise navigate normally
+                navigate("/dashboard");
+            }
         } catch (err) {
             setError(err.response?.data?.message || "Login failed");
         }
     };
 
     return (
-        <div className="wood-login-container">
+        <div className={onLoginSuccess ? "modal-login-container" : "wood-login-container"}>
             <div className="wood-login-card">
                 <div className="wood-login-visual">
                     

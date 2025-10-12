@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import AppLayout from "../Header";
+import AppLayout, { useSidebar } from "../Header";
 import { toast } from "sonner";
 
 import {
@@ -53,6 +53,7 @@ const getStageDescription = (stageName) => {
 export default function ProductionTrackingSystem() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isMinimized } = useSidebar();
   const [productions, setProductions] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -159,7 +160,7 @@ export default function ProductionTrackingSystem() {
         // Redirect to login after 2 seconds
         setTimeout(() => {
           localStorage.clear();
-          navigate('/login');
+          navigate('/');
         }, 2000);
       } else {
         setError("Failed to load production data. Please check your API endpoint and authentication.");
@@ -720,7 +721,7 @@ export default function ProductionTrackingSystem() {
 
       {/* Header */}
       <div className="d-flex align-items-center justify-content-between mb-3">
-        <h2 id="prod-track-heading" className="mb-0">Production Tracking System</h2>
+        <h2 id="prod-track-heading" className="mb-0">Production Tracking</h2>
         <div className="d-flex gap-2 flex-wrap">
           <button className="btn btn-outline-primary" onClick={bulkExportCSV}>
             Export CSV
@@ -741,74 +742,170 @@ export default function ProductionTrackingSystem() {
 
       {/* Tab Navigation */}
       <div className="card mb-3 shadow-sm">
-        <div className="card-body py-2">
-          <ul className="nav nav-tabs border-0">
-            <li className="nav-item">
-              <button 
-                className={`nav-link ${activeTab === 'current' ? 'active bg-primary text-white' : 'text-primary'}`}
-                onClick={() => setActiveTab('current')}
-                style={{ border: 'none', fontWeight: '500' }}
-              >
-                <i className="fas fa-cogs me-2"></i>
-                Current Production
-              </button>
-            </li>
-            <li className="nav-item">
-              <button 
-                className={`nav-link ${activeTab === 'ready' ? 'active bg-success text-white' : 'text-success'}`}
-                onClick={() => setActiveTab('ready')}
-                style={{ border: 'none', fontWeight: '500' }}
-              >
+        <div className="card-body py-2" style={{ padding: isMinimized ? '0.5rem' : '0.25rem' }}>
+          <div 
+            className="nav nav-tabs border-0 d-flex flex-nowrap justify-content-between" 
+            style={{ 
+              flexWrap: 'nowrap',
+              width: '100%',
+              maxWidth: isMinimized ? 'calc(100vw - 100px)' : '100%',
+              transition: 'max-width 0.3s ease',
+              overflow: isMinimized ? 'auto' : 'visible',
+              gap: isMinimized ? '0.5rem' : '0.25rem'
+            }}
+          >
+            <button 
+              className={`nav-link ${activeTab === 'current' ? 'active bg-primary text-white' : 'text-primary'}`}
+              onClick={() => setActiveTab('current')}
+              style={{ 
+                border: 'none', 
+                fontWeight: '500', 
+                whiteSpace: 'nowrap', 
+                flex: isMinimized ? '0 0 auto' : '1 1 0',
+                minWidth: isMinimized ? 'fit-content' : '0',
+                padding: isMinimized ? '0.5rem 1rem' : '0.5rem 0.5rem',
+                fontSize: isMinimized ? '0.9rem' : '0.8rem',
+                textAlign: 'center'
+              }}
+            >
+              <i className="fas fa-cogs me-2"></i>
+              Current Production
+            </button>
+            <button 
+              className={`nav-link ${activeTab === 'ready' ? 'active bg-success text-white' : 'text-success'}`}
+              onClick={() => setActiveTab('ready')}
+              style={{ 
+                border: 'none', 
+                fontWeight: '500', 
+                whiteSpace: 'nowrap', 
+                flex: isMinimized ? '0 0 auto' : '1 1 0',
+                minWidth: isMinimized ? 'fit-content' : '0',
+                padding: isMinimized ? '0.5rem 1rem' : '0.5rem 0.5rem',
+                fontSize: isMinimized ? '0.9rem' : '0.8rem',
+                textAlign: 'center',
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
                 <i className="fas fa-truck me-2"></i>
-                Ready To Deliver Table and Chair
-                <span className="badge bg-danger ms-2">
-                  {filtered.filter(p => 
-                    p.status === 'Completed' && 
-                    p.overall_progress >= 100 && 
-                    p.product_type !== 'alkansya' &&
-                    p.order?.status !== 'ready_for_delivery' && 
-                    p.order?.status !== 'delivered'
-                  ).length}
-                </span>
-              </button>
-            </li>
-            <li className="nav-item">
-              <button 
-                className={`nav-link ${activeTab === 'completed' ? 'active bg-success text-white' : 'text-success'}`}
-                onClick={() => setActiveTab('completed')}
-                style={{ border: 'none', fontWeight: '500' }}
+                <span style={{ fontSize: isMinimized ? '0.9rem' : '0.8rem' }}>Ready To Deliver Table and Chair</span>
+              </div>
+              <span 
+                className="badge bg-danger" 
+                style={{ 
+                  position: 'absolute',
+                  top: '-5px',
+                  right: '-5px',
+                  minWidth: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold',
+                  zIndex: 10,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }}
               >
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.overall_progress >= 100 && 
+                  p.product_type !== 'alkansya' &&
+                  p.order?.status !== 'ready_for_delivery' && 
+                  p.order?.status !== 'delivered'
+                ).length}
+              </span>
+            </button>
+            <button 
+              className={`nav-link ${activeTab === 'completed' ? 'active bg-success text-white' : 'text-success'}`}
+              onClick={() => setActiveTab('completed')}
+              style={{ 
+                border: 'none', 
+                fontWeight: '500', 
+                whiteSpace: 'nowrap', 
+                flex: isMinimized ? '0 0 auto' : '1 1 0',
+                minWidth: isMinimized ? 'fit-content' : '0',
+                padding: isMinimized ? '0.5rem 1rem' : '0.5rem 0.5rem',
+                fontSize: isMinimized ? '0.9rem' : '0.8rem',
+                textAlign: 'center',
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'column',
+                gap: '0.25rem'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
                 <i className="fas fa-check-circle me-2"></i>
-                Completed Productions
-                <span className="badge bg-light text-dark ms-2">
-                  {filtered.filter(p => 
-                    p.status === 'Completed' && 
-                    p.product_type !== 'alkansya'
-                  ).length}
-                </span>
-              </button>
-            </li>
-            <li className="nav-item">
-              <button 
-                className={`nav-link ${activeTab === 'completion' ? 'active bg-warning text-dark' : 'text-warning'}`}
-                onClick={() => setActiveTab('completion')}
-                style={{ border: 'none', fontWeight: '500' }}
+                <span style={{ fontSize: isMinimized ? '0.9rem' : '0.8rem' }}>Completed Productions</span>
+              </div>
+              <span 
+                className="badge bg-light text-dark" 
+                style={{ 
+                  position: 'absolute',
+                  top: '-5px',
+                  right: '-5px',
+                  minWidth: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold',
+                  zIndex: 10,
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  border: '1px solid #dee2e6'
+                }}
               >
-                <i className="fas fa-exclamation-triangle me-2"></i>
-                Process Completion
-              </button>
-            </li>
-            <li className="nav-item">
-              <button 
-                className={`nav-link ${activeTab === 'analytics' ? 'active bg-info text-white' : 'text-info'}`}
-                onClick={() => setActiveTab('analytics')}
-                style={{ border: 'none', fontWeight: '500' }}
-              >
-                <i className="fas fa-chart-bar me-2"></i>
-                Production Analytics
-              </button>
-            </li>
-          </ul>
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.product_type !== 'alkansya'
+                ).length}
+              </span>
+            </button>
+            <button 
+              className={`nav-link ${activeTab === 'completion' ? 'active bg-warning text-dark' : 'text-warning'}`}
+              onClick={() => setActiveTab('completion')}
+              style={{ 
+                border: 'none', 
+                fontWeight: '500', 
+                whiteSpace: 'nowrap', 
+                flex: isMinimized ? '0 0 auto' : '1 1 0',
+                minWidth: isMinimized ? 'fit-content' : '0',
+                padding: isMinimized ? '0.5rem 1rem' : '0.5rem 0.5rem',
+                fontSize: isMinimized ? '0.9rem' : '0.8rem',
+                textAlign: 'center'
+              }}
+            >
+              <i className="fas fa-exclamation-triangle me-2"></i>
+              Process Completion
+            </button>
+            <button 
+              className={`nav-link ${activeTab === 'analytics' ? 'active bg-info text-white' : 'text-info'}`}
+              onClick={() => setActiveTab('analytics')}
+              style={{ 
+                border: 'none', 
+                fontWeight: '500', 
+                whiteSpace: 'nowrap', 
+                flex: isMinimized ? '0 0 auto' : '1 1 0',
+                minWidth: isMinimized ? 'fit-content' : '0',
+                padding: isMinimized ? '0.5rem 1rem' : '0.5rem 0.5rem',
+                fontSize: isMinimized ? '0.9rem' : '0.8rem',
+                textAlign: 'center'
+              }}
+            >
+              <i className="fas fa-chart-bar me-2"></i>
+              Production Analytics
+            </button>
+          </div>
         </div>
       </div>
 

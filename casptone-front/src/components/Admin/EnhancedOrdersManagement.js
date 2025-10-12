@@ -6,7 +6,8 @@ import { motion } from "framer-motion";
 const EnhancedOrdersManagement = () => {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Never show full loading screen
+  const [dataLoading, setDataLoading] = useState(false); // Start with false to show structure immediately
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -44,7 +45,23 @@ const EnhancedOrdersManagement = () => {
   ];
 
   useEffect(() => {
-    fetchOrders();
+    // Check if we have cached data first
+    const cachedOrders = localStorage.getItem('cachedOrders');
+    const cacheTimestamp = localStorage.getItem('ordersCacheTimestamp');
+    const now = Date.now();
+    const cacheExpiry = 5 * 60 * 1000; // 5 minutes
+
+    if (cachedOrders && cacheTimestamp && (now - parseInt(cacheTimestamp)) < cacheExpiry) {
+      console.log('📦 Loading orders from cache');
+      const parsedOrders = JSON.parse(cachedOrders);
+      setOrders(parsedOrders);
+      setFilteredOrders(parsedOrders);
+      // Keep dataLoading false since we have cached data
+    } else {
+      console.log('🔄 Fetching fresh orders data');
+      setDataLoading(true); // Only set to true when we need to fetch
+      fetchOrders();
+    }
   }, []);
 
   useEffect(() => {
@@ -52,16 +69,33 @@ const EnhancedOrdersManagement = () => {
   }, [orders, filters]);
 
   const fetchOrders = async () => {
-    setLoading(true);
     try {
-      const response = await api.get("/orders");
-      setOrders(response.data);
-      setFilteredOrders(response.data);
+      // Use Promise.allSettled for better error handling and faster loading
+      const [ordersResponse] = await Promise.allSettled([
+        api.get("/orders")
+      ]);
+      
+      if (ordersResponse.status === 'fulfilled') {
+        const ordersData = ordersResponse.value.data || [];
+        setOrders(ordersData);
+        setFilteredOrders(ordersData);
+        
+        // Cache the data for faster subsequent loads
+        localStorage.setItem('cachedOrders', JSON.stringify(ordersData));
+        localStorage.setItem('ordersCacheTimestamp', Date.now().toString());
+        
+        console.log(`✅ Orders loaded: ${ordersData.length} orders`);
+      } else {
+        throw ordersResponse.reason;
+      }
     } catch (error) {
       console.error("Error fetching orders:", error);
       toast.error("Failed to load orders");
+      // Set empty arrays to prevent UI issues
+      setOrders([]);
+      setFilteredOrders([]);
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
@@ -73,6 +107,14 @@ const EnhancedOrdersManagement = () => {
       console.error("Error fetching order items:", error);
       toast.error("Failed to load order details");
     }
+  };
+
+  const refreshOrders = () => {
+    // Clear cache and fetch fresh data
+    localStorage.removeItem('cachedOrders');
+    localStorage.removeItem('ordersCacheTimestamp');
+    setDataLoading(true); // Set loading state for refresh
+    fetchOrders();
   };
 
   const applyFilters = () => {
@@ -244,15 +286,6 @@ const EnhancedOrdersManagement = () => {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center min-vh-100">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading orders...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container-fluid py-4">
@@ -278,8 +311,31 @@ const EnhancedOrdersManagement = () => {
                   </div>
                   <div className="col-md-4 text-end">
                     <div className="d-flex flex-column align-items-end">
-                      <h4 className="mb-1">{filteredOrders.length}</h4>
-                      <small className="opacity-75">Total Orders</small>
+                      <div className="d-flex align-items-center gap-3">
+                        <button 
+                          className="btn btn-light btn-sm" 
+                          onClick={refreshOrders}
+                          title="Refresh Orders"
+                          disabled={dataLoading}
+                        >
+                          <i className={`fas fa-sync-alt ${dataLoading ? 'fa-spin' : ''}`}></i>
+                        </button>
+                        <div>
+                          {dataLoading ? (
+                            <div className="d-flex align-items-center">
+                              <div className="spinner-border spinner-border-sm text-light me-2" role="status">
+                                <span className="visually-hidden">Loading...</span>
+                              </div>
+                              <small className="opacity-75">Loading...</small>
+                            </div>
+                          ) : (
+                            <>
+                              <h4 className="mb-1">{filteredOrders.length}</h4>
+                              <small className="opacity-75">Total Orders</small>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -434,7 +490,69 @@ const EnhancedOrdersManagement = () => {
                 </span>
               </div>
               <div className="card-body p-0">
-                {currentOrders.length === 0 ? (
+                {dataLoading ? (
+                  // Loading skeleton
+                  <div className="table-responsive">
+                    <table className="table table-hover mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th scope="col" className="fw-semibold">Order ID</th>
+                          <th scope="col" className="fw-semibold">Customer Info</th>
+                          <th scope="col" className="fw-semibold">Contact & Address</th>
+                          <th scope="col" className="fw-semibold">Order Details</th>
+                          <th scope="col" className="fw-semibold">Payment</th>
+                          <th scope="col" className="fw-semibold">Status</th>
+                          <th scope="col" className="fw-semibold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...Array(5)].map((_, index) => (
+                          <tr key={`loading-${index}`}>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-8 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-10 bg-light rounded mb-1"></div>
+                                <div className="placeholder col-6 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-9 bg-light rounded mb-1"></div>
+                                <div className="placeholder col-7 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-5 bg-light rounded mb-1"></div>
+                                <div className="placeholder col-8 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-6 bg-light rounded mb-1"></div>
+                                <div className="placeholder col-4 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-5 bg-light rounded"></div>
+                              </div>
+                            </td>
+                            <td className="py-3">
+                              <div className="placeholder-glow">
+                                <div className="placeholder col-4 bg-light rounded"></div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : currentOrders.length === 0 ? (
                   <div className="text-center py-5">
                     <div className="display-1 text-muted">📦</div>
                     <h4 className="text-muted mt-3">No orders found</h4>

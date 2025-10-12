@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { 
   User, 
   Edit3, 
@@ -15,12 +16,15 @@ import {
   Eye, 
   EyeOff,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  ArrowLeft
 } from 'lucide-react';
 
 const UserProfile = () => {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -47,13 +51,35 @@ const UserProfile = () => {
 
   const fetchProfile = async () => {
     try {
+      setError(null);
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError('No authentication token found. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
       const response = await axios.get('http://localhost:8000/api/profile', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setProfile(response.data);
+      
+      if (response.data) {
+        setProfile(response.data);
+      } else {
+        setError('No profile data received from server');
+      }
     } catch (error) {
       console.error('Error fetching profile:', error);
+      if (error.response?.status === 401) {
+        setError('Authentication failed. Please log in again.');
+        localStorage.clear();
+        navigate('/');
+      } else if (error.response?.status === 404) {
+        setError('Profile not found. Please contact support.');
+      } else {
+        setError('Failed to load profile. Please try again.');
+      }
       toast.error('Failed to load profile');
     } finally {
       setLoading(false);
@@ -138,9 +164,51 @@ const UserProfile = () => {
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
+      <div className="container-fluid py-4">
+        <div className="row justify-content-center">
+          <div className="col-lg-8">
+            <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+              <div className="text-center">
+                <div className="spinner-border text-primary mb-3" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+                <p className="text-muted">Loading your profile...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container-fluid py-4">
+        <div className="row justify-content-center">
+          <div className="col-lg-8">
+            <div className="card shadow-lg border-0" style={{ borderRadius: '20px' }}>
+              <div className="card-body text-center py-5">
+                <AlertCircle size={64} className="text-danger mb-3" />
+                <h4 className="text-danger mb-3">Profile Loading Error</h4>
+                <p className="text-muted mb-4">{error}</p>
+                <div className="d-flex gap-2 justify-content-center">
+                  <button
+                    className="btn btn-outline-primary"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    <ArrowLeft size={16} className="me-1" />
+                    Back to Dashboard
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={fetchProfile}
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -150,6 +218,24 @@ const UserProfile = () => {
     <div className="container-fluid py-4">
       <div className="row justify-content-center">
         <div className="col-lg-8">
+          {/* Back Button */}
+          <div className="mb-3">
+            <button
+              className="btn btn-outline-secondary"
+              onClick={() => navigate('/dashboard')}
+              style={{ 
+                borderRadius: '10px',
+                padding: '8px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <ArrowLeft size={16} />
+              Back to Dashboard
+            </button>
+          </div>
+
           {/* Profile Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -178,7 +264,7 @@ const UserProfile = () => {
                 </div>
               </div>
               <h3 className="mb-1">{profile?.user?.name || 'User'}</h3>
-              <p className="mb-0 opacity-75">{profile?.user?.email}</p>
+              <p className="mb-0 opacity-75">{profile?.user?.email || 'No email provided'}</p>
             </div>
 
             <div className="card-body p-4">
@@ -187,10 +273,10 @@ const UserProfile = () => {
                   <div className="col-md-6 mb-3">
                     <div className="d-flex align-items-center">
                       <Mail className="text-primary me-2" size={20} />
-                      <div>
-                        <small className="text-muted">Email</small>
-                        <div className="fw-bold">{profile?.user?.email}</div>
-                      </div>
+                        <div>
+                          <small className="text-muted">Email</small>
+                          <div className="fw-bold">{profile?.user?.email || 'No email provided'}</div>
+                        </div>
                     </div>
                   </div>
                   
@@ -246,6 +332,18 @@ const UserProfile = () => {
                     </div>
                   )}
 
+                  {/* Show message if profile is incomplete */}
+                  {!profile?.profile && (
+                    <div className="col-12 mb-3">
+                      <div className="alert alert-info d-flex align-items-center">
+                        <User size={20} className="me-2" />
+                        <div>
+                          <strong>Complete your profile!</strong> Add more information to personalize your experience.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="col-12 mt-3">
                     <div className="d-flex gap-2">
                       <button
@@ -253,7 +351,7 @@ const UserProfile = () => {
                         onClick={() => setEditing(true)}
                       >
                         <Edit3 size={16} className="me-1" />
-                        Edit Profile
+                        {profile?.profile ? 'Edit Profile' : 'Complete Profile'}
                       </button>
                       <button
                         className="btn btn-outline-secondary"

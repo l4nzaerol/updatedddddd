@@ -2,7 +2,7 @@
 import React, { useState, memo } from "react";
 import { Modal, Button, Form } from "react-bootstrap";
 import axios from "axios";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import "./product_catalog.css";
 
 const ProductCatalog = ({ products }) => {
@@ -11,14 +11,22 @@ const ProductCatalog = ({ products }) => {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
-  // Categorize products
+  // Debug logging
+  console.log("ProductCatalog received products:", products);
+  console.log("Products length:", products?.length || 0);
+
+  // Enhanced categorization for the 3 main products
   const categorizeProducts = (products) => {
-    const furniture = products.filter(product => 
-      product.name.toLowerCase().includes('table') || 
+    const chairs = products.filter(product => 
       product.name.toLowerCase().includes('chair') ||
-      product.name.toLowerCase().includes('dining') ||
-      product.name.toLowerCase().includes('wooden')
+      product.name.toLowerCase().includes('wooden chair')
+    );
+    const tables = products.filter(product => 
+      product.name.toLowerCase().includes('table') ||
+      product.name.toLowerCase().includes('dining table')
     );
     const alkansya = products.filter(product => 
       product.name.toLowerCase().includes('alkansya')
@@ -27,14 +35,13 @@ const ProductCatalog = ({ products }) => {
       !product.name.toLowerCase().includes('alkansya') &&
       !product.name.toLowerCase().includes('table') &&
       !product.name.toLowerCase().includes('chair') &&
-      !product.name.toLowerCase().includes('dining') &&
-      !product.name.toLowerCase().includes('wooden')
+      !product.name.toLowerCase().includes('dining')
     );
     
-    return { furniture, alkansya, other };
+    return { chairs, tables, alkansya, other };
   };
 
-  const { furniture, alkansya, other } = categorizeProducts(products);
+  const { chairs, tables, alkansya, other } = categorizeProducts(products);
 
   const handleShowModal = (product) => {
     setSelectedProduct(product);
@@ -72,6 +79,16 @@ const ProductCatalog = ({ products }) => {
       );
 
       console.log("Added to cart:", response.data);
+      
+      // Show toast notification
+      setToastMessage(`${selectedProduct.name} added to cart!`);
+      setShowToast(true);
+      
+      // Auto hide toast after 3 seconds
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
+      
       handleCloseModal();
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong");
@@ -148,20 +165,27 @@ const ProductCatalog = ({ products }) => {
 
   return (
     <div className="woodcraft-catalog">
-      {products.length === 0 ? (
+      {!products || products.length === 0 ? (
         <div className="text-center py-5">
           <div className="empty-state">
-            <i className="fas fa-search fa-3x text-muted mb-3"></i>
-            <h4 className="text-muted">No products found</h4>
-            <p className="text-muted">Try adjusting your search terms</p>
+            <i className="fas fa-box-open fa-3x text-muted mb-3"></i>
+            <h4 className="text-muted">No products available</h4>
+            <p className="text-muted">
+              {!products ? 'Loading products...' : 'No products found. Please check back later.'}
+            </p>
+            {!products && (
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+            )}
           </div>
         </div>
       ) : (
         <div className="catalog-sections">
-          {/* Furniture Section - Tables & Chairs */}
-          {furniture.length > 0 && (
+          {/* Chairs Section */}
+          {chairs.length > 0 && (
             <motion.section 
-              className="catalog-section furniture-section"
+              className="catalog-section chairs-section"
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8 }}
@@ -171,16 +195,44 @@ const ProductCatalog = ({ products }) => {
                   <i className="fas fa-chair"></i>
                 </div>
                 <div className="section-content">
-                  <h2 className="section-title">Handcrafted Furniture</h2>
-                  <p className="section-subtitle">Premium tables and chairs made from the finest wood</p>
+                  <h2 className="section-title">Premium Chairs</h2>
+                  <p className="section-subtitle">Handcrafted wooden chairs for comfort and style</p>
                 </div>
                 <div className="section-decoration">
                   <div className="wood-grain"></div>
                 </div>
               </div>
               <div className="products-row">
-                {furniture.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} category="furniture" />
+                {chairs.map((product, index) => (
+                  <ProductCard key={product.id} product={product} index={index} category="chairs" />
+                ))}
+              </div>
+            </motion.section>
+          )}
+
+          {/* Tables Section */}
+          {tables.length > 0 && (
+            <motion.section 
+              className="catalog-section tables-section"
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+            >
+              <div className="section-header">
+                <div className="section-icon">
+                  <i className="fas fa-table"></i>
+                </div>
+                <div className="section-content">
+                  <h2 className="section-title">Dining Tables</h2>
+                  <p className="section-subtitle">Elegant dining tables for family gatherings</p>
+                </div>
+                <div className="section-decoration">
+                  <div className="wood-grain"></div>
+                </div>
+              </div>
+              <div className="products-row">
+                {tables.map((product, index) => (
+                  <ProductCard key={product.id} product={product} index={index} category="tables" />
                 ))}
               </div>
             </motion.section>
@@ -407,6 +459,36 @@ const ProductCatalog = ({ products }) => {
           </Modal.Body>
         </Modal>
       )}
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 100 }}
+            transition={{ duration: 0.3 }}
+            className="toast-notification"
+          >
+            <div className="toast-content">
+              <div className="toast-icon">
+                <i className="fas fa-check-circle"></i>
+              </div>
+              <div className="toast-message">
+                <div className="toast-title">Added to Cart!</div>
+                <div className="toast-text">{toastMessage}</div>
+              </div>
+              <button 
+                className="toast-close"
+                onClick={() => setShowToast(false)}
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="toast-progress"></div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

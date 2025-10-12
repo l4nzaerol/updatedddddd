@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import api from "../../api/client";
 import { toast } from "sonner";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -35,8 +35,7 @@ const AdminProductsTable = () => {
   const [profitMargin, setProfitMargin] = useState(25);
   const [calculating, setCalculating] = useState(false);
 
-  const token = localStorage.getItem("token");
-  const headers = {}; // handled by api client
+  // Token and headers are handled by api client
 
   const fetchProducts = async () => {
     try {
@@ -106,7 +105,9 @@ const AdminProductsTable = () => {
       if (!row.qty_per_unit || row.qty_per_unit <= 0) return "Quantity must be at least 1 for all rows.";
       ids.push(row.inventory_item_id);
     }
+    // Check for duplicates
     const hasDup = ids.some((id, idx) => ids.indexOf(id) !== idx);
+    if (hasDup) return "Duplicate materials are not allowed.";
     return "";
   };
 
@@ -123,7 +124,7 @@ const AdminProductsTable = () => {
   };
 
   // Calculate price based on BOM
-  const calculatePrice = async () => {
+  const calculatePrice = useCallback(async () => {
     if (bom.length === 0) {
       setPriceCalculation(null);
       return;
@@ -159,7 +160,7 @@ const AdminProductsTable = () => {
     } finally {
       setCalculating(false);
     }
-  };
+  }, [bom, materials, laborPercentage, profitMargin]);
 
   // Auto-calculate when BOM changes
   useEffect(() => {
@@ -167,7 +168,7 @@ const AdminProductsTable = () => {
       const timer = setTimeout(() => calculatePrice(), 500);
       return () => clearTimeout(timer);
     }
-  }, [bom, laborPercentage, profitMargin, showBomModal]);
+  }, [bom, laborPercentage, profitMargin, showBomModal, calculatePrice]);
 
   // Apply suggested price to product
   const applySuggestedPrice = async () => {
@@ -209,39 +210,9 @@ const AdminProductsTable = () => {
     }
   };
 
-  const exportBom = async () => {
-    try {
-      const res = await api.get(`/products/${selectedProduct.id}/materials/export`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `product_${selectedProduct.id}_materials.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const importBom = async (file) => {
-    const form = new FormData();
-    form.append('file', file);
-    try {
-      await api.post(`/products/${selectedProduct.id}/materials/import`, form);
-      await openBomModal(selectedProduct);
-    } catch (e) {
-      console.error(e);
-      toast.error("📥 Import Failed", {
-        description: "Unable to import BOM data. Please check your file format and try again.",
-        duration: 4000,
-        style: {
-          background: '#fee2e2',
-          border: '1px solid #fca5a5',
-          color: '#dc2626'
-        }
-      });
-    }
-  };
+  // Export and import functions are available but not currently used in the UI
+  // const exportBom = async () => { ... };
+  // const importBom = async (file) => { ... };
 
   const handleEdit = (product) => {
     setSelectedProduct(product);
