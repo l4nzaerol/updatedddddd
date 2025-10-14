@@ -6,25 +6,26 @@ use Illuminate\Database\Seeder;
 use App\Models\InventoryItem;
 use App\Models\Product;
 use App\Models\ProductMaterial;
+use Carbon\Carbon;
 
-class ComprehensiveInventorySeeder extends Seeder
+class EnhancedInventorySeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command->info('🌱 Creating comprehensive inventory system...');
+        $this->command->info('🌱 Creating enhanced inventory system with proper stock management...');
 
-        // Create all inventory items
+        // Create all inventory items with realistic stock levels
         $this->createInventoryItems();
         
         // Create BOM relationships
         $this->createBOMRelationships();
         
-        $this->command->info('✅ Comprehensive inventory system created successfully!');
+        $this->command->info('✅ Enhanced inventory system created successfully!');
     }
 
     private function createInventoryItems()
     {
-        $this->command->info('📦 Creating inventory items...');
+        $this->command->info('📦 Creating inventory items with realistic stock levels...');
 
         $items = [
             // ========================================
@@ -37,10 +38,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'Pine wood board 1x4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 20,
-                'reorder_point' => 100,
-                'max_level' => 400,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 200,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'PLY-4.2-4x8',
@@ -49,10 +50,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'Plywood sheet 4.2mm thickness 4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 10,
-                'reorder_point' => 100,
-                'max_level' => 200,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 100,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'ACR-1.5-4x8',
@@ -61,10 +62,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 120.00,
                 'description' => 'Acrylic sheet 1.5mm thickness 4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 100,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'PN-F30',
@@ -73,10 +74,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'F30 pin nails (1000 pcs per box) (for Alkansya)',
-                'quantity_on_hand' => 30000,
-                'safety_stock' => 200,
-                'reorder_point' => 1000,
-                'max_level' => 4000,
+                'quantity_on_hand' => 100000, // Large quantity for small items
+                'safety_stock' => 2000,
+                'reorder_point' => 10000,
+                'max_level' => 50000,
             ],
             [
                 'sku' => 'BS-1.5',
@@ -85,22 +86,22 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 90.00,
                 'description' => 'Black screw 1.5 inch (500 pcs per box) (for Alkansya)',
-                'quantity_on_hand' => 10000,
-                'safety_stock' => 100,
-                'reorder_point' => 200,
-                'max_level' => 2000,
+                'quantity_on_hand' => 50000, // Large quantity for small items
+                'safety_stock' => 1000,
+                'reorder_point' => 5000,
+                'max_level' => 25000,
             ],
             [
                 'sku' => 'STKW-250',
                 'name' => 'Stikwell 250',
                 'category' => 'raw',
-                'unit' => 'tpiece',
+                'unit' => 'piece',
                 'unit_cost' => 60.00,
                 'description' => 'Stikwell adhesive 250ml (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 100,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'GRP-4-120',
@@ -109,10 +110,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 30.00,
                 'description' => 'Grinding pad 4 inch, 120 grit (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 20,
-                'reorder_point' => 40,
-                'max_level' => 400,
+                'quantity_on_hand' => 20000, // Increased for 3 months production
+                'safety_stock' => 200,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'STK-24-W',
@@ -121,10 +122,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 300.00,
                 'description' => 'White sticker roll, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 50,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'STK-24-B',
@@ -133,10 +134,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 300.00,
                 'description' => 'Black sticker roll, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 300,
-                'safety_stock' => 5,
-                'reorder_point' => 50,
-                'max_level' => 100,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 50,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'TFT-24',
@@ -145,10 +146,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 180.00,
                 'description' => 'Transfer tape, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 3000,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 50,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'TAPE-2-300',
@@ -157,10 +158,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 50.00,
                 'description' => 'General packing tape, 2 inch x 300 m (for Alkansya)',
-                'quantity_on_hand' => 3000,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'FRAG-2-300',
@@ -169,23 +170,22 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 60.00,
                 'description' => 'Fragile tape, 2 inch x 300 m (for Alkansya)',
-                'quantity_on_hand' => 3000,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
-            
                 'sku' => 'BWRAP-40-100',
                 'name' => 'Bubble Wrap 40 inch x 100 m',
                 'category' => 'raw',
                 'unit' => 'piece',
                 'unit_cost' => 180.00,
                 'description' => 'Bubble wrap roll 40 inch width x 100 m length (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 50,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'INS-8-40-100',
@@ -194,10 +194,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 210.00,
                 'description' => 'Insulation foam 8mm, 40 inch width x 100 m length (for Alkansya)',
-                'quantity_on_hand' => 4000,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 10000, // Increased for 3 months production
+                'safety_stock' => 50,
+                'reorder_point' => 500,
+                'max_level' => 2000,
             ],
             
             // ========================================
@@ -210,10 +210,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 420.00,
                 'description' => 'Mahogany hardwood lumber 2x4x8 ft (for Table Legs)',
-                'quantity_on_hand' => 200,
-                'safety_stock' => 20,
-                'reorder_point' => 40,
-                'max_level' => 400,
+                'quantity_on_hand' => 500,
+                'safety_stock' => 50,
+                'reorder_point' => 100,
+                'max_level' => 1000,
             ],
             [
                 'sku' => 'HW-MAHOG-1x6x10',
@@ -234,10 +234,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 850.00,
                 'description' => 'Plywood sheet 18mm thickness 4x8 ft (for Table Base)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'WS-3',
@@ -246,10 +246,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'box',
                 'unit_cost' => 320.00,
                 'description' => 'Wood screws 3 inch (200 pcs per box) (for Table Assembly)',
-                'quantity_on_hand' => 2000,
-                'safety_stock' => 200,
-                'reorder_point' => 400,
-                'max_level' => 4000,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'WG-500',
@@ -258,10 +258,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'bottle',
                 'unit_cost' => 145.00,
                 'description' => 'Wood glue 500ml (for Table Joints)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'SAND-80',
@@ -270,10 +270,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 8.00,
                 'description' => 'Sandpaper 80 grit (for Table Rough Sanding)',
-                'quantity_on_hand' => 300,
-                'safety_stock' => 30,
-                'reorder_point' => 60,
-                'max_level' => 600,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'SAND-120',
@@ -282,10 +282,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 8.00,
                 'description' => 'Sandpaper 120 grit (for Table Fine Sanding)',
-                'quantity_on_hand' => 400,
-                'safety_stock' => 40,
-                'reorder_point' => 80,
-                'max_level' => 800,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'SAND-220',
@@ -294,10 +294,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 10.00,
                 'description' => 'Sandpaper 220 grit (for Table Finishing)',
-                'quantity_on_hand' => 300,
-                'safety_stock' => 30,
-                'reorder_point' => 60,
-                'max_level' => 600,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'STAIN-WALNUT-1L',
@@ -306,10 +306,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'liter',
                 'unit_cost' => 380.00,
                 'description' => 'Walnut wood stain 1 liter (for Table Coloring)',
-                'quantity_on_hand' => 50,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 100,
+                'safety_stock' => 10,
+                'reorder_point' => 20,
+                'max_level' => 200,
             ],
             [
                 'sku' => 'POLY-GLOSS-1L',
@@ -318,10 +318,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'liter',
                 'unit_cost' => 420.00,
                 'description' => 'Polyurethane gloss finish 1 liter (for Table Protection)',
-                'quantity_on_hand' => 50,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 100,
+                'safety_stock' => 10,
+                'reorder_point' => 20,
+                'max_level' => 200,
             ],
             [
                 'sku' => 'TBRACKET-METAL',
@@ -330,10 +330,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'set',
                 'unit_cost' => 180.00,
                 'description' => 'Metal corner brackets (4 pcs per set) for table reinforcement',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'FELT-PAD-LG',
@@ -342,10 +342,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'pack',
                 'unit_cost' => 45.00,
                 'description' => 'Large felt pads (8 pcs per pack) for table leg protection',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             
             // ========================================
@@ -358,10 +358,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 280.00,
                 'description' => 'Mahogany hardwood lumber 2x2x6 ft (for Chair Legs)',
-                'quantity_on_hand' => 300,
-                'safety_stock' => 30,
-                'reorder_point' => 60,
-                'max_level' => 600,
+                'quantity_on_hand' => 600,
+                'safety_stock' => 60,
+                'reorder_point' => 120,
+                'max_level' => 1200,
             ],
             [
                 'sku' => 'HW-MAHOG-1x4x6',
@@ -370,10 +370,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 320.00,
                 'description' => 'Mahogany hardwood board 1x4x6 ft (for Chair Backrest)',
-                'quantity_on_hand' => 200,
-                'safety_stock' => 20,
-                'reorder_point' => 40,
-                'max_level' => 400,
+                'quantity_on_hand' => 400,
+                'safety_stock' => 40,
+                'reorder_point' => 80,
+                'max_level' => 800,
             ],
             [
                 'sku' => 'PLY-12-2x4',
@@ -382,10 +382,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 280.00,
                 'description' => 'Plywood sheet 12mm thickness 2x4 ft (for Chair Seat Base)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'WS-2.5',
@@ -394,10 +394,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'box',
                 'unit_cost' => 280.00,
                 'description' => 'Wood screws 2.5 inch (200 pcs per box) (for Chair Assembly)',
-                'quantity_on_hand' => 2000,
-                'safety_stock' => 200,
-                'reorder_point' => 400,
-                'max_level' => 4000,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'WD-8MM',
@@ -406,10 +406,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 5.00,
                 'description' => 'Wood dowels 8mm diameter x 36 inches (for Chair Joints)',
-                'quantity_on_hand' => 1000,
-                'safety_stock' => 100,
-                'reorder_point' => 200,
-                'max_level' => 2000,
+                'quantity_on_hand' => 2000,
+                'safety_stock' => 200,
+                'reorder_point' => 400,
+                'max_level' => 4000,
             ],
             [
                 'sku' => 'FOAM-CUSHION-2',
@@ -418,10 +418,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'sheet',
                 'unit_cost' => 380.00,
                 'description' => 'High-density foam cushion 2 inch (2x4 ft sheet) (for Chair Seat)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'FABRIC-UPHOLSTERY',
@@ -430,10 +430,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'yard',
                 'unit_cost' => 220.00,
                 'description' => 'Durable upholstery fabric per yard (for Chair Covering)',
-                'quantity_on_hand' => 200,
-                'safety_stock' => 20,
-                'reorder_point' => 40,
-                'max_level' => 400,
+                'quantity_on_hand' => 400,
+                'safety_stock' => 40,
+                'reorder_point' => 80,
+                'max_level' => 800,
             ],
             [
                 'sku' => 'STAPLES-UPHOLSTERY',
@@ -442,10 +442,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'box',
                 'unit_cost' => 95.00,
                 'description' => 'Heavy-duty upholstery staples (1000 pcs per box) (for Chair Fabric)',
-                'quantity_on_hand' => 500,
-                'safety_stock' => 50,
-                'reorder_point' => 100,
-                'max_level' => 1000,
+                'quantity_on_hand' => 1000,
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
             ],
             [
                 'sku' => 'WG-250',
@@ -454,10 +454,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'bottle',
                 'unit_cost' => 85.00,
                 'description' => 'Wood glue 250ml (for Chair Joints)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'STAIN-WALNUT-500',
@@ -466,10 +466,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'bottle',
                 'unit_cost' => 220.00,
                 'description' => 'Walnut wood stain 500ml (for Chair Finish)',
-                'quantity_on_hand' => 50,
-                'safety_stock' => 5,
-                'reorder_point' => 10,
-                'max_level' => 100,
+                'quantity_on_hand' => 100,
+                'safety_stock' => 10,
+                'reorder_point' => 20,
+                'max_level' => 200,
             ],
             [
                 'sku' => 'LACQUER-SPRAY',
@@ -478,10 +478,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'can',
                 'unit_cost' => 180.00,
                 'description' => 'Clear lacquer spray 400ml (for Chair Protection)',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
             [
                 'sku' => 'FELT-PAD-SM',
@@ -490,10 +490,10 @@ class ComprehensiveInventorySeeder extends Seeder
                 'unit' => 'pack',
                 'unit_cost' => 35.00,
                 'description' => 'Small felt pads (8 pcs per pack) for chair leg protection',
-                'quantity_on_hand' => 100,
-                'safety_stock' => 10,
-                'reorder_point' => 20,
-                'max_level' => 200,
+                'quantity_on_hand' => 200,
+                'safety_stock' => 20,
+                'reorder_point' => 40,
+                'max_level' => 400,
             ],
         ];
 
@@ -579,7 +579,7 @@ class ComprehensiveInventorySeeder extends Seeder
             );
         }
 
-        $this->command->info('✅ Inventory items created successfully!');
+        $this->command->info('✅ Enhanced inventory items created successfully!');
     }
 
     private function createBOMRelationships()
@@ -695,6 +695,6 @@ class ComprehensiveInventorySeeder extends Seeder
             }
         }
 
-        $this->command->info('✅ BOM relationships created successfully!');
+        $this->command->info('✅ Enhanced BOM relationships created successfully!');
     }
 }

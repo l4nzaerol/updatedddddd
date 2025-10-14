@@ -48,7 +48,7 @@ export const getDashboardData = async (filters = {}) => {
 };
 
 export const getAnalytics = async (filters = {}) => {
-  const res = await api.get(`/productions/analytics`, { params: filters });
+  const res = await api.get(`/analytics/production-output`, { params: filters });
   return res.data;
 };
 

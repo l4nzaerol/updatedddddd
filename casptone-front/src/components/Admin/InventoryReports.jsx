@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../api/client";
 import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
 } from "recharts";
 import { downloadStockCsv, downloadUsageCsv, downloadReplenishmentCsv } from "../../api/inventoryApi";
@@ -12,7 +12,6 @@ const InventoryReports = () => {
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [materialFilter, setMaterialFilter] = useState('all');
     const [refreshKey, setRefreshKey] = useState(0);
     
@@ -22,15 +21,8 @@ const InventoryReports = () => {
     const [consumptionTrends, setConsumptionTrends] = useState(null);
     const [replenishmentSchedule, setReplenishmentSchedule] = useState(null);
     const [forecastReport, setForecastReport] = useState(null);
-    const [dailyUsage, setDailyUsage] = useState(null);
-    const [stockReport, setStockReport] = useState(null);
-    
-    // Predictive Analytics States
-    const [materialUsageForecast, setMaterialUsageForecast] = useState(null);
-    const [inventoryReplenishmentForecast, setInventoryReplenishmentForecast] = useState(null);
-    const [stockStatusPredictions, setStockStatusPredictions] = useState(null);
-    const [seasonalTrends, setSeasonalTrends] = useState(null);
-    const [demandPatterns, setDemandPatterns] = useState(null);
+    const [turnoverReport, setTurnoverReport] = useState(null);
+    const [abcAnalysis, setABCAnalysis] = useState(null);
 
     // Filter materials based on product type
     const filterMaterials = (items) => {
@@ -87,60 +79,65 @@ const InventoryReports = () => {
 
             console.log('📊 Fetching inventory reports with date range:', dateRange);
 
-            // Fetch all inventory-related data
+            // Fetch all inventory-related data using correct API endpoints
+            console.log('🔍 Starting API calls...');
+            
             const [
                 dashboardResponse,
                 inventoryResponse,
                 consumptionResponse,
                 replenishmentResponse,
                 forecastResponse,
-                dailyUsageResponse,
-                stockResponse,
-                // Predictive Analytics API calls
-                materialForecastResponse,
-                replenishmentForecastResponse,
-                stockPredictionsResponse,
-                seasonalTrendsResponse,
-                demandPatternsResponse
+                turnoverResponse,
+                abcAnalysisResponse
             ] = await Promise.all([
-                api.get('/inventory/dashboard', { params: dateRange }),
+                api.get('/inventory/dashboard'),
                 api.get('/inventory/report', { params: dateRange }),
-                api.get('/inventory/consumption-trends', { params: dateRange }),
-                api.get('/inventory/replenishment-schedule', { params: dateRange }),
-                api.get('/inventory/forecast-report', { params: dateRange }),
-                api.get('/inventory/daily-usage', { params: { date: selectedDate } }),
-                api.get('/inventory/stock-report', { params: dateRange }),
-                // Predictive Analytics endpoints
-                api.get('/analytics/material-usage-forecast', { params: { ...dateRange, forecast_days: 30 } }),
-                api.get('/analytics/inventory-replenishment-forecast', { params: { ...dateRange, forecast_days: 30 } }),
-                api.get('/analytics/stock-status-predictions', { params: { ...dateRange, forecast_days: 30 } }),
-                api.get('/analytics/seasonal-trends', { params: { ...dateRange, analysis_period: 'yearly' } }),
-                api.get('/analytics/demand-patterns', { params: { ...dateRange, analysis_period: 'monthly' } })
+                api.get('/inventory/consumption-trends', { params: { days: windowDays } }),
+                api.get('/inventory/replenishment-schedule'),
+                api.get('/inventory/forecast', { params: { forecast_days: 30, historical_days: windowDays } }),
+                api.get('/inventory/turnover-report', { params: { days: windowDays } }),
+                api.get('/inventory/abc-analysis', { params: { days: windowDays } })
             ]);
+
 
             setDashboardData(dashboardResponse.data);
             setInventoryReport(inventoryResponse.data);
             setConsumptionTrends(consumptionResponse.data);
             setReplenishmentSchedule(replenishmentResponse.data);
             setForecastReport(forecastResponse.data);
-            setDailyUsage(dailyUsageResponse.data);
-            setStockReport(stockResponse.data);
-            
-            // Set predictive analytics data
-            setMaterialUsageForecast(materialForecastResponse.data);
-            setInventoryReplenishmentForecast(replenishmentForecastResponse.data);
-            setStockStatusPredictions(stockPredictionsResponse.data);
-            setSeasonalTrends(seasonalTrendsResponse.data);
-            setDemandPatterns(demandPatternsResponse.data);
+            setTurnoverReport(turnoverResponse.data);
+            setABCAnalysis(abcAnalysisResponse.data);
 
             console.log('📊 Inventory reports fetched successfully');
         } catch (err) {
             console.error('❌ Error fetching inventory reports:', err);
             setError(err.response?.data?.message || 'Failed to fetch inventory reports');
+            
+            // Set fallback data for testing
+            console.log('🔄 Setting fallback data for testing...');
+            setDashboardData({
+                summary: {
+                    total_items: 0,
+                    low_stock_items: 0,
+                    out_of_stock_items: 0,
+                    recent_usage: 0
+                },
+                critical_items: []
+            });
+            setInventoryReport({
+                summary: {
+                    total_items: 0,
+                    items_needing_reorder: 0,
+                    critical_items: 0,
+                    total_usage: 0
+                },
+                items: []
+            });
         } finally {
             setLoading(false);
         }
-    }, [windowDays, selectedDate]);
+    }, [windowDays]);
 
     useEffect(() => {
         fetchAllReports();
@@ -151,34 +148,6 @@ const InventoryReports = () => {
         setRefreshKey(prev => prev + 1);
     };
 
-    const getStartDate = (days) => {
-        const date = new Date();
-        date.setDate(date.getDate() - days);
-        return date.toISOString().split('T')[0];
-    };
-
-    // Export functions
-    const exportReport = (reportName, data) => {
-        const csv = convertToCSV(data);
-        downloadCSV(csv, `${reportName}_${new Date().toISOString().split('T')[0]}.csv`);
-    };
-
-    const convertToCSV = (data) => {
-        if (!data || data.length === 0) return '';
-        const headers = Object.keys(data[0]).join(',');
-        const rows = data.map(row => Object.values(row).join(','));
-        return [headers, ...rows].join('\n');
-    };
-
-    const downloadCSV = (csv, filename) => {
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-    };
 
     const handleInventoryExport = async (exportType, format) => {
         try {
@@ -213,41 +182,6 @@ const InventoryReports = () => {
         console.log(`Exporting ${exportType} to PDF`);
     };
 
-    // Predictive Analytics Helper Functions
-    const calculateMovingAverage = (data, period = 7) => {
-        if (!data || data.length < period) return [];
-        
-        return data.map((item, index) => {
-            if (index < period - 1) return { ...item, moving_avg: null };
-            
-            const slice = data.slice(index - period + 1, index + 1);
-            const avg = slice.reduce((sum, d) => sum + (d.value || d.quantity || 0), 0) / period;
-            
-            return { ...item, moving_avg: Math.round(avg * 100) / 100 };
-        });
-    };
-
-    const calculateConsumptionRate = (usageData) => {
-        if (!usageData || usageData.length < 2) return null;
-        
-        const sortedData = [...usageData].sort((a, b) => new Date(a.date) - new Date(b.date));
-        const totalDays = (new Date(sortedData[sortedData.length - 1].date) - new Date(sortedData[0].date)) / (1000 * 60 * 60 * 24);
-        const totalUsage = sortedData.reduce((sum, item) => sum + (item.quantity || item.value || 0), 0);
-        
-        return totalDays > 0 ? totalUsage / totalDays : 0;
-    };
-
-    const predictStockoutDate = (currentStock, consumptionRate) => {
-        if (!consumptionRate || consumptionRate <= 0) return null;
-        const daysUntilStockout = Math.floor(currentStock / consumptionRate);
-        const stockoutDate = new Date();
-        stockoutDate.setDate(stockoutDate.getDate() + daysUntilStockout);
-        return stockoutDate.toISOString().split('T')[0];
-    };
-
-    const calculateReorderPoint = (avgDailyUsage, leadTimeDays, safetyStock) => {
-        return Math.ceil((avgDailyUsage * leadTimeDays) + safetyStock);
-    };
 
     if (loading) {
         return (
@@ -273,6 +207,7 @@ const InventoryReports = () => {
 
     return (
         <div>
+
             {/* Header Controls */}
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <div>
@@ -308,11 +243,12 @@ const InventoryReports = () => {
                 <ul className="nav nav-pills nav-fill" role="tablist">
                     {[
                         { id: 'overview', name: 'Overview', icon: '📊' },
-                        { id: 'predictive', name: 'Predictive Analytics', icon: '🔮' },
+                        { id: 'stock', name: 'Stock Status', icon: '📦' },
                         { id: 'consumption', name: 'Consumption Trends', icon: '📈' },
                         { id: 'replenishment', name: 'Replenishment', icon: '🛒' },
                         { id: 'forecast', name: 'Forecasting', icon: '📅' },
-                        { id: 'stock', name: 'Stock Status', icon: '📦' }
+                        { id: 'turnover', name: 'Stock Turnover', icon: '🔄' },
+                        { id: 'abc', name: 'ABC Analysis', icon: '🎯' }
                     ].map(tab => (
                         <li className="nav-item" key={tab.id}>
                             <button
@@ -351,102 +287,142 @@ const InventoryReports = () => {
                 </div>
             </div>
 
+
+
             {/* Content based on active tab */}
             {activeTab === 'overview' && (
-                <div>
+                <div className="bg-white rounded-3 shadow-sm p-4">
                     {/* Dashboard Overview */}
                     <div className="row mb-4">
                         <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                            <div className="card border-0 shadow-sm h-100 bg-white">
+                                <div className="card-body text-center p-4">
+                                    <div className="d-flex align-items-center justify-content-center mb-3">
                                         <div className="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
                                             <i className="fas fa-boxes text-primary fs-4"></i>
                                         </div>
                                         <div>
-                                            <h3 className="mb-0 text-primary fw-bold">41</h3>
-                                            <small className="text-muted">Total Items</small>
+                                            <h3 className="mb-0 text-primary fw-bold">
+                                                {dashboardData?.summary?.total_items || 0}
+                                            </h3>
+                                            <small className="text-muted fw-medium">Total Items</small>
                                         </div>
                                     </div>
-                                    <p className="text-muted small mb-0">38 raw • 0 finished</p>
+                                    <p className="text-muted small mb-0">
+                                        {inventoryReport?.summary?.total_items || 0} items tracked
+                                    </p>
                                 </div>
                             </div>
                         </div>
                         <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                            <div className="card border-0 shadow-sm h-100 bg-white">
+                                <div className="card-body text-center p-4">
+                                    <div className="d-flex align-items-center justify-content-center mb-3">
                                         <div className="bg-danger bg-opacity-10 rounded-circle p-3 me-3">
                                             <i className="fas fa-exclamation-triangle text-danger fs-4"></i>
                                         </div>
                                         <div>
-                                            <h3 className="mb-0 text-danger fw-bold">14</h3>
-                                            <small className="text-muted">Reorder Alerts</small>
+                                            <h3 className="mb-0 text-danger fw-bold">
+                                                {dashboardData?.summary?.low_stock_items || 0}
+                                            </h3>
+                                            <small className="text-muted fw-medium">Reorder Alerts</small>
                                         </div>
                                     </div>
-                                    <p className="text-muted small mb-0">Action required</p>
+                                    <p className="text-muted small mb-0">
+                                        {inventoryReport?.summary?.items_needing_reorder || 0} need reordering
+                                    </p>
                                 </div>
                             </div>
                         </div>
                         <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                            <div className="card border-0 shadow-sm h-100 bg-white">
+                                <div className="card-body text-center p-4">
+                                    <div className="d-flex align-items-center justify-content-center mb-3">
                                         <div className="bg-warning bg-opacity-10 rounded-circle p-3 me-3">
                                             <i className="fas fa-clock text-warning fs-4"></i>
                                         </div>
                                         <div>
-                                            <h3 className="mb-0 text-warning fw-bold">0</h3>
-                                            <small className="text-muted">Low Stock</small>
+                                            <h3 className="mb-0 text-warning fw-bold">
+                                                {dashboardData?.summary?.out_of_stock_items || 0}
+                                            </h3>
+                                            <small className="text-muted fw-medium">Out of Stock</small>
                                         </div>
                                     </div>
-                                    <p className="text-muted small mb-0">Less than 14 days</p>
+                                    <p className="text-muted small mb-0">
+                                        {inventoryReport?.summary?.critical_items || 0} critical items
+                                    </p>
                                 </div>
                             </div>
                         </div>
                         <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                            <div className="card border-0 shadow-sm h-100 bg-white">
+                                <div className="card-body text-center p-4">
+                                    <div className="d-flex align-items-center justify-content-center mb-3">
                                         <div className="bg-info bg-opacity-10 rounded-circle p-3 me-3">
-                                            <i className="fas fa-cube text-info fs-4"></i>
+                                            <i className="fas fa-chart-line text-info fs-4"></i>
                                         </div>
                                         <div>
-                                            <h3 className="mb-0 text-info fw-bold">0</h3>
-                                            <small className="text-muted">Total Finished Goods</small>
+                                            <h3 className="mb-0 text-info fw-bold">
+                                                {inventoryReport?.summary?.total_usage || 0}
+                                            </h3>
+                                            <small className="text-muted fw-medium">Total Usage</small>
                                         </div>
                                     </div>
-                                    <p className="text-muted small mb-0">Mass-produced products</p>
+                                    <p className="text-muted small mb-0">
+                                        Last {windowDays} days
+                                    </p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Inventory Chart */}
-                    <div className="card border-0 shadow-sm">
-                        <div className="card-header bg-white border-0">
-                            <h5 className="mb-0 fw-semibold">Inventory Levels by Category</h5>
+                    <div className="card border-0 shadow-sm bg-white">
+                        <div className="card-header bg-white border-0 p-4">
+                            <div className="d-flex justify-content-between align-items-center">
+                                <h5 className="mb-0 fw-semibold text-dark">Top Inventory Items by Stock Level</h5>
+                                <div className="d-flex gap-2">
+                                    <span className="badge bg-primary">Current Stock</span>
+                                    <span className="badge bg-danger">Reorder Point</span>
                         </div>
-                        <div className="card-body">
+                            </div>
+                        </div>
+                        <div className="card-body p-4">
                             <div className="row">
                                 <div className="col-md-8">
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={[
-                                            { name: 'Pinewood 1x4x8ft', current: 200, reorder: 50 },
-                                            { name: 'Plywood 4.2mm', current: 100, reorder: 25 },
-                                            { name: 'Acrylic 1.5mm', current: 80, reorder: 20 },
-                                            { name: 'Pin Nail F30', current: 2000, reorder: 500 },
-                                            { name: 'Black Screw 1.5"', current: 1000, reorder: 250 }
-                                        ]}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                                            <YAxis />
-                                            <Tooltip />
+                                    <div className="bg-white rounded-3 p-3">
+                                        <ResponsiveContainer width="100%" height={350}>
+                                            <BarChart data={inventoryReport?.items?.slice(0, 10).map(item => ({
+                                                name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
+                                                current: item.current_stock,
+                                                reorder: item.reorder_point,
+                                                usage: item.total_usage
+                                            })) || []}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                                <XAxis 
+                                                    dataKey="name" 
+                                                    angle={-45} 
+                                                    textAnchor="end" 
+                                                    height={100}
+                                                    tick={{ fontSize: 12, fill: '#666' }}
+                                                />
+                                                <YAxis 
+                                                    tick={{ fontSize: 12, fill: '#666' }}
+                                                />
+                                                <Tooltip 
+                                                    contentStyle={{ 
+                                                        backgroundColor: 'white', 
+                                                        border: '1px solid #e0e0e0',
+                                                        borderRadius: '8px',
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                    }} 
+                                                />
                                             <Legend />
-                                            <Bar dataKey="current" fill="#3B82F6" name="Current Stock" />
-                                            <Bar dataKey="reorder" fill="#EF4444" name="Reorder Point" />
+                                                <Bar dataKey="current" fill="#3B82F6" name="Current Stock" radius={[4, 4, 0, 0]} />
+                                                <Bar dataKey="reorder" fill="#EF4444" name="Reorder Point" radius={[4, 4, 0, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
+                                    </div>
                                 </div>
                                 <div className="col-md-4">
                                     <div className="d-flex flex-column h-100 justify-content-center">
@@ -491,336 +467,158 @@ const InventoryReports = () => {
                 </div>
             )}
 
-            {/* Predictive Analytics Tab */}
-            {activeTab === 'predictive' && (
-                <>
-                <div className="space-y-6">
-                    {/* Material Usage Forecasting Dashboard */}
-                    <div className="card border-0 shadow-sm mb-4">
-                        <div className="card-header bg-white border-0">
-                            <div className="d-flex justify-content-between align-items-center">
-                                <h5 className="mb-0 fw-semibold">Material Usage Forecasting</h5>
+
+            {/* Consumption Trends Tab */}
+            {activeTab === 'consumption' && (
+                <div className="bg-white rounded-3 shadow-sm p-4">
+                    {consumptionTrends && (
+                        <div>
+                            <div className="d-flex justify-content-between align-items-center mb-4">
+                                <h3 className="text-xl font-semibold text-dark mb-0">Material Consumption Trends</h3>
                                 <div className="d-flex gap-2">
-                                    <button className="btn btn-primary btn-sm">
-                                        <i className="fas fa-brain me-1"></i>
-                                        Generate Forecast
-                                    </button>
-                                    <button className="btn btn-success btn-sm">
-                                        <i className="fas fa-download me-1"></i>
-                                        Export Report
-                                    </button>
+                                    <span className="badge bg-primary">Daily Usage</span>
+                                    <span className="badge bg-success">Trend Analysis</span>
                                 </div>
                             </div>
-                        </div>
-                        <div className="card-body">
-                            {/* Forecast Summary Cards */}
+                            
+                            {/* Summary Cards */}
                             <div className="row mb-4">
                                 <div className="col-lg-3 col-md-6 mb-3">
                                     <div className="card bg-primary text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">15</h3>
-                                            <small className="opacity-75">Total Materials</small>
+                                            <h3 className="mb-0 fw-bold">{consumptionTrends.trends ? Object.keys(consumptionTrends.trends).length : 0}</h3>
+                                            <small className="opacity-75">Items Tracked</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="col-lg-3 col-md-6 mb-3">
-                                    <div className="card bg-danger text-white h-100">
+                                    <div className="card bg-info text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">3</h3>
-                                            <small className="opacity-75">Critical Items</small>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-lg-3 col-md-6 mb-3">
-                                    <div className="card bg-warning text-white h-100">
-                                        <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">5</h3>
-                                            <small className="opacity-75">Warning Items</small>
+                                            <h3 className="mb-0 fw-bold">{consumptionTrends.period_days || 0}</h3>
+                                            <small className="opacity-75">Analysis Period (Days)</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="col-lg-3 col-md-6 mb-3">
                                     <div className="card bg-success text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">7</h3>
-                                            <small className="opacity-75">Safe Items</small>
+                                            <h3 className="mb-0 fw-bold">
+                                                {consumptionTrends.trends ? 
+                                                    Object.values(consumptionTrends.trends).reduce((sum, item) => sum + (item.total_usage_period || 0), 0) : 0
+                                                }
+                                            </h3>
+                                            <small className="opacity-75">Total Usage</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-warning text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">
+                                                {consumptionTrends.trends ? 
+                                                    Math.round(Object.values(consumptionTrends.trends).reduce((sum, item) => sum + (item.avg_daily_usage || 0), 0) / Math.max(1, Object.keys(consumptionTrends.trends).length)) : 0
+                                                }
+                                            </h3>
+                                            <small className="opacity-75">Avg Daily Usage</small>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Forecast Chart */}
+                            {/* Consumption Chart */}
                             <div className="mb-4">
-                                <h6 className="fw-semibold mb-3">30-Day Material Usage Forecast</h6>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={[
-                                        { material: 'Pinewood 1x4x8ft', predicted: 1800, current: 200 },
-                                        { material: 'Plywood 4.2mm', predicted: 900, current: 100 },
-                                        { material: 'Acrylic 1.5mm', predicted: 720, current: 80 },
-                                        { material: 'Pin Nail F30', predicted: 18000, current: 2000 },
-                                        { material: 'Black Screw 1.5"', predicted: 9000, current: 1000 }
-                                    ]}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="material" angle={-45} textAnchor="end" height={100} />
-                                        <YAxis />
-                                        <Tooltip />
+                                <div className="card border-0 shadow-sm bg-white">
+                                    <div className="card-header bg-white border-0 p-4">
+                                        <h6 className="fw-semibold mb-0 text-dark">Top Items by Daily Usage</h6>
+                                    </div>
+                                    <div className="card-body p-4">
+                                        <div className="bg-white rounded-3 p-3">
+                                            <ResponsiveContainer width="100%" height={350}>
+                                                <BarChart data={consumptionTrends.trends ? 
+                                                    Object.values(consumptionTrends.trends)
+                                                        .sort((a, b) => (b.avg_daily_usage || 0) - (a.avg_daily_usage || 0))
+                                                        .slice(0, 10)
+                                                        .map(item => ({
+                                                            name: item.item_name?.length > 15 ? item.item_name.substring(0, 15) + '...' : item.item_name,
+                                                            avg_daily_usage: item.avg_daily_usage,
+                                                            total_usage: item.total_usage_period,
+                                                            days_until_stockout: item.days_until_stockout
+                                                        })) : []}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                                    <XAxis 
+                                                        dataKey="name" 
+                                                        angle={-45} 
+                                                        textAnchor="end" 
+                                                        height={100}
+                                                        tick={{ fontSize: 12, fill: '#666' }}
+                                                    />
+                                                    <YAxis 
+                                                        tick={{ fontSize: 12, fill: '#666' }}
+                                                    />
+                                                    <Tooltip 
+                                                        contentStyle={{ 
+                                                            backgroundColor: 'white', 
+                                                            border: '1px solid #e0e0e0',
+                                                            borderRadius: '8px',
+                                                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                        }} 
+                                                    />
                                         <Legend />
-                                        <Bar dataKey="predicted" fill="#3B82F6" name="Predicted Usage" />
-                                        <Bar dataKey="current" fill="#10B981" name="Current Stock" />
+                                                    <Bar dataKey="avg_daily_usage" fill="#3B82F6" name="Avg Daily Usage" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
+                                            </div>
+                                                </div>
+                                                </div>
 
-                            {/* Detailed Forecast Cards */}
-                            <div className="row">
-                                <div className="col-lg-4 col-md-6 mb-3">
-                                    <div className="card border-start border-danger border-3 h-100">
-                                        <div className="card-body">
-                                            <div className="d-flex justify-content-between align-items-start mb-2">
-                                                <h6 className="fw-semibold mb-0">Pinewood 1x4x8ft</h6>
-                                                <span className="badge bg-danger">Critical</span>
+                            {/* Consumption Table */}
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            <th className="px-4 py-2 text-left">Item</th>
+                                            <th className="px-4 py-2 text-left">SKU</th>
+                                            <th className="px-4 py-2 text-left">Avg Daily Usage</th>
+                                            <th className="px-4 py-2 text-left">Total Usage</th>
+                                            <th className="px-4 py-2 text-left">Days Until Stockout</th>
+                                            <th className="px-4 py-2 text-left">Trend</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {consumptionTrends.trends ? Object.values(consumptionTrends.trends).map((item, index) => (
+                                            <tr key={index} className="border-b">
+                                                <td className="px-4 py-2">{item.item_name}</td>
+                                                <td className="px-4 py-2">{item.sku}</td>
+                                                <td className="px-4 py-2">{item.avg_daily_usage}</td>
+                                                <td className="px-4 py-2">{item.total_usage_period}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`fw-bold ${
+                                                        item.days_until_stockout < 7 ? 'text-danger' :
+                                                        item.days_until_stockout < 14 ? 'text-warning' :
+                                                        'text-success'
+                                                    }`}>
+                                                        {item.days_until_stockout === 999 ? 'N/A' : `${item.days_until_stockout} days`}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`px-2 py-1 rounded text-xs ${
+                                                        item.trend > 0 ? 'bg-danger text-white' :
+                                                        item.trend < 0 ? 'bg-success text-white' :
+                                                        'bg-info text-white'
+                                                    }`}>
+                                                        {item.trend > 0 ? '↗ Increasing' :
+                                                         item.trend < 0 ? '↘ Decreasing' : '→ Stable'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        )) : []}
+                                    </tbody>
+                                </table>
                                             </div>
-                                            <div className="row text-center">
-                                                <div className="col-6">
-                                                    <small className="text-muted">Current Stock</small>
-                                                    <div className="fw-bold">200</div>
-                                                </div>
-                                                <div className="col-6">
-                                                    <small className="text-muted">Predicted Usage</small>
-                                                    <div className="fw-bold">1,800</div>
-                                                </div>
                                             </div>
-                                            <div className="mt-2">
-                                                <small className="text-muted">Days Until Stockout: </small>
-                                                <span className="fw-bold text-danger">7 days</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-lg-4 col-md-6 mb-3">
-                                    <div className="card border-start border-warning border-3 h-100">
-                                        <div className="card-body">
-                                            <div className="d-flex justify-content-between align-items-start mb-2">
-                                                <h6 className="fw-semibold mb-0">Plywood 4.2mm</h6>
-                                                <span className="badge bg-warning">Warning</span>
-                                            </div>
-                                            <div className="row text-center">
-                                                <div className="col-6">
-                                                    <small className="text-muted">Current Stock</small>
-                                                    <div className="fw-bold">100</div>
-                                                </div>
-                                                <div className="col-6">
-                                                    <small className="text-muted">Predicted Usage</small>
-                                                    <div className="fw-bold">900</div>
-                                                </div>
-                                            </div>
-                                            <div className="mt-2">
-                                                <small className="text-muted">Days Until Stockout: </small>
-                                                <span className="fw-bold text-warning">12 days</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="col-lg-4 col-md-6 mb-3">
-                                    <div className="card border-start border-success border-3 h-100">
-                                        <div className="card-body">
-                                            <div className="d-flex justify-content-between align-items-start mb-2">
-                                                <h6 className="fw-semibold mb-0">Pin Nail F30</h6>
-                                                <span className="badge bg-success">Safe</span>
-                                            </div>
-                                            <div className="row text-center">
-                                                <div className="col-6">
-                                                    <small className="text-muted">Current Stock</small>
-                                                    <div className="fw-bold">2,000</div>
-                                                </div>
-                                                <div className="col-6">
-                                                    <small className="text-muted">Predicted Usage</small>
-                                                    <div className="fw-bold">18,000</div>
-                                                </div>
-                                            </div>
-                                            <div className="mt-2">
-                                                <small className="text-muted">Days Until Stockout: </small>
-                                                <span className="fw-bold text-success">45 days</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div>
-                    {materialUsageForecast ? (
-                            <div className="space-y-6">
-                                {/* Forecast Summary Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 rounded-lg text-white">
-                                        <h4 className="text-sm font-medium opacity-90">Total Materials</h4>
-                                        <p className="text-2xl font-bold">{materialUsageForecast.forecasts?.length || 0}</p>
-                                    </div>
-                                    <div className="bg-gradient-to-r from-red-500 to-red-600 p-4 rounded-lg text-white">
-                                        <h4 className="text-sm font-medium opacity-90">Critical Items</h4>
-                                        <p className="text-2xl font-bold">
-                                            {materialUsageForecast.forecasts?.filter(f => f.days_until_stockout < 7).length || 0}
-                                        </p>
-                                    </div>
-                                    <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-4 rounded-lg text-white">
-                                        <h4 className="text-sm font-medium opacity-90">Warning Items</h4>
-                                        <p className="text-2xl font-bold">
-                                            {materialUsageForecast.forecasts?.filter(f => f.days_until_stockout >= 7 && f.days_until_stockout < 14).length || 0}
-                                        </p>
-                                    </div>
-                                    <div className="bg-gradient-to-r from-green-500 to-green-600 p-4 rounded-lg text-white">
-                                        <h4 className="text-sm font-medium opacity-90">Safe Items</h4>
-                                        <p className="text-2xl font-bold">
-                                            {materialUsageForecast.forecasts?.filter(f => f.days_until_stockout >= 14).length || 0}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Forecast Chart */}
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <h4 className="text-lg font-semibold text-gray-800 mb-4">30-Day Material Usage Forecast</h4>
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={materialUsageForecast.forecasts?.slice(0, 10) || []}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="material_name" angle={-45} textAnchor="end" height={100} />
-                                            <YAxis />
-                                            <Tooltip />
-                                            <Legend />
-                                            <Bar dataKey="predicted_usage" fill="#3B82F6" name="Predicted Usage" />
-                                            <Bar dataKey="current_stock" fill="#10B981" name="Current Stock" />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-
-                                {/* Detailed Forecast Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {materialUsageForecast.forecasts?.map((forecast, index) => (
-                                        <div key={index} className={`p-4 rounded-lg border-l-4 ${
-                                            forecast.days_until_stockout < 7 ? 'bg-red-50 border-red-500' :
-                                            forecast.days_until_stockout < 14 ? 'bg-yellow-50 border-yellow-500' :
-                                            'bg-green-50 border-green-500'
-                                        }`}>
-                                            <div className="flex justify-between items-start mb-2">
-                                                <h4 className="font-semibold text-gray-800 text-sm">{forecast.material_name}</h4>
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                    forecast.days_until_stockout < 7 ? 'bg-red-100 text-red-800' :
-                                                    forecast.days_until_stockout < 14 ? 'bg-yellow-100 text-yellow-800' :
-                                                    'bg-green-100 text-green-800'
-                                                }`}>
-                                                    {forecast.days_until_stockout < 7 ? 'Critical' :
-                                                     forecast.days_until_stockout < 14 ? 'Warning' : 'Safe'}
-                                                </span>
-                                            </div>
-                                            <div className="space-y-2 text-sm">
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Current Stock:</span>
-                                                    <span className="font-medium">{forecast.current_stock}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Predicted Usage:</span>
-                                                    <span className="font-medium">{forecast.predicted_usage}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Days Until Stockout:</span>
-                                                    <span className="font-medium">{forecast.days_until_stockout || 'N/A'}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-600">Consumption Rate:</span>
-                                                    <span className="font-medium">{forecast.consumption_rate}/day</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="text-center py-12">
-                                <div className="text-gray-400 text-6xl mb-4">📊</div>
-                                <p className="text-gray-500 text-lg">No forecast data available</p>
-                                <p className="text-gray-400 text-sm">Generate forecasts based on historical data</p>
-                            </div>
-                        )}
-
-                    {/* Stock Status Predictions */}
-                    <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-4">Stock Status Predictions</h3>
-                        {stockStatusPredictions ? (
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {stockStatusPredictions.predictions?.map((prediction, index) => (
-                                        <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                                            <h4 className="font-semibold text-gray-800">{prediction.item_name}</h4>
-                                            <p className="text-sm text-gray-600">Current: {prediction.current_stock}</p>
-                                            <p className="text-sm text-gray-600">Predicted Stockout: {prediction.predicted_stockout_date}</p>
-                                            <p className="text-sm text-gray-600">Recommended Order: {prediction.recommended_order_qty}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-gray-500">No prediction data available</p>
-                        )}
-                    </div>
-
-                    {/* Seasonal Trends */}
-                    {seasonalTrends && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Seasonal Usage Trends</h3>
-                            <ResponsiveContainer width="100%" height={300}>
-                                <LineChart data={seasonalTrends.trends || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="month" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="usage" stroke="#3B82F6" name="Usage" />
-                                    <Line type="monotone" dataKey="forecast" stroke="#EF4444" name="Forecast" />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
                     )}
-                </div>
-                </>
-            )}
-
-            {/* Consumption Trends Tab */}
-            {activeTab === 'consumption' && (
-                <div className="space-y-6">
-                    {consumptionTrends && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Material Consumption Trends</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <LineChart data={consumptionTrends.trends || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="consumption" stroke="#3B82F6" name="Daily Consumption" />
-                                    <Line type="monotone" dataKey="moving_avg" stroke="#EF4444" name="7-Day Average" />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                    )}
-
-                    {/* Consumption Rate Analysis */}
-                    <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-4">Consumption Rate Analysis</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {consumptionTrends?.rate_analysis?.map((item, index) => (
-                                <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                                    <h4 className="font-semibold text-gray-800">{item.material_name}</h4>
-                                    <p className="text-sm text-gray-600">Daily Rate: {item.daily_rate?.toFixed(2)}</p>
-                                    <p className="text-sm text-gray-600">Weekly Rate: {item.weekly_rate?.toFixed(2)}</p>
-                                    <p className="text-sm text-gray-600">Monthly Rate: {item.monthly_rate?.toFixed(2)}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
+                                        </div>
             )}
 
             {/* Replenishment Tab */}
@@ -829,38 +627,377 @@ const InventoryReports = () => {
                     {replenishmentSchedule && (
                         <div className="bg-white p-6 rounded-lg shadow">
                             <h3 className="text-xl font-semibold text-gray-800 mb-4">Replenishment Schedule</h3>
+                            
+                            {/* Summary Cards */}
+                            <div className="row mb-4">
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-danger text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{replenishmentSchedule.summary?.immediate_reorders || 0}</h3>
+                                            <small className="opacity-75">Immediate Reorders</small>
+                                    </div>
+                                </div>
+                                            </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-warning text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{replenishmentSchedule.summary?.high_priority || 0}</h3>
+                                            <small className="opacity-75">High Priority</small>
+                                                </div>
+                                                </div>
+                                            </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-info text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{replenishmentSchedule.summary?.medium_priority || 0}</h3>
+                                            <small className="opacity-75">Medium Priority</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-success text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">₱{replenishmentSchedule.summary?.total_reorder_value?.toLocaleString() || 0}</h3>
+                                            <small className="opacity-75">Total Reorder Value</small>
+                                </div>
+                                            </div>
+                                                </div>
+                                                </div>
+
+                            {/* Replenishment Table */}
                             <div className="overflow-x-auto">
                                 <table className="min-w-full table-auto">
                                     <thead>
                                         <tr className="bg-gray-50">
                                             <th className="px-4 py-2 text-left">Item</th>
+                                            <th className="px-4 py-2 text-left">SKU</th>
                                             <th className="px-4 py-2 text-left">Current Stock</th>
                                             <th className="px-4 py-2 text-left">Reorder Point</th>
                                             <th className="px-4 py-2 text-left">Recommended Qty</th>
                                             <th className="px-4 py-2 text-left">Priority</th>
-                                            <th className="px-4 py-2 text-left">Actions</th>
+                                            <th className="px-4 py-2 text-left">Reorder Date</th>
+                                            <th className="px-4 py-2 text-left">Supplier</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {replenishmentSchedule.schedule?.map((item, index) => (
+                                        {filterMaterials(replenishmentSchedule.schedule || []).map((item, index) => (
                                             <tr key={index} className="border-b">
                                                 <td className="px-4 py-2">{item.name}</td>
+                                                <td className="px-4 py-2">{item.sku}</td>
                                                 <td className="px-4 py-2">{item.current_stock}</td>
                                                 <td className="px-4 py-2">{item.reorder_point}</td>
-                                                <td className="px-4 py-2">{item.recommended_qty}</td>
+                                                <td className="px-4 py-2">{item.recommended_order_qty}</td>
                                                 <td className="px-4 py-2">
                                                     <span className={`px-2 py-1 rounded text-xs ${
-                                                        item.priority === 'High' ? 'bg-red-100 text-red-800' :
-                                                        item.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-green-100 text-green-800'
+                                                        item.priority === 'urgent' ? 'bg-danger text-white' :
+                                                        item.priority === 'high' ? 'bg-warning text-white' :
+                                                        item.priority === 'medium' ? 'bg-info text-white' :
+                                                        'bg-success text-white'
                                                     }`}>
-                                                        {item.priority}
+                                                        {item.priority?.toUpperCase()}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    <button className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
-                                                        Order
-                                                    </button>
+                                                    <span className={`fw-bold ${
+                                                        item.needs_immediate_reorder ? 'text-danger' :
+                                                        item.days_until_reorder < 7 ? 'text-warning' :
+                                                        'text-success'
+                                                    }`}>
+                                                        {item.needs_immediate_reorder ? 'NOW' : item.estimated_reorder_date}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2">{item.supplier || 'N/A'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                            </div>
+                                            </div>
+                    )}
+                                        </div>
+            )}
+
+            {/* Forecasting Tab */}
+            {activeTab === 'forecast' && (
+                <div className="space-y-6">
+                    {forecastReport && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Material Usage Forecast</h3>
+                            
+                            {/* Summary Cards */}
+                            <div className="row mb-4">
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-primary text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{forecastReport.forecasts?.length || 0}</h3>
+                                            <small className="opacity-75">Items Forecasted</small>
+                                    </div>
+                                </div>
+                            </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-danger text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{forecastReport.summary?.items_will_need_reorder || 0}</h3>
+                                            <small className="opacity-75">Will Need Reorder</small>
+                        </div>
+                    </div>
+                </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-warning text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{forecastReport.summary?.items_critical || 0}</h3>
+                                            <small className="opacity-75">Critical Items</small>
+                                    </div>
+                                    </div>
+                                    </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-success text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{forecastReport.summary?.total_forecasted_usage || 0}</h3>
+                                            <small className="opacity-75">Total Forecasted Usage</small>
+                                    </div>
+                                    </div>
+                                    </div>
+                                </div>
+
+                                {/* Forecast Chart */}
+                            <div className="mb-4">
+                                <h6 className="fw-semibold mb-3">Top Items by Forecasted Usage</h6>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={forecastReport.forecasts?.slice(0, 10).map(item => ({
+                                        name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
+                                        current_stock: item.current_stock,
+                                        forecasted_usage: item['forecasted_usage_30_days'],
+                                        projected_stock: item.projected_stock
+                                    })) || []}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                            <YAxis />
+                                            <Tooltip />
+                                            <Legend />
+                                        <Bar dataKey="current_stock" fill="#3B82F6" name="Current Stock" />
+                                        <Bar dataKey="forecasted_usage" fill="#EF4444" name="Forecasted Usage" />
+                                        <Bar dataKey="projected_stock" fill="#10B981" name="Projected Stock" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                            {/* Forecast Table */}
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            <th className="px-4 py-2 text-left">Item</th>
+                                            <th className="px-4 py-2 text-left">SKU</th>
+                                            <th className="px-4 py-2 text-left">Current Stock</th>
+                                            <th className="px-4 py-2 text-left">Avg Daily Usage</th>
+                                            <th className="px-4 py-2 text-left">Forecasted Usage</th>
+                                            <th className="px-4 py-2 text-left">Projected Stock</th>
+                                            <th className="px-4 py-2 text-left">Days Until Stockout</th>
+                                            <th className="px-4 py-2 text-left">Action Needed</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filterMaterials(forecastReport.forecasts || []).map((item, index) => (
+                                            <tr key={index} className="border-b">
+                                                <td className="px-4 py-2">{item.name}</td>
+                                                <td className="px-4 py-2">{item.sku}</td>
+                                                <td className="px-4 py-2">{item.current_stock}</td>
+                                                <td className="px-4 py-2">{item.avg_daily_usage}</td>
+                                                <td className="px-4 py-2">{item['forecasted_usage_30_days']}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`fw-bold ${
+                                                        item.projected_stock < 0 ? 'text-danger' :
+                                                        item.projected_stock < item.reorder_point ? 'text-warning' :
+                                                        'text-success'
+                                                    }`}>
+                                                        {item.projected_stock}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`fw-bold ${
+                                                        item.days_until_stockout < 7 ? 'text-danger' :
+                                                        item.days_until_stockout < 14 ? 'text-warning' :
+                                                        'text-success'
+                                                    }`}>
+                                                        {item.days_until_stockout === 999 ? 'N/A' : `${item.days_until_stockout} days`}
+                                                </span>
+                                                </td>
+                                                <td className="px-4 py-2">
+                                                    {item.will_need_reorder ? (
+                                                        <span className="px-2 py-1 rounded text-xs bg-danger text-white">
+                                                            REORDER NEEDED
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-1 rounded text-xs bg-success text-white">
+                                                            OK
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                            </div>
+                                                </div>
+                    )}
+                                                </div>
+            )}
+
+            {/* Stock Status Tab */}
+            {activeTab === 'stock' && (
+                <div className="bg-white rounded-3 shadow-sm p-4">
+                    {inventoryReport && (
+                        <div>
+                            <div className="d-flex justify-content-between align-items-center mb-4">
+                                <h3 className="text-xl font-semibold text-dark mb-0">Current Stock Status</h3>
+                                <div className="d-flex gap-2">
+                                    <span className="badge bg-success">In Stock</span>
+                                    <span className="badge bg-warning">Low Stock</span>
+                                    <span className="badge bg-danger">Critical</span>
+                                                </div>
+                                                </div>
+                            <div className="table-responsive">
+                                <table className="table table-hover">
+                                    <thead className="table-light">
+                                        <tr>
+                                            <th className="fw-semibold text-dark">Item</th>
+                                            <th className="fw-semibold text-dark">SKU</th>
+                                            <th className="fw-semibold text-dark">Current Stock</th>
+                                            <th className="fw-semibold text-dark">Reorder Point</th>
+                                            <th className="fw-semibold text-dark">Status</th>
+                                            <th className="fw-semibold text-dark">Days Until Stockout</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filterMaterials(inventoryReport.items || []).map((item, index) => (
+                                            <tr key={index} className="border-bottom">
+                                                <td className="fw-medium text-dark">{item.name}</td>
+                                                <td className="text-muted">{item.sku}</td>
+                                                <td className="fw-semibold">{item.current_stock}</td>
+                                                <td className="text-muted">{item.reorder_point}</td>
+                                                <td>
+                                                    <span className={`badge ${
+                                                        item.stock_status === 'out_of_stock' ? 'bg-danger' :
+                                                        item.stock_status === 'critical' ? 'bg-danger' :
+                                                        item.stock_status === 'low' ? 'bg-warning' :
+                                                        'bg-success'
+                                                    }`}>
+                                                        {item.stock_status === 'out_of_stock' ? 'Out of Stock' :
+                                                         item.stock_status === 'critical' ? 'Critical' :
+                                                         item.stock_status === 'low' ? 'Low Stock' : 'In Stock'}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span className={`fw-bold ${
+                                                        item.days_until_stockout < 7 ? 'text-danger' :
+                                                        item.days_until_stockout < 14 ? 'text-warning' :
+                                                        'text-success'
+                                                    }`}>
+                                                        {item.days_until_stockout === 999 ? 'N/A' : `${item.days_until_stockout} days`}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                </div>
+                            </div>
+                    )}
+                            </div>
+                        )}
+
+            {/* Stock Turnover Tab */}
+            {activeTab === 'turnover' && (
+                <div className="space-y-6">
+                    {turnoverReport && (
+                    <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Stock Turnover Analysis</h3>
+                            
+                            {/* Summary Cards */}
+                            <div className="row mb-4">
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-success text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{turnoverReport.summary?.fast_moving || 0}</h3>
+                                            <small className="opacity-75">Fast Moving</small>
+                                        </div>
+                                </div>
+                            </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-warning text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{turnoverReport.summary?.medium_moving || 0}</h3>
+                                            <small className="opacity-75">Medium Moving</small>
+                    </div>
+                        </div>
+                </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-danger text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{turnoverReport.summary?.slow_moving || 0}</h3>
+                                            <small className="opacity-75">Slow Moving</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-info text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{turnoverReport.summary?.avg_turnover_rate || 0}</h3>
+                                            <small className="opacity-75">Avg Turnover Rate</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Turnover Chart */}
+                            <div className="mb-4">
+                                <h6 className="fw-semibold mb-3">Turnover Rate by Item</h6>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={turnoverReport.items?.slice(0, 15).map(item => ({
+                                        name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
+                                        turnover_rate: item.turnover_rate,
+                                        turnover_days: item.turnover_days
+                                    })) || []}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                        <Bar dataKey="turnover_rate" fill="#3B82F6" name="Turnover Rate" />
+                                    </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                            {/* Turnover Table */}
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto">
+                                    <thead>
+                                        <tr className="bg-gray-50">
+                                            <th className="px-4 py-2 text-left">Item</th>
+                                            <th className="px-4 py-2 text-left">Total Usage</th>
+                                            <th className="px-4 py-2 text-left">Avg Stock Level</th>
+                                            <th className="px-4 py-2 text-left">Turnover Rate</th>
+                                            <th className="px-4 py-2 text-left">Turnover Days</th>
+                                            <th className="px-4 py-2 text-left">Category</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filterMaterials(turnoverReport.items || []).map((item, index) => (
+                                            <tr key={index} className="border-b">
+                                                <td className="px-4 py-2">{item.name}</td>
+                                                <td className="px-4 py-2">{item.total_usage}</td>
+                                                <td className="px-4 py-2">{item.avg_stock_level}</td>
+                                                <td className="px-4 py-2">{item.turnover_rate}</td>
+                                                <td className="px-4 py-2">{item.turnover_days}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`px-2 py-1 rounded text-xs ${
+                                                        item.turnover_category === 'fast' ? 'bg-success text-white' :
+                                                        item.turnover_category === 'medium' ? 'bg-warning text-white' :
+                                                        'bg-danger text-white'
+                                                    }`}>
+                                                        {item.turnover_category?.toUpperCase()}
+                                                    </span>
                                                 </td>
                                             </tr>
                                         ))}
@@ -872,85 +1009,132 @@ const InventoryReports = () => {
                 </div>
             )}
 
-            {/* Forecasting Tab */}
-            {activeTab === 'forecast' && (
-                <div className="space-y-6">
-                    {forecastReport && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Material Usage Forecast</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <LineChart data={forecastReport.forecast_data || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="historical" stroke="#3B82F6" name="Historical Usage" />
-                                    <Line type="monotone" dataKey="forecast" stroke="#EF4444" name="Forecast" />
-                                    <Line type="monotone" dataKey="confidence_upper" stroke="#10B981" name="Upper Bound" strokeDasharray="5 5" />
-                                    <Line type="monotone" dataKey="confidence_lower" stroke="#10B981" name="Lower Bound" strokeDasharray="5 5" />
-                                </LineChart>
-                            </ResponsiveContainer>
+            {/* ABC Analysis Tab */}
+            {activeTab === 'abc' && (
+                <div className="bg-white rounded-3 shadow-sm p-4">
+                    {abcAnalysis && (
+                        <div>
+                            <div className="d-flex justify-content-between align-items-center mb-4">
+                                <h3 className="text-xl font-semibold text-dark mb-0">ABC Analysis - Inventory Classification</h3>
+                                <div className="d-flex gap-2">
+                                    <span className="badge bg-danger">Class A</span>
+                                    <span className="badge bg-warning">Class B</span>
+                                    <span className="badge bg-info">Class C</span>
                         </div>
-                    )}
-
-                    {/* Forecast Accuracy */}
-                    <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-xl font-semibold text-gray-800 mb-4">Forecast Accuracy Metrics</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-gray-800">Mean Absolute Error</h4>
-                                <p className="text-2xl font-bold text-blue-600">{forecastReport?.accuracy?.mae?.toFixed(2) || 'N/A'}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-gray-800">Root Mean Square Error</h4>
-                                <p className="text-2xl font-bold text-blue-600">{forecastReport?.accuracy?.rmse?.toFixed(2) || 'N/A'}</p>
+                            
+                            {/* Summary Cards */}
+                            <div className="row mb-4">
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-danger text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{abcAnalysis.summary?.class_a_items || 0}</h3>
+                                            <small className="opacity-75">Class A Items</small>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-gray-800">Accuracy Percentage</h4>
-                                <p className="text-2xl font-bold text-green-600">{forecastReport?.accuracy?.accuracy_percentage?.toFixed(1) || 'N/A'}%</p>
                             </div>
+                            </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-warning text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{abcAnalysis.summary?.class_b_items || 0}</h3>
+                                            <small className="opacity-75">Class B Items</small>
                         </div>
                     </div>
                 </div>
-            )}
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-info text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">{abcAnalysis.summary?.class_c_items || 0}</h3>
+                                            <small className="opacity-75">Class C Items</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-lg-3 col-md-6 mb-3">
+                                    <div className="card bg-success text-white h-100">
+                                        <div className="card-body text-center">
+                                            <h3 className="mb-0 fw-bold">₱{abcAnalysis.summary?.total_value?.toLocaleString() || 0}</h3>
+                                            <small className="opacity-75">Total Value</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
-            {/* Stock Status Tab */}
-            {activeTab === 'stock' && (
-                <div className="space-y-6">
-                    {stockReport && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Current Stock Status</h3>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full table-auto">
-                                    <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="px-4 py-2 text-left">Item</th>
-                                            <th className="px-4 py-2 text-left">SKU</th>
-                                            <th className="px-4 py-2 text-left">Current Stock</th>
-                                            <th className="px-4 py-2 text-left">Reorder Point</th>
-                                            <th className="px-4 py-2 text-left">Status</th>
-                                            <th className="px-4 py-2 text-left">Value</th>
+                            {/* ABC Chart */}
+                            <div className="mb-4">
+                                <div className="card border-0 shadow-sm bg-white">
+                                    <div className="card-header bg-white border-0 p-4">
+                                        <h6 className="fw-semibold mb-0 text-dark">ABC Classification Distribution</h6>
+                                    </div>
+                                    <div className="card-body p-4">
+                                        <div className="bg-white rounded-3 p-3">
+                                            <ResponsiveContainer width="100%" height={350}>
+                                                <PieChart>
+                                                    <Pie
+                                                        data={[
+                                                            { name: 'Class A', value: abcAnalysis.summary?.class_a_items || 0, fill: '#dc3545' },
+                                                            { name: 'Class B', value: abcAnalysis.summary?.class_b_items || 0, fill: '#ffc107' },
+                                                            { name: 'Class C', value: abcAnalysis.summary?.class_c_items || 0, fill: '#17a2b8' }
+                                                        ]}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        labelLine={false}
+                                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                        outerRadius={100}
+                                                        fill="#8884d8"
+                                                        dataKey="value"
+                                                    >
+                                                        {[0, 1, 2].map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={['#dc3545', '#ffc107', '#17a2b8'][index]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip 
+                                                        contentStyle={{ 
+                                                            backgroundColor: 'white', 
+                                                            border: '1px solid #e0e0e0',
+                                                            borderRadius: '8px',
+                                                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                        }} 
+                                                    />
+                                                    <Legend />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* ABC Table */}
+                            <div className="table-responsive">
+                                <table className="table table-hover">
+                                    <thead className="table-light">
+                                        <tr>
+                                            <th className="fw-semibold text-dark">Item</th>
+                                            <th className="fw-semibold text-dark">Total Usage</th>
+                                            <th className="fw-semibold text-dark">Usage Value</th>
+                                            <th className="fw-semibold text-dark">% of Total</th>
+                                            <th className="fw-semibold text-dark">Cumulative %</th>
+                                            <th className="fw-semibold text-dark">Classification</th>
+                                            <th className="fw-semibold text-dark">Recommendation</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filterMaterials(stockReport.items || []).map((item, index) => (
-                                            <tr key={index} className="border-b">
-                                                <td className="px-4 py-2">{item.name}</td>
-                                                <td className="px-4 py-2">{item.sku}</td>
-                                                <td className="px-4 py-2">{item.quantity_on_hand}</td>
-                                                <td className="px-4 py-2">{item.reorder_point}</td>
-                                                <td className="px-4 py-2">
-                                                    <span className={`px-2 py-1 rounded text-xs ${
-                                                        item.quantity_on_hand <= 0 ? 'bg-red-100 text-red-800' :
-                                                        item.quantity_on_hand <= item.reorder_point ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-green-100 text-green-800'
+                                        {filterMaterials(abcAnalysis.items || []).map((item, index) => (
+                                            <tr key={index} className="border-bottom">
+                                                <td className="fw-medium text-dark">{item.name}</td>
+                                                <td className="fw-semibold">{item.total_usage}</td>
+                                                <td className="fw-semibold text-success">₱{item.usage_value?.toLocaleString()}</td>
+                                                <td className="fw-semibold">{item.percent_of_total}%</td>
+                                                <td className="fw-semibold">{item.cumulative_percent}%</td>
+                                                <td>
+                                                    <span className={`badge ${
+                                                        item.classification === 'A' ? 'bg-danger' :
+                                                        item.classification === 'B' ? 'bg-warning' :
+                                                        'bg-info'
                                                     }`}>
-                                                        {item.quantity_on_hand <= 0 ? 'Out of Stock' :
-                                                         item.quantity_on_hand <= item.reorder_point ? 'Low Stock' : 'In Stock'}
+                                                        Class {item.classification}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-2">₱{(item.quantity_on_hand * item.unit_cost).toLocaleString()}</td>
+                                                <td className="text-muted small">{item.recommendation}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -990,3 +1174,5 @@ const InventoryReports = () => {
 };
 
 export default InventoryReports;
+
+

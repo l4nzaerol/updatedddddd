@@ -11,7 +11,27 @@ const AdminDashboard = () => {
 
   const fetchAnalytics = async () => {
     const data = await getAnalytics({});
-    setAnalytics(data);
+    
+    // Transform the API response to match the expected dashboard structure
+    const transformedData = {
+      kpis: {
+        total: data.products?.alkansya?.totals?.total_productions || 0,
+        completed: data.products?.alkansya?.totals?.total_productions || 0,
+        in_progress: 0,
+        hold: 0
+      },
+      daily_output: data.products?.alkansya?.output_trend?.map(item => ({
+        date: item.period,
+        alkansya: item.output,
+        furniture: 0,
+        quantity: item.output
+      })) || [],
+      top_products: data.top_performing || [],
+      top_users: [],
+      top_staff: []
+    };
+    
+    setAnalytics(transformedData);
   };
 
   useEffect(() => {

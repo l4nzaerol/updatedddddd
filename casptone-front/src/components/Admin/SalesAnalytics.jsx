@@ -232,6 +232,7 @@ const SalesAnalytics = () => {
             </div>
 
             {/* Content based on active tab */}
+            <>
             {activeTab === 'overview' && (
                 <div>
                     {/* Sales Dashboard Overview */}
@@ -301,6 +302,7 @@ const SalesAnalytics = () => {
                             </div>
                         </div>
                     </div>
+                    )}
 
                     {/* Revenue Chart */}
                     <div className="card border-0 shadow-sm mb-4">
@@ -329,6 +331,7 @@ const SalesAnalytics = () => {
                             </ResponsiveContainer>
                         </div>
                     </div>
+                    )}
 
                     {/* Product Performance Overview */}
                     <div className="card border-0 shadow-sm">
@@ -391,8 +394,7 @@ const SalesAnalytics = () => {
                             </ResponsiveContainer>
                         </div>
                     )}
-                </div>
-            )}
+                
 
             {/* Revenue Analytics Tab */}
             {activeTab === 'revenue' && (
@@ -633,6 +635,7 @@ const SalesAnalytics = () => {
                     )}
                 </div>
             )}
+            </>
 
             {/* Export Buttons */}
             <div className="mt-6 flex gap-4">

@@ -3,65 +3,37 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Artisan;
 
 class ComprehensiveSeeder extends Seeder
 {
     /**
      * Run the database seeds.
-     * This seeder runs all necessary seeders in the correct order
+     * This seeder runs all the enhanced seeders in the correct order
      */
     public function run(): void
     {
         $this->command->info('🚀 Starting comprehensive database seeding...');
-        $this->command->info('This will create 3 months of realistic data for predictive analytics testing.');
 
-        // Step 1: Basic setup seeders
-        $this->command->info('📋 Step 1: Setting up basic data...');
-        $this->call([
-            \Database\Seeders\InventoryItemsSeeder::class,
-            \Database\Seeders\ProductSeeder::class,
-            \Database\Seeders\ProductMaterialSeeder::class,
-        ]);
+        // Step 1: Create enhanced inventory with proper stock levels
+        $this->command->info('📦 Step 1: Creating enhanced inventory system...');
+        $this->call(EnhancedInventorySeeder::class);
 
-        // Step 2: Create historical Alkansya daily output (3 months)
-        $this->command->info('📊 Step 2: Creating 3 months of Alkansya daily output data...');
-        $this->call(\Database\Seeders\AlkansyaDailyOutputSeeder::class);
+        // Step 2: Create Alkansya daily output with stock management
+        $this->command->info('🏭 Step 2: Creating Alkansya daily output with stock management...');
+        $this->call(AlkansyaDailyOutputSeeder::class);
 
-        // Step 3: Create manual orders (3 months)
-        $this->command->info('🛒 Step 3: Creating 3 months of manual orders...');
-        $this->call(\Database\Seeders\ManualOrdersSeeder::class);
+        // Step 3: Create additional data using factory (optional)
+        if ($this->command->confirm('Would you like to create additional data using factory?', false)) {
+            $this->command->info('🏭 Step 3: Creating additional data using factory...');
+            $this->call(AlkansyaFactorySeeder::class);
+        }
 
-        // Step 4: Create additional production data
-        $this->command->info('🏭 Step 4: Creating production analytics data...');
-        $this->createProductionAnalytics();
-
-        // Step 5: Create sales analytics data
-        $this->command->info('💰 Step 5: Creating sales analytics data...');
-        $this->createSalesAnalytics();
-
-        $this->command->info('✅ Comprehensive seeding completed!');
-        $this->command->info('📈 You now have 3 months of realistic data for predictive analytics testing.');
-        $this->command->info('🔍 Check the Reports section to see the predictive analytics in action.');
-    }
-
-    /**
-     * Create production analytics data
-     */
-    private function createProductionAnalytics()
-    {
-        // This would create production analytics records
-        // For now, we'll rely on the data from AlkansyaDailyOutputSeeder
-        $this->command->info('   - Production analytics data will be generated from daily output records');
-    }
-
-    /**
-     * Create sales analytics data
-     */
-    private function createSalesAnalytics()
-    {
-        // This would create sales analytics records
-        // For now, we'll rely on the data from ManualOrdersSeeder
-        $this->command->info('   - Sales analytics data will be generated from order records');
+        $this->command->info('✅ Comprehensive database seeding completed successfully!');
+        $this->command->info('📊 Summary:');
+        $this->command->info('   - Enhanced inventory system with realistic stock levels');
+        $this->command->info('   - 3 months of Alkansya daily output (300-500 per day)');
+        $this->command->info('   - Proper stock management to prevent negative inventory');
+        $this->command->info('   - Accurate BOM relationships based on Alkansya.txt');
+        $this->command->info('   - Realistic production patterns and material usage');
     }
 }

@@ -345,7 +345,7 @@ class InventoryController extends Controller
             
             // Get recent usage
             $recentUsage = InventoryUsage::where('date', '>=', Carbon::now()->subDays(7))
-                ->sum('quantity_used');
+                ->sum('qty_used');
 
             // Get items that need immediate attention
             $criticalItems = InventoryItem::whereRaw('quantity_on_hand <= safety_stock')

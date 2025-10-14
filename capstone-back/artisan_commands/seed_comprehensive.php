@@ -47,3 +47,4 @@ try {
     echo "Please check your database connection and try again.\n";
     exit(1);
 }
+

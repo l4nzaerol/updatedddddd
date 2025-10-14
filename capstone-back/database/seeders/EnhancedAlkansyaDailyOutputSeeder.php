@@ -7,17 +7,18 @@ use App\Models\AlkansyaDailyOutput;
 use App\Models\Product;
 use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
+use App\Models\InventoryUsage;
 use Carbon\Carbon;
 
-class AlkansyaDailyOutputSeeder extends Seeder
+class EnhancedAlkansyaDailyOutputSeeder extends Seeder
 {
     /**
      * Run the database seeds.
-     * Creates 3 months of historical Alkansya daily output data
+     * Creates 3 months of realistic Alkansya daily output data with proper stock management
      */
     public function run(): void
     {
-        $this->command->info('🌱 Seeding 3 months of Alkansya daily output data...');
+        $this->command->info('🌱 Seeding 3 months of enhanced Alkansya daily output data...');
 
         // Get Alkansya product
         $alkansyaProduct = Product::where('name', 'Alkansya')->first();
@@ -65,6 +66,11 @@ class AlkansyaDailyOutputSeeder extends Seeder
         }
 
         $this->command->info("✅ Created {$totalCreated} days of Alkansya daily output data");
+        $this->command->info("📊 Final stock levels:");
+        foreach ($stockLevels as $itemId => $stock) {
+            $item = InventoryItem::find($itemId);
+            $this->command->info("   - {$item->name}: {$stock} {$item->unit}");
+        }
     }
 
     /**
@@ -72,7 +78,7 @@ class AlkansyaDailyOutputSeeder extends Seeder
      */
     private function createDailyOutput($date, $bomMaterials, &$stockLevels)
     {
-        // Calculate realistic production quantity (300-500 range)
+        // Calculate realistic production quantity (300-500 per day)
         $baseProduction = $this->getBaseProduction($date);
         $variation = $this->getProductionVariation($date);
         $quantityProduced = max(300, min(500, $baseProduction + $variation));
@@ -89,7 +95,7 @@ class AlkansyaDailyOutputSeeder extends Seeder
             }
         }
 
-        // Calculate materials used (1:1 BOM ratio)
+        // Calculate materials used and update stock
         $materialsUsed = [];
         $totalCost = 0;
 
@@ -98,33 +104,38 @@ class AlkansyaDailyOutputSeeder extends Seeder
             $requiredQuantity = $bomMaterial->qty_per_unit * $quantityProduced;
             
             if ($requiredQuantity > 0) {
-                // Simulate material usage with some variation
-                $actualUsage = $requiredQuantity * (0.95 + (rand(0, 10) / 100)); // 95-105% of required
+                // Simulate material usage with some variation (95-105% of required)
+                $actualUsage = $requiredQuantity * (0.95 + (rand(0, 10) / 100));
                 
-                $materialsUsed[] = [
-                    'inventory_item_id' => $inventoryItem->id,
-                    'item_name' => $inventoryItem->name,
-                    'sku' => $inventoryItem->sku,
-                    'quantity_used' => round($actualUsage, 2),
-                    'unit_cost' => $inventoryItem->unit_cost,
-                    'total_cost' => round($inventoryItem->unit_cost * $actualUsage, 2),
-                ];
+                // Ensure we don't go below zero stock
+                $actualUsage = min($actualUsage, $stockLevels[$inventoryItem->id]);
+                
+                if ($actualUsage > 0) {
+                    $materialsUsed[] = [
+                        'inventory_item_id' => $inventoryItem->id,
+                        'item_name' => $inventoryItem->name,
+                        'sku' => $inventoryItem->sku,
+                        'quantity_used' => round($actualUsage, 2),
+                        'unit_cost' => $inventoryItem->unit_cost,
+                        'total_cost' => round($inventoryItem->unit_cost * $actualUsage, 2),
+                    ];
 
-                $totalCost += $inventoryItem->unit_cost * $actualUsage;
+                    $totalCost += $inventoryItem->unit_cost * $actualUsage;
 
-                // Update stock levels
-                $stockLevels[$inventoryItem->id] -= $actualUsage;
+                    // Update stock levels
+                    $stockLevels[$inventoryItem->id] -= $actualUsage;
 
-                // Update inventory item in database
-                $inventoryItem->quantity_on_hand = $stockLevels[$inventoryItem->id];
-                $inventoryItem->save();
+                    // Update inventory item in database
+                    $inventoryItem->quantity_on_hand = $stockLevels[$inventoryItem->id];
+                    $inventoryItem->save();
 
-                // Create inventory usage record
-                \App\Models\InventoryUsage::create([
-                    'inventory_item_id' => $inventoryItem->id,
-                    'qty_used' => $actualUsage,
-                    'date' => $date->format('Y-m-d'),
-                ]);
+                    // Create inventory usage record
+                    InventoryUsage::create([
+                        'inventory_item_id' => $inventoryItem->id,
+                        'qty_used' => $actualUsage,
+                        'date' => $date->format('Y-m-d'),
+                    ]);
+                }
             }
         }
 
@@ -146,6 +157,39 @@ class AlkansyaDailyOutputSeeder extends Seeder
         ]);
 
         return true;
+    }
+
+    /**
+     * Check if we have enough materials for production
+     */
+    private function checkMaterialAvailability($bomMaterials, $quantityProduced, $stockLevels)
+    {
+        foreach ($bomMaterials as $bomMaterial) {
+            $inventoryItem = $bomMaterial->inventoryItem;
+            $requiredQuantity = $bomMaterial->qty_per_unit * $quantityProduced;
+            
+            if ($stockLevels[$inventoryItem->id] < $requiredQuantity) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Calculate maximum production based on available materials
+     */
+    private function calculateMaxProduction($bomMaterials, $stockLevels)
+    {
+        $maxProduction = PHP_INT_MAX;
+        
+        foreach ($bomMaterials as $bomMaterial) {
+            if ($bomMaterial->qty_per_unit > 0) {
+                $availableForThisMaterial = floor($stockLevels[$bomMaterial->inventoryItem->id] / $bomMaterial->qty_per_unit);
+                $maxProduction = min($maxProduction, $availableForThisMaterial);
+            }
+        }
+        
+        return max(0, $maxProduction);
     }
 
     /**
@@ -196,16 +240,22 @@ class AlkansyaDailyOutputSeeder extends Seeder
     {
         $notes = [];
         
-        if ($efficiency >= 100) {
-            $notes[] = "Excellent production day";
+        if ($efficiency >= 105) {
+            $notes[] = "Excellent production day - above target";
+        } elseif ($efficiency >= 100) {
+            $notes[] = "Good production efficiency - on target";
         } elseif ($efficiency >= 95) {
-            $notes[] = "Good production efficiency";
+            $notes[] = "Slightly below target efficiency";
         } else {
-            $notes[] = "Below target efficiency";
+            $notes[] = "Below target efficiency - needs improvement";
         }
 
-        if ($quantity >= 35) {
+        if ($quantity >= 450) {
             $notes[] = "High output achieved";
+        } elseif ($quantity >= 400) {
+            $notes[] = "Good production output";
+        } elseif ($quantity < 350) {
+            $notes[] = "Lower than expected output";
         }
 
         // Add random notes
@@ -218,6 +268,8 @@ class AlkansyaDailyOutputSeeder extends Seeder
             "Minor delays in morning setup",
             "Extra quality control time",
             "New team member training",
+            "Equipment maintenance completed",
+            "Material quality excellent",
         ];
 
         if (rand(1, 3) === 1) {
@@ -240,42 +292,10 @@ class AlkansyaDailyOutputSeeder extends Seeder
             'Maria Garcia',
             'Production Supervisor',
             'Quality Control Team',
+            'Senior Production Lead',
+            'Production Manager',
         ];
 
         return $producers[array_rand($producers)];
     }
-
-    /**
-     * Check if we have enough materials for production
-     */
-    private function checkMaterialAvailability($bomMaterials, $quantityProduced, $stockLevels)
-    {
-        foreach ($bomMaterials as $bomMaterial) {
-            $inventoryItem = $bomMaterial->inventoryItem;
-            $requiredQuantity = $bomMaterial->qty_per_unit * $quantityProduced;
-            
-            if ($stockLevels[$inventoryItem->id] < $requiredQuantity) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Calculate maximum production based on available materials
-     */
-    private function calculateMaxProduction($bomMaterials, $stockLevels)
-    {
-        $maxProduction = PHP_INT_MAX;
-        
-        foreach ($bomMaterials as $bomMaterial) {
-            if ($bomMaterial->qty_per_unit > 0) {
-                $availableForThisMaterial = floor($stockLevels[$bomMaterial->inventoryItem->id] / $bomMaterial->qty_per_unit);
-                $maxProduction = min($maxProduction, $availableForThisMaterial);
-            }
-        }
-        
-        return max(0, $maxProduction);
-    }
 }
-
