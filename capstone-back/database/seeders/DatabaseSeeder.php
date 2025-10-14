@@ -13,7 +13,7 @@ class DatabaseSeeder extends Seeder
             ProductsTableSeeder::class, // Creates products with initial prices
             ComprehensiveInventorySeeder::class, // Creates comprehensive inventory system with BOM
             UpdateProductPricesFromBomSeeder::class, // Updates products with BOM-calculated prices
-            
+            AlkansyaDailyOutputSeeder::class, // Creates daily output records for Alkansya
         ]);
     }
 }

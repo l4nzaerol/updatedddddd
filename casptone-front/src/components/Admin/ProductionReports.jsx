@@ -1,939 +1,746 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import AppLayout from '../Header';
-import DailyOutputChart from './Analytics/DailyOutputChart';
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Area,
-  AreaChart,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar
-} from 'recharts';
-import {
-  getEfficiencyReport,
-  getCapacityUtilization,
-  getPerformanceMetrics,
-  getDashboardData,
-  exportProductionCsv
-} from '../../api/productionApi';
-import { getAdminAnalytics } from '../../api/inventoryApi';
-import './ProductionReports.css';
+import React, { useEffect, useState, useCallback } from "react";
+import api from "../../api/client";
+import { 
+  BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
+} from "recharts";
+import { clearRequestCache } from "../../utils/apiRetry";
 
 const ProductionReports = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Report data states
-  const [efficiencyReport, setEfficiencyReport] = useState(null);
-  const [capacityReport, setCapacityReport] = useState(null);
-  const [performanceReport, setPerformanceReport] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [analyticsData, setAnalyticsData] = useState(null);
-  
-  // Filter states
-  const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Last 30 days
-    endDate: new Date().toISOString().split('T')[0]
-  });
-  const [reportType, setReportType] = useState('comprehensive');
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
+    const [error, setError] = useState("");
+    const [activeTab, setActiveTab] = useState("overview");
+    const [windowDays, setWindowDays] = useState(30);
+    // const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [refreshKey, setRefreshKey] = useState(0);
+    
+    // Production report data states
+    // const [productionAnalytics, setProductionAnalytics] = useState(null);
+    // const [productionPerformance, setProductionPerformance] = useState(null);
+    const [productionOutput, setProductionOutput] = useState(null);
+    const [resourceUtilization, setResourceUtilization] = useState(null);
+    const [advancedPerformance, setAdvancedPerformance] = useState(null);
+    const [dailyOutputData, setDailyOutputData] = useState(null);
+    const [stageBreakdown, setStageBreakdown] = useState(null);
+    const [efficiencyMetrics, setEfficiencyMetrics] = useState(null);
 
-  useEffect(() => {
-    loadAllReports();
-  }, [dateRange, selectedPeriod]);
+    // Fetch all production reports
+    const fetchAllReports = useCallback(async () => {
+        setLoading(true);
+        setError("");
+        
+        try {
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - windowDays);
+            const endDate = new Date();
+            
+            const dateRange = {
+                start_date: startDate.toISOString().split('T')[0],
+                end_date: endDate.toISOString().split('T')[0]
+            };
 
-  const loadAllReports = async () => {
-    try {
-      setLoading(true);
-      setError('');
+            console.log('📊 Fetching production reports with date range:', dateRange);
 
-      const [efficiency, capacity, performance, dashboard, analytics] = await Promise.all([
-        getEfficiencyReport(dateRange.startDate, dateRange.endDate),
-        getCapacityUtilization(30),
-        getPerformanceMetrics(selectedPeriod),
-        getDashboardData({ date_range: 30 }),
-        getAdminAnalytics() // Load analytics data for daily output
-      ]);
+            // Fetch all production-related data
+            const [
+                // analyticsResponse,
+                // performanceResponse,
+                outputResponse,
+                utilizationResponse,
+                advancedResponse,
+                dailyOutputResponse,
+                stageResponse,
+                efficiencyResponse
+            ] = await Promise.all([
+                api.get('/production/analytics', { params: dateRange }),
+                api.get('/production/performance', { params: dateRange }),
+                api.get('/production/output', { params: dateRange }),
+                api.get('/production/resource-utilization', { params: dateRange }),
+                api.get('/production/advanced-performance', { params: dateRange }),
+                api.get('/production/daily-output', { params: dateRange }),
+                api.get('/production/stage-breakdown', { params: dateRange }),
+                api.get('/production/efficiency-metrics', { params: dateRange })
+            ]);
 
-      setEfficiencyReport(efficiency);
-      setCapacityReport(capacity);
-      setPerformanceReport(performance);
-      setDashboardData(dashboard);
-      setAnalyticsData(analytics);
+            // setProductionAnalytics(analyticsResponse.data);
+            // setProductionPerformance(performanceResponse.data);
+            setProductionOutput(outputResponse.data);
+            setResourceUtilization(utilizationResponse.data);
+            setAdvancedPerformance(advancedResponse.data);
+            setDailyOutputData(dailyOutputResponse.data);
+            setStageBreakdown(stageResponse.data);
+            setEfficiencyMetrics(efficiencyResponse.data);
+
+            console.log('📊 Production reports fetched successfully');
     } catch (err) {
-      console.error('Failed to load reports:', err);
-      setError('Failed to load report data');
+            console.error('❌ Error fetching production reports:', err);
+            setError(err.response?.data?.message || 'Failed to fetch production reports');
     } finally {
       setLoading(false);
     }
-  };
+    }, [windowDays]);
 
-  const generatePDF = () => {
-    // Create a comprehensive report content
-    const reportContent = generateReportContent();
-    
-    // Create a new window with the report content
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Production Report - ${dateRange.startDate} to ${dateRange.endDate}</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 20px; 
-              line-height: 1.6;
-              color: #333;
-            }
-            .header { 
-              text-align: center; 
-              border-bottom: 3px solid #007bff; 
-              padding-bottom: 20px; 
-              margin-bottom: 30px;
-            }
-            .company-name {
-              font-size: 28px;
-              font-weight: bold;
-              color: #007bff;
-              margin-bottom: 10px;
-            }
-            .report-title {
-              font-size: 20px;
-              margin-bottom: 5px;
-            }
-            .report-period {
-              font-size: 14px;
-              color: #666;
-            }
-            .section { 
-              margin-bottom: 30px; 
-              break-inside: avoid;
-            }
-            .section-title { 
-              font-size: 18px; 
-              font-weight: bold; 
-              color: #007bff; 
-              border-bottom: 2px solid #eee; 
-              padding-bottom: 10px; 
-              margin-bottom: 15px;
-            }
-            .kpi-grid {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-              gap: 20px;
-              margin-bottom: 20px;
-            }
-            .kpi-card {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 8px;
-              text-align: center;
-              border-left: 4px solid #007bff;
-            }
-            .kpi-value {
-              font-size: 24px;
-              font-weight: bold;
-              color: #007bff;
-              margin-bottom: 5px;
-            }
-            .kpi-label {
-              font-size: 12px;
-              color: #666;
-              text-transform: uppercase;
-            }
-            .table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 15px;
-            }
-            .table th, .table td {
-              border: 1px solid #ddd;
-              padding: 8px;
-              text-align: left;
-            }
-            .table th {
-              background-color: #f8f9fa;
-              font-weight: bold;
-            }
-            .efficiency-high { color: #28a745; font-weight: bold; }
-            .efficiency-medium { color: #ffc107; font-weight: bold; }
-            .efficiency-low { color: #dc3545; font-weight: bold; }
-            .footer {
-              margin-top: 40px;
-              text-align: center;
-              font-size: 12px;
-              color: #666;
-              border-top: 1px solid #eee;
-              padding-top: 20px;
-            }
-            @media print {
-              body { margin: 0; }
-              .section { page-break-inside: avoid; }
-            }
-          </style>
-        </head>
-        <body>
-          ${reportContent}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-  };
+    useEffect(() => {
+        fetchAllReports();
+    }, [fetchAllReports, refreshKey]);
 
-  const generateReportContent = () => {
-    const currentDate = new Date().toLocaleDateString();
-    
-    return `
-      <div class="header">
-        <div class="company-name">Unick Enterprises Inc.</div>
-        <div class="report-title">Production Tracking System - Comprehensive Report</div>
-        <div class="report-period">Period: ${dateRange.startDate} to ${dateRange.endDate}</div>
-        <div class="report-period">Generated on: ${currentDate}</div>
-      </div>
+    const handleGlobalRefresh = () => {
+        clearRequestCache();
+        setRefreshKey(prev => prev + 1);
+    };
 
-      ${generateKPISection()}
-      ${generateEfficiencySection()}
-      ${generateCapacitySection()}
-      ${generateWorkloadSection()}
-      ${generateRecommendationsSection()}
+    // Export functions
+    const exportReport = (reportName, data) => {
+        const csv = convertToCSV(data);
+        downloadCSV(csv, `${reportName}_${new Date().toISOString().split('T')[0]}.csv`);
+    };
 
-      <div class="footer">
-        <p>This report was generated automatically by the Production Tracking System</p>
-        <p>For questions or clarifications, please contact the Production Management Team</p>
-      </div>
-    `;
-  };
+    const convertToCSV = (data) => {
+        if (!data || data.length === 0) return '';
+        const headers = Object.keys(data[0]).join(',');
+        const rows = data.map(row => Object.values(row).join(','));
+        return [headers, ...rows].join('\n');
+    };
 
-  const generateKPISection = () => {
-    if (!performanceReport) return '';
-    
-    const kpis = performanceReport.kpis || {};
-    
-    return `
-      <div class="section">
-        <div class="section-title">Key Performance Indicators</div>
-        <div class="kpi-grid">
-          <div class="kpi-card">
-            <div class="kpi-value">${kpis.throughput || 0}</div>
-            <div class="kpi-label">Total Throughput</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${kpis.average_lead_time_days || 0} days</div>
-            <div class="kpi-label">Average Lead Time</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${kpis.quality_rate_percentage || 0}%</div>
-            <div class="kpi-label">Quality Rate</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${kpis.on_time_delivery_percentage || 0}%</div>
-            <div class="kpi-label">On-Time Delivery</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${kpis.resource_utilization_percentage || 0}%</div>
-            <div class="kpi-label">Resource Utilization</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${performanceReport.production_summary?.completion_rate || 0}%</div>
-            <div class="kpi-label">Completion Rate</div>
-          </div>
-        </div>
-      </div>
-    `;
-  };
+    const downloadCSV = (csv, filename) => {
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    };
 
-  const generateEfficiencySection = () => {
-    if (!efficiencyReport) return '';
-    
-    let tableRows = '';
-    if (efficiencyReport.process_efficiency) {
-      tableRows = efficiencyReport.process_efficiency.map(process => {
-        const efficiencyClass = process.efficiency_percentage >= 80 ? 'efficiency-high' : 
-                              process.efficiency_percentage >= 60 ? 'efficiency-medium' : 'efficiency-low';
-        return `
-          <tr>
-            <td>${process.process_name}</td>
-            <td>${process.avg_actual_duration || 0} min</td>
-            <td>${process.avg_estimated_duration || 0} min</td>
-            <td class="${efficiencyClass}">${process.efficiency_percentage || 0}%</td>
-            <td>${process.total_completed || 0}</td>
-            <td>${process.delayed_count || 0}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-    
-    return `
-      <div class="section">
-        <div class="section-title">Process Efficiency Analysis</div>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Process</th>
-              <th>Avg Actual Duration</th>
-              <th>Avg Estimated Duration</th>
-              <th>Efficiency %</th>
-              <th>Completed</th>
-              <th>Delayed</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows}
-          </tbody>
-        </table>
-      </div>
-    `;
-  };
+    const handleProductionExport = async (exportType, format) => {
+        try {
+            setLoading(true);
+            if (format === 'csv') {
+                switch (exportType) {
+                    case 'output':
+                        exportReport('production_output', productionOutput?.output_data || []);
+                        break;
+                    case 'stage_breakdown':
+                        exportReport('stage_breakdown', stageBreakdown?.stages || []);
+                        break;
+                    case 'daily_output':
+                        exportReport('daily_output', dailyOutputData?.daily_data || []);
+                        break;
+                    default:
+                        console.log('Unknown export type');
+                }
+            } else if (format === 'pdf') {
+                await exportProductionDataToPDF(exportType);
+            }
+        } catch (error) {
+            console.error('Export error:', error);
+            setError('Failed to export data');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  const generateCapacitySection = () => {
-    if (!capacityReport) return '';
-    
-    const summary = capacityReport.summary || {};
-    
-    return `
-      <div class="section">
-        <div class="section-title">Capacity Utilization Summary</div>
-        <div class="kpi-grid">
-          <div class="kpi-card">
-            <div class="kpi-value">${summary.average_utilization || 0}%</div>
-            <div class="kpi-label">Average Utilization</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${summary.peak_utilization || 0}%</div>
-            <div class="kpi-label">Peak Utilization</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${summary.lowest_utilization || 0}%</div>
-            <div class="kpi-label">Lowest Utilization</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-value">${summary.daily_capacity_hours || 8} hrs</div>
-            <div class="kpi-label">Daily Capacity</div>
-          </div>
-        </div>
-      </div>
-    `;
-  };
-
-  const generateWorkloadSection = () => {
-    if (!dashboardData?.workload_by_stage) return '';
-    
-    let tableRows = '';
-    if (dashboardData.workload_by_stage) {
-      tableRows = dashboardData.workload_by_stage.map(stage => `
-        <tr>
-          <td>${stage.stage}</td>
-          <td>${stage.count}</td>
-          <td>${stage.total_quantity}</td>
-          <td>${Math.round(stage.avg_days_in_stage || 0)} days</td>
-        </tr>
-      `).join('');
-    }
-    
-    return `
-      <div class="section">
-        <div class="section-title">Current Workload by Stage</div>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Stage</th>
-              <th>Active Orders</th>
-              <th>Total Units</th>
-              <th>Avg Time in Stage</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows}
-          </tbody>
-        </table>
-      </div>
-    `;
-  };
-
-  const generateRecommendationsSection = () => {
-    const recommendations = generateRecommendations();
-    
-    return `
-      <div class="section">
-        <div class="section-title">Recommendations & Action Items</div>
-        <ul>
-          ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
-        </ul>
-      </div>
-    `;
-  };
-
-  const generateRecommendations = () => {
-    const recommendations = [];
-    
-    // Efficiency-based recommendations
-    if (efficiencyReport?.process_efficiency) {
-      const lowEfficiencyProcesses = efficiencyReport.process_efficiency
-        .filter(p => (p.efficiency_percentage || 0) < 70);
-      
-      if (lowEfficiencyProcesses.length > 0) {
-        recommendations.push(
-          `Improve efficiency in ${lowEfficiencyProcesses.map(p => p.process_name).join(', ')} processes - currently below 70% efficiency`
-        );
-      }
-    }
-    
-    // Capacity-based recommendations
-    if (capacityReport?.summary) {
-      const avgUtilization = capacityReport.summary.average_utilization || 0;
-      if (avgUtilization < 60) {
-        recommendations.push('Consider increasing production volume or reallocating resources - capacity utilization is below 60%');
-      } else if (avgUtilization > 90) {
-        recommendations.push('High capacity utilization detected - consider expanding capacity or optimizing workflows');
-      }
-    }
-    
-    // Performance-based recommendations
-    if (performanceReport?.kpis) {
-      const onTimeDelivery = performanceReport.kpis.on_time_delivery_percentage || 0;
-      if (onTimeDelivery < 85) {
-        recommendations.push('Focus on improving on-time delivery - currently below industry standard of 85%');
-      }
-      
-      const qualityRate = performanceReport.kpis.quality_rate_percentage || 0;
-      if (qualityRate < 95) {
-        recommendations.push('Implement additional quality control measures - quality rate should be above 95%');
-      }
-    }
-    
-    // Workload-based recommendations
-    if (dashboardData?.workload_by_stage) {
-      const bottleneckStage = dashboardData.workload_by_stage
-        .sort((a, b) => (b.avg_days_in_stage || 0) - (a.avg_days_in_stage || 0))[0];
-      
-      if (bottleneckStage && (bottleneckStage.avg_days_in_stage || 0) > 3) {
-        recommendations.push(
-          `Address bottleneck in ${bottleneckStage.stage} stage - average time exceeds 3 days`
-        );
-      }
-    }
-    
-    if (recommendations.length === 0) {
-      recommendations.push('Production metrics are within acceptable ranges - continue current operations');
-      recommendations.push('Monitor trends closely and maintain quality standards');
-      recommendations.push('Consider implementing predictive maintenance to prevent future issues');
-    }
-    
-    return recommendations;
-  };
-
-  const exportToCSV = () => {
-    exportProductionCsv({
-      start_date: dateRange.startDate,
-      end_date: dateRange.endDate,
-      type: 'comprehensive'
-    });
-  };
-
-  const getEfficiencyTrendData = () => {
-    if (!efficiencyReport?.process_efficiency) return [];
-    
-    return efficiencyReport.process_efficiency.map(process => ({
-      name: process.process_name.replace(/\s+/g, '\n'),
-      efficiency: process.efficiency_percentage || 0,
-      completed: process.total_completed || 0,
-      delayed: process.delayed_count || 0
-    }));
-  };
-
-  const getCapacityTrendData = () => {
-    if (!capacityReport?.daily_utilization) return [];
-    
-    return capacityReport.daily_utilization.slice(-7).map(day => ({
-      date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      utilization: day.utilization_percentage || 0,
-      productions: day.productions_count || 0
-    }));
-  };
-
-  const getWorkloadData = () => {
-    if (!dashboardData?.workload_by_stage) return [];
-    
-    return dashboardData.workload_by_stage.map((stage, index) => ({
-      stage: stage.stage.replace(/\s+/g, '\n'),
-      count: stage.count || 0,
-      quantity: stage.total_quantity || 0,
-      avgDays: stage.avg_days_in_stage || 0,
-      color: ['#e74c3c', '#f39c12', '#3498db', '#9b59b6', '#2ecc71', '#1abc9c'][index % 6]
-    }));
+    const exportProductionDataToPDF = async (exportType) => {
+        // PDF export implementation would go here
+        console.log(`Exporting ${exportType} to PDF`);
   };
 
   if (loading) {
     return (
-      <AppLayout>
-        <div className="d-flex justify-content-center align-items-center" style={{ height: '60vh' }}>
-          <div className="text-center">
-            <div className="spinner-border text-primary mb-3" style={{ width: '3rem', height: '3rem' }}>
-              <span className="visually-hidden">Loading...</span>
+            <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
             </div>
-            <h5>Generating Production Reports...</h5>
-          </div>
-        </div>
-      </AppLayout>
     );
   }
 
+    if (error) {
   return (
-    <AppLayout>
-      <div className="production-reports">
-        {/* Header */}
-        <div className="reports-header">
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <div>
-              <button className="btn btn-outline-secondary me-3" onClick={() => navigate('/admin/production')}>
-                ← Back to Production
-              </button>
-              <h1 className="display-6 mb-0">Production Reports & Analytics</h1>
-              <p className="text-muted mb-0">Comprehensive production performance analysis</p>
-            </div>
-            <div className="d-flex gap-2">
-              <button className="btn btn-outline-success" onClick={exportToCSV}>
-                <i className="fas fa-file-csv me-1"></i>
-                Export CSV
-              </button>
-              <button className="btn btn-primary" onClick={generatePDF}>
-                <i className="fas fa-file-pdf me-1"></i>
-                Generate PDF Report
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                <p>Error: {error}</p>
+                <button 
+                    onClick={handleGlobalRefresh}
+                    className="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                >
+                    Retry
               </button>
             </div>
-          </div>
+        );
+    }
 
-          {/* Error Alert */}
-          {error && (
-            <div className="alert alert-danger alert-dismissible fade show">
-              {error}
-              <button type="button" className="btn-close" onClick={() => setError('')}></button>
+    return (
+        <div>
+            {/* Header Controls */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h4 className="mb-1" style={{ color: '#2c3e50', fontWeight: '600' }}>
+                        Production Reports & Analytics
+                    </h4>
+                    <p className="text-muted mb-0">Advanced performance metrics and production insights</p>
+                </div>
+                <div className="d-flex gap-2">
+                    <select 
+                        value={windowDays} 
+                        onChange={(e) => setWindowDays(Number(e.target.value))}
+                        className="form-select form-select-sm"
+                        style={{ width: 'auto' }}
+                    >
+                        <option value={7}>Last 7 days</option>
+                        <option value={30}>Last 30 days</option>
+                        <option value={90}>Last 90 days</option>
+                        <option value={365}>Last year</option>
+                    </select>
+                    <button 
+                        onClick={handleGlobalRefresh}
+                        className="btn btn-primary btn-sm"
+                    >
+                        <i className="fas fa-sync me-1"></i>
+                        Refresh
+                    </button>
+                </div>
             </div>
-          )}
 
-          {/* Filters */}
-          <div className="card mb-4">
-            <div className="card-body">
-              <div className="row g-3">
-                <div className="col-md-3">
-                  <label className="form-label">Start Date</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={dateRange.startDate}
-                    onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                  />
+            {/* Navigation Tabs */}
+            <div className="mb-4">
+                <ul className="nav nav-pills nav-fill" role="tablist">
+                    {[
+                        { id: 'overview', name: 'Overview', icon: '📊' },
+                        { id: 'output', name: 'Production Output', icon: '🏭' },
+                        { id: 'stages', name: 'Stage Breakdown', icon: '⚙️' },
+                        { id: 'efficiency', name: 'Efficiency Metrics', icon: '📈' },
+                        { id: 'utilization', name: 'Resource Utilization', icon: '🔧' },
+                        { id: 'analytics', name: 'Advanced Analytics', icon: '🧠' }
+                    ].map(tab => (
+                        <li className="nav-item" key={tab.id}>
+                            <button
+                                className={`nav-link ${activeTab === tab.id ? 'active' : ''}`}
+                                onClick={() => setActiveTab(tab.id)}
+                                style={{
+                                    border: 'none',
+                                    backgroundColor: activeTab === tab.id ? '#007bff' : 'transparent',
+                                    color: activeTab === tab.id ? 'white' : '#6c757d',
+                                    fontWeight: activeTab === tab.id ? '600' : '400'
+                                }}
+                            >
+                                <span className="me-2">{tab.icon}</span>
+                                {tab.name}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+
+            {/* Content based on active tab */}
+            {activeTab === 'overview' && (
+                <div>
+                    {/* Production Overview Dashboard */}
+                    <div className="row mb-4">
+                        <div className="col-lg-3 col-md-6 mb-3">
+                            <div className="card border-0 shadow-sm h-100">
+                                <div className="card-body text-center">
+                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                                        <div className="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
+                                            <i className="fas fa-industry text-primary fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <h3 className="mb-0 text-primary fw-bold">2,850</h3>
+                                            <small className="text-muted">Total Output</small>
+                                        </div>
+                                    </div>
+                                    <p className="text-muted small mb-0">units produced</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6 mb-3">
+                            <div className="card border-0 shadow-sm h-100">
+                                <div className="card-body text-center">
+                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                                        <div className="bg-success bg-opacity-10 rounded-circle p-3 me-3">
+                                            <i className="fas fa-chart-line text-success fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <h3 className="mb-0 text-success fw-bold">94.2%</h3>
+                                            <small className="text-muted">Avg Efficiency</small>
+                                        </div>
+                                    </div>
+                                    <p className="text-muted small mb-0">overall efficiency</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6 mb-3">
+                            <div className="card border-0 shadow-sm h-100">
+                                <div className="card-body text-center">
+                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                                        <div className="bg-info bg-opacity-10 rounded-circle p-3 me-3">
+                                            <i className="fas fa-cogs text-info fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <h3 className="mb-0 text-info fw-bold">8</h3>
+                                            <small className="text-muted">Active Productions</small>
+                                        </div>
+                                    </div>
+                                    <p className="text-muted small mb-0">in progress</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6 mb-3">
+                            <div className="card border-0 shadow-sm h-100">
+                                <div className="card-body text-center">
+                                    <div className="d-flex align-items-center justify-content-center mb-2">
+                                        <div className="bg-warning bg-opacity-10 rounded-circle p-3 me-3">
+                                            <i className="fas fa-check-circle text-warning fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <h3 className="mb-0 text-warning fw-bold">45</h3>
+                                            <small className="text-muted">Completed Today</small>
+                                        </div>
+                                    </div>
+                                    <p className="text-muted small mb-0">units completed</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Production Output Chart */}
+                    <div className="card border-0 shadow-sm mb-4">
+                        <div className="card-header bg-white border-0">
+                            <h5 className="mb-0 fw-semibold">Daily Production Output</h5>
+                        </div>
+                        <div className="card-body">
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={[
+                                    { date: '2024-01-01', target: 30, actual: 28 },
+                                    { date: '2024-01-02', target: 30, actual: 32 },
+                                    { date: '2024-01-03', target: 30, actual: 29 },
+                                    { date: '2024-01-04', target: 30, actual: 31 },
+                                    { date: '2024-01-05', target: 30, actual: 27 },
+                                    { date: '2024-01-06', target: 30, actual: 33 },
+                                    { date: '2024-01-07', target: 30, actual: 30 }
+                                ]}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="date" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="target" stroke="#3B82F6" name="Target" />
+                                    <Line type="monotone" dataKey="actual" stroke="#10B981" name="Actual" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Product Performance */}
+                    <div className="card border-0 shadow-sm">
+                        <div className="card-header bg-white border-0">
+                            <h5 className="mb-0 fw-semibold">Product Performance</h5>
+                        </div>
+                        <div className="card-body">
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={[
+                                    { product: 'Alkansya', output: 2850, efficiency: 94.2 },
+                                    { product: 'Dining Table', output: 45, efficiency: 88.5 },
+                                    { product: 'Wooden Chair', output: 120, efficiency: 91.3 }
+                                ]}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="product" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Bar dataKey="output" fill="#3B82F6" name="Output" />
+                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
                 </div>
-                <div className="col-md-3">
-                  <label className="form-label">End Date</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={dateRange.endDate}
-                    onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                  />
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Period</label>
-                  <select
-                    className="form-select"
-                    value={selectedPeriod}
-                    onChange={(e) => setSelectedPeriod(e.target.value)}
-                  >
-                    <option value="week">Week</option>
-                    <option value="month">Month</option>
-                    <option value="quarter">Quarter</option>
-                  </select>
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Report Type</label>
-                  <select
-                    className="form-select"
-                    value={reportType}
-                    onChange={(e) => setReportType(e.target.value)}
-                  >
-                    <option value="comprehensive">Comprehensive</option>
-                    <option value="efficiency">Efficiency Only</option>
-                    <option value="capacity">Capacity Only</option>
-                    <option value="performance">Performance Only</option>
-                  </select>
-                </div>
-                <div className="col-md-2 d-flex align-items-end">
-                  <button
-                    className="btn btn-outline-primary w-100"
-                    onClick={loadAllReports}
-                  >
-                    <i className="fas fa-sync-alt me-1"></i>
-                    Refresh
-                  </button>
+            )}
+
+
+            {/* Production Output Tab */}
+            {activeTab === 'output' && (
+                <div className="space-y-6">
+                    {productionOutput && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Production Output Trends</h3>
+                            <ResponsiveContainer width="100%" height={400}>
+                                <LineChart data={productionOutput.output_data || []}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="date" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="target" stroke="#3B82F6" name="Target Output" />
+                                    <Line type="monotone" dataKey="actual" stroke="#10B981" name="Actual Output" />
+                                    <Line type="monotone" dataKey="efficiency" stroke="#EF4444" name="Efficiency %" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+
+                    {/* Output Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Total Output</h4>
+                            <p className="text-2xl font-bold text-blue-600">{productionOutput?.summary?.total_output || 0}</p>
+                            <p className="text-sm text-gray-500">units produced</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Average Daily</h4>
+                            <p className="text-2xl font-bold text-green-600">{productionOutput?.summary?.avg_daily || 0}</p>
+                            <p className="text-sm text-gray-500">units per day</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Peak Output</h4>
+                            <p className="text-2xl font-bold text-purple-600">{productionOutput?.summary?.peak_output || 0}</p>
+                            <p className="text-sm text-gray-500">highest daily output</p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Report Content */}
-        <div className="row g-4">
-          {/* KPI Summary */}
-          {performanceReport && (
-            <div className="col-12">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">
-                    <i className="fas fa-chart-line me-2"></i>
-                    Key Performance Indicators
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <div className="row text-center">
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-primary">
-                          {performanceReport.kpis?.throughput || 0}
-                        </div>
-                        <div className="kpi-label">Throughput</div>
-                      </div>
-                    </div>
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-info">
-                          {performanceReport.kpis?.average_lead_time_days || 0} days
-                        </div>
-                        <div className="kpi-label">Avg Lead Time</div>
-                      </div>
-                    </div>
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-success">
-                          {performanceReport.kpis?.quality_rate_percentage || 0}%
-                        </div>
-                        <div className="kpi-label">Quality Rate</div>
-                      </div>
-                    </div>
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-warning">
-                          {performanceReport.kpis?.on_time_delivery_percentage || 0}%
-                        </div>
-                        <div className="kpi-label">On-Time Delivery</div>
-                      </div>
-                    </div>
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-danger">
-                          {performanceReport.kpis?.resource_utilization_percentage || 0}%
-                        </div>
-                        <div className="kpi-label">Resource Utilization</div>
-                      </div>
-                    </div>
-                    <div className="col-md-2">
-                      <div className="kpi-metric">
-                        <div className="kpi-value text-secondary">
-                          {performanceReport.production_summary?.completion_rate || 0}%
-                        </div>
-                        <div className="kpi-label">Completion Rate</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           )}
 
-          {/* Daily Output Chart with Timeframe Filters */}
-          {analyticsData && (
-            <div className="col-12">
-              <DailyOutputChart data={analyticsData?.daily_output || []} />
-            </div>
-          )}
-
-          {/* Process Efficiency Chart */}
-          {efficiencyReport && (
-            <div className="col-lg-8">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">
-                    <i className="fas fa-cogs me-2"></i>
-                    Process Efficiency Analysis
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <ResponsiveContainer width="100%" height={350}>
-                    <BarChart data={getEfficiencyTrendData()}>
+            {/* Stage Breakdown Tab */}
+            {activeTab === 'stages' && (
+                <div className="space-y-6">
+                    {stageBreakdown && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Production Stage Breakdown</h3>
+                            <ResponsiveContainer width="100%" height={400}>
+                                <BarChart data={stageBreakdown.stages || []}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="name" 
-                        angle={-45} 
-                        textAnchor="end" 
-                        height={100}
-                        interval={0}
-                      />
+                                    <XAxis dataKey="stage_name" />
                       <YAxis />
                       <Tooltip />
                       <Legend />
-                      <Bar dataKey="efficiency" fill="#3498db" name="Efficiency %" />
-                      <Bar dataKey="completed" fill="#27ae60" name="Completed" />
-                      <Bar dataKey="delayed" fill="#e74c3c" name="Delayed" />
+                                    <Bar dataKey="duration_hours" fill="#3B82F6" name="Duration (Hours)" />
+                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
-              </div>
             </div>
           )}
 
-          {/* Process Efficiency Table */}
-          {efficiencyReport && (
-            <div className="col-lg-4">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">
-                    <i className="fas fa-table me-2"></i>
-                    Efficiency Metrics
-                  </h5>
-                </div>
-                <div className="card-body">
-                  <div className="table-responsive">
-                    <table className="table table-hover">
+                    {/* Stage Details Table */}
+                    {stageBreakdown && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Stage Performance Details</h3>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto">
                       <thead>
-                        <tr>
-                          <th>Process</th>
-                          <th>Efficiency</th>
-                          <th>Status</th>
+                                        <tr className="bg-gray-50">
+                                            <th className="px-4 py-2 text-left">Stage</th>
+                                            <th className="px-4 py-2 text-left">Duration (Hours)</th>
+                                            <th className="px-4 py-2 text-left">Efficiency</th>
+                                            <th className="px-4 py-2 text-left">Bottlenecks</th>
+                                            <th className="px-4 py-2 text-left">Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {efficiencyReport.process_efficiency?.map((process, index) => (
-                          <tr key={index}>
-                            <td className="small">{process.process_name}</td>
-                            <td>
-                              <span className={`badge ${
-                                (process.efficiency_percentage || 0) >= 80 ? 'bg-success' :
-                                (process.efficiency_percentage || 0) >= 60 ? 'bg-warning text-dark' : 'bg-danger'
-                              }`}>
-                                {process.efficiency_percentage || 0}%
+                                        {stageBreakdown.stages?.map((stage, index) => (
+                                            <tr key={index} className="border-b">
+                                                <td className="px-4 py-2 font-medium">{stage.stage_name}</td>
+                                                <td className="px-4 py-2">{stage.duration_hours?.toFixed(1)}</td>
+                                                <td className="px-4 py-2">{stage.efficiency?.toFixed(1)}%</td>
+                                                <td className="px-4 py-2">{stage.bottlenecks || 'None'}</td>
+                                                <td className="px-4 py-2">
+                                                    <span className={`px-2 py-1 rounded text-xs ${
+                                                        stage.efficiency >= 90 ? 'bg-green-100 text-green-800' :
+                                                        stage.efficiency >= 70 ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-red-100 text-red-800'
+                                                    }`}>
+                                                        {stage.efficiency >= 90 ? 'Excellent' :
+                                                         stage.efficiency >= 70 ? 'Good' : 'Needs Improvement'}
                               </span>
-                            </td>
-                            <td>
-                              <div className="small">
-                                <div>✅ {process.total_completed || 0}</div>
-                                <div>⏰ {process.delayed_count || 0}</div>
-                              </div>
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  </div>
-                </div>
               </div>
             </div>
           )}
-
-          {/* Capacity Utilization */}
-          {capacityReport && (
-            <div className="col-lg-6">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">
-                    <i className="fas fa-chart-area me-2"></i>
-                    Capacity Utilization Trend
-                  </h5>
                 </div>
-                <div className="card-body">
-                  <div className="mb-3">
-                    <div className="row text-center">
-                      <div className="col-4">
-                        <div className="metric-small">
-                          <div className="metric-value text-success">
-                            {capacityReport.summary?.average_utilization || 0}%
+            )}
+
+            {/* Efficiency Metrics Tab */}
+            {activeTab === 'efficiency' && (
+                <div className="space-y-6">
+                    {efficiencyMetrics && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Efficiency Trends</h3>
+                            <ResponsiveContainer width="100%" height={400}>
+                                <LineChart data={efficiencyMetrics.trends || []}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="date" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="overall_efficiency" stroke="#3B82F6" name="Overall Efficiency" />
+                                    <Line type="monotone" dataKey="labor_efficiency" stroke="#10B981" name="Labor Efficiency" />
+                                    <Line type="monotone" dataKey="machine_efficiency" stroke="#EF4444" name="Machine Efficiency" />
+                                </LineChart>
+                            </ResponsiveContainer>
                           </div>
-                          <div className="metric-label">Average</div>
+                    )}
+
+                    {/* Efficiency Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Overall Efficiency</h4>
+                            <p className="text-2xl font-bold text-blue-600">{efficiencyMetrics?.summary?.overall_efficiency?.toFixed(1) || 0}%</p>
                         </div>
-                      </div>
-                      <div className="col-4">
-                        <div className="metric-small">
-                          <div className="metric-value text-warning">
-                            {capacityReport.summary?.peak_utilization || 0}%
-                          </div>
-                          <div className="metric-label">Peak</div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Labor Efficiency</h4>
+                            <p className="text-2xl font-bold text-green-600">{efficiencyMetrics?.summary?.labor_efficiency?.toFixed(1) || 0}%</p>
                         </div>
-                      </div>
-                      <div className="col-4">
-                        <div className="metric-small">
-                          <div className="metric-value text-info">
-                            {capacityReport.summary?.lowest_utilization || 0}%
-                          </div>
-                          <div className="metric-label">Lowest</div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Machine Efficiency</h4>
+                            <p className="text-2xl font-bold text-purple-600">{efficiencyMetrics?.summary?.machine_efficiency?.toFixed(1) || 0}%</p>
                         </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Quality Rate</h4>
+                            <p className="text-2xl font-bold text-orange-600">{efficiencyMetrics?.summary?.quality_rate?.toFixed(1) || 0}%</p>
                       </div>
                     </div>
                   </div>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <AreaChart data={getCapacityTrendData()}>
+            )}
+
+            {/* Resource Utilization Tab */}
+            {activeTab === 'utilization' && (
+                <div className="space-y-6">
+                    {resourceUtilization && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Resource Utilization</h3>
+                            <ResponsiveContainer width="100%" height={400}>
+                                <BarChart data={resourceUtilization.resources || []}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
+                                    <XAxis dataKey="resource_name" />
                       <YAxis />
                       <Tooltip />
-                      <Area 
-                        type="monotone" 
-                        dataKey="utilization" 
-                        stroke="#e74c3c" 
-                        fill="#e74c3c" 
-                        fillOpacity={0.3}
-                        name="Utilization %" 
-                      />
-                    </AreaChart>
+                                    <Legend />
+                                    <Bar dataKey="utilization_percentage" fill="#3B82F6" name="Utilization %" />
+                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
+                                </BarChart>
                   </ResponsiveContainer>
                 </div>
+                    )}
+
+                    {/* Resource Details */}
+                    {resourceUtilization && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Resource Performance</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {resourceUtilization.resources?.map((resource, index) => (
+                                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                                        <h4 className="font-semibold text-gray-800">{resource.resource_name}</h4>
+                                        <p className="text-sm text-gray-600">Utilization: {resource.utilization_percentage?.toFixed(1)}%</p>
+                                        <p className="text-sm text-gray-600">Efficiency: {resource.efficiency?.toFixed(1)}%</p>
+                                        <p className="text-sm text-gray-600">Status: {resource.status}</p>
+                                    </div>
+                                ))}
               </div>
             </div>
           )}
-
-          {/* Workload Distribution */}
-          {dashboardData?.workload_by_stage && (
-            <div className="col-lg-6">
-              <div className="card">
-                <div className="card-header">
-                  <h5 className="card-title mb-0">
-                    <i className="fas fa-tasks me-2"></i>
-                    Workload Distribution
-                  </h5>
                 </div>
-                <div className="card-body">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={getWorkloadData()}
-                        dataKey="count"
-                        nameKey="stage"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        label={({ stage, count }) => `${stage}: ${count}`}
-                      >
-                        {getWorkloadData().map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
+            )}
+
+            {/* Advanced Analytics Tab */}
+            {activeTab === 'analytics' && (
+                <div className="space-y-6">
+                    {/* Advanced Performance Analytics Dashboard */}
+                    <div className="bg-white p-6 rounded-lg shadow">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-semibold text-gray-800">Advanced Performance Analytics</h3>
+                            <div className="flex gap-2">
+                                <button className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                                    Generate Report
+                                </button>
+                                <button className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">
+                                    Export Analytics
+                                </button>
+                            </div>
+                        </div>
+
+                        {advancedPerformance && (
+                            <div className="space-y-6">
+                                {/* Performance Trend Chart */}
+                                <div className="bg-gray-50 p-4 rounded-lg">
+                                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Performance Trends Over Time</h4>
+                                    <ResponsiveContainer width="100%" height={400}>
+                                        <LineChart data={advancedPerformance.analytics || []}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="date" />
+                                            <YAxis />
                       <Tooltip />
                       <Legend />
-                    </PieChart>
+                                            <Line type="monotone" dataKey="productivity_index" stroke="#3B82F6" name="Productivity Index" strokeWidth={3} />
+                                            <Line type="monotone" dataKey="quality_score" stroke="#10B981" name="Quality Score" strokeWidth={3} />
+                                            <Line type="monotone" dataKey="cost_efficiency" stroke="#EF4444" name="Cost Efficiency" strokeWidth={3} />
+                                            <Line type="monotone" dataKey="roi" stroke="#8B5CF6" name="ROI %" strokeWidth={3} />
+                                        </LineChart>
                   </ResponsiveContainer>
                 </div>
+
+                                {/* Performance Metrics Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg text-white">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-sm font-medium opacity-90">Productivity Index</h4>
+                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.productivity_index?.toFixed(1) || 0}</p>
+                                            </div>
+                                            <div className="text-4xl opacity-20">📈</div>
+                                        </div>
+                                        <div className="mt-2 text-sm opacity-90">
+                                            {advancedPerformance?.metrics?.productivity_trend > 0 ? '↗️' : '↘️'} 
+                                            {Math.abs(advancedPerformance?.metrics?.productivity_trend || 0).toFixed(1)}% vs last period
               </div>
             </div>
-          )}
-
-          {/* Recommendations */}
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header">
-                <h5 className="card-title mb-0">
-                  <i className="fas fa-lightbulb me-2"></i>
-                  Recommendations & Action Items
-                </h5>
+                                    
+                                    <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-lg text-white">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-sm font-medium opacity-90">Quality Score</h4>
+                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.quality_score?.toFixed(1) || 0}</p>
               </div>
-              <div className="card-body">
-                <div className="recommendations-list">
-                  {generateRecommendations().map((recommendation, index) => (
-                    <div key={index} className="recommendation-item">
-                      <div className="recommendation-icon">
-                        <i className="fas fa-arrow-right text-primary"></i>
+                                            <div className="text-4xl opacity-20">⭐</div>
                       </div>
-                      <div className="recommendation-text">
-                        {recommendation}
+                                        <div className="mt-2 text-sm opacity-90">
+                                            {advancedPerformance?.metrics?.quality_trend > 0 ? '↗️' : '↘️'} 
+                                            {Math.abs(advancedPerformance?.metrics?.quality_trend || 0).toFixed(1)}% vs last period
                       </div>
                     </div>
-                  ))}
+                                    
+                                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-lg text-white">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-sm font-medium opacity-90">Cost Efficiency</h4>
+                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.cost_efficiency?.toFixed(1) || 0}</p>
                 </div>
+                                            <div className="text-4xl opacity-20">💰</div>
               </div>
+                                        <div className="mt-2 text-sm opacity-90">
+                                            {advancedPerformance?.metrics?.cost_trend > 0 ? '↗️' : '↘️'} 
+                                            {Math.abs(advancedPerformance?.metrics?.cost_trend || 0).toFixed(1)}% vs last period
             </div>
           </div>
 
-          {/* Summary Statistics */}
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header">
-                <h5 className="card-title mb-0">
-                  <i className="fas fa-chart-bar me-2"></i>
-                  Report Summary
-                </h5>
+                                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-lg text-white">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-sm font-medium opacity-90">ROI</h4>
+                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.roi?.toFixed(1) || 0}%</p>
               </div>
-              <div className="card-body">
-                <div className="row">
-                  <div className="col-md-3">
-                    <div className="summary-stat">
-                      <div className="stat-icon bg-primary">
-                        <i className="fas fa-calendar-alt text-white"></i>
+                                            <div className="text-4xl opacity-20">📊</div>
                       </div>
-                      <div className="stat-content">
-                        <h6>Report Period</h6>
-                        <p className="mb-0">{dateRange.startDate} to {dateRange.endDate}</p>
+                                        <div className="mt-2 text-sm opacity-90">
+                                            {advancedPerformance?.metrics?.roi_trend > 0 ? '↗️' : '↘️'} 
+                                            {Math.abs(advancedPerformance?.metrics?.roi_trend || 0).toFixed(1)}% vs last period
                       </div>
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="summary-stat">
-                      <div className="stat-icon bg-success">
-                        <i className="fas fa-check-circle text-white"></i>
+
+                                {/* Detailed Performance Analysis */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Production Efficiency Breakdown */}
+                                    <div className="bg-white p-6 rounded-lg shadow border">
+                                        <h4 className="text-lg font-semibold text-gray-800 mb-4">Production Efficiency Breakdown</h4>
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">Overall Efficiency</span>
+                                                <div className="flex items-center">
+                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                                                        <div className="bg-blue-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.overall_efficiency || 0}%`}}></div>
+                                                    </div>
+                                                    <span className="font-semibold">{advancedPerformance?.metrics?.overall_efficiency?.toFixed(1) || 0}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">Labor Efficiency</span>
+                                                <div className="flex items-center">
+                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                                                        <div className="bg-green-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.labor_efficiency || 0}%`}}></div>
+                                                    </div>
+                                                    <span className="font-semibold">{advancedPerformance?.metrics?.labor_efficiency?.toFixed(1) || 0}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">Machine Efficiency</span>
+                                                <div className="flex items-center">
+                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                                                        <div className="bg-purple-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.machine_efficiency || 0}%`}}></div>
+                                                    </div>
+                                                    <span className="font-semibold">{advancedPerformance?.metrics?.machine_efficiency?.toFixed(1) || 0}%</span>
                       </div>
-                      <div className="stat-content">
-                        <h6>Productions Analyzed</h6>
-                        <p className="mb-0">{performanceReport?.production_summary?.total_started || 0}</p>
                       </div>
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="summary-stat">
-                      <div className="stat-icon bg-info">
-                        <i className="fas fa-clock text-white"></i>
+
+                                    {/* Quality Metrics */}
+                                    <div className="bg-white p-6 rounded-lg shadow border">
+                                        <h4 className="text-lg font-semibold text-gray-800 mb-4">Quality Metrics</h4>
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">Defect Rate</span>
+                                                <span className="font-semibold text-red-600">{advancedPerformance?.metrics?.defect_rate?.toFixed(2) || 0}%</span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">First Pass Yield</span>
+                                                <span className="font-semibold text-green-600">{advancedPerformance?.metrics?.first_pass_yield?.toFixed(1) || 0}%</span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-600">Customer Satisfaction</span>
+                                                <span className="font-semibold text-blue-600">{advancedPerformance?.metrics?.customer_satisfaction?.toFixed(1) || 0}/5</span>
                       </div>
-                      <div className="stat-content">
-                        <h6>Report Generated</h6>
-                        <p className="mb-0">{new Date().toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
-                  <div className="col-md-3">
-                    <div className="summary-stat">
-                      <div className="stat-icon bg-warning">
-                        <i className="fas fa-star text-white"></i>
+
+                                {/* Performance Comparison Chart */}
+                                <div className="bg-white p-6 rounded-lg shadow">
+                                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Performance Comparison</h4>
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={advancedPerformance?.comparison_data || []}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="metric" />
+                                            <YAxis />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Bar dataKey="current" fill="#3B82F6" name="Current Period" />
+                                            <Bar dataKey="previous" fill="#10B981" name="Previous Period" />
+                                            <Bar dataKey="target" fill="#EF4444" name="Target" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
                       </div>
-                      <div className="stat-content">
-                        <h6>Overall Rating</h6>
-                        <p className="mb-0">
-                          {performanceReport?.kpis?.quality_rate_percentage >= 90 ? 'Excellent' :
-                           performanceReport?.kpis?.quality_rate_percentage >= 80 ? 'Good' : 
-                           performanceReport?.kpis?.quality_rate_percentage >= 70 ? 'Fair' : 'Needs Improvement'}
-                        </p>
                       </div>
-                    </div>
+                        )}
                   </div>
                 </div>
-              </div>
+            )}
+
+            {/* Export Buttons */}
+            <div className="mt-4 d-flex gap-2">
+                <button 
+                    onClick={() => handleProductionExport('output', 'csv')}
+                    className="btn btn-success btn-sm"
+                >
+                    <i className="fas fa-industry me-1"></i>
+                    Export Output CSV
+                </button>
+                <button 
+                    onClick={() => handleProductionExport('stage_breakdown', 'csv')}
+                    className="btn btn-primary btn-sm"
+                >
+                    <i className="fas fa-cogs me-1"></i>
+                    Export Stage Breakdown CSV
+                </button>
+                <button 
+                    onClick={() => handleProductionExport('daily_output', 'csv')}
+                    className="btn btn-info btn-sm"
+                >
+                    <i className="fas fa-file-csv me-1"></i>
+                    Export Daily Output CSV
+                </button>
             </div>
-          </div>
         </div>
-      </div>
-    </AppLayout>
-  );
+    );
 };
 
 export default ProductionReports;

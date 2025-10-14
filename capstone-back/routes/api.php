@@ -23,6 +23,7 @@ use App\Http\Controllers\SalesAnalyticsController;
 use App\Http\Controllers\AlkansyaDailyOutputController;
 use App\Http\Controllers\AutoDeductionController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\AnalyticsController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,13 @@ Route::get('/analytics/production-performance', [\App\Http\Controllers\AdvancedA
 Route::get('/analytics/predictive', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getPredictiveAnalytics']);
 Route::get('/analytics/material-usage-trends', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getMaterialUsageTrends']);
 Route::get('/analytics/automated-stock-report', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getAutomatedStockReport']);
+
+// Predictive Analytics Routes
+Route::get('/analytics/material-usage-forecast', [AnalyticsController::class, 'getMaterialUsageForecast']);
+Route::get('/analytics/inventory-replenishment-forecast', [AnalyticsController::class, 'getInventoryReplenishmentForecast']);
+Route::get('/analytics/stock-status-predictions', [AnalyticsController::class, 'getStockStatusPredictions']);
+Route::get('/analytics/seasonal-trends', [AnalyticsController::class, 'getSeasonalTrends']);
+Route::get('/analytics/demand-patterns', [AnalyticsController::class, 'getDemandPatterns']);
 
 // Sales Analytics Routes
 Route::get('/analytics/sales-dashboard', [SalesAnalyticsController::class, 'getSalesDashboard']);

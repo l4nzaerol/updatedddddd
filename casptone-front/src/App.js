@@ -15,11 +15,10 @@ import InventoryPage from "./components/Admin/InventoryPage";
 import OrderPage from "./components/Admin/OrderPage"; 
 import Report from "./components/Admin/Report"; 
 import AdvancedReportsPage from "./components/Admin/AdvancedReportsPage";
-import InventoryReportsDashboard from "./components/Admin/InventoryReportsDashboard";
 import EnhancedProductionDashboard from "./components/Admin/EnhancedProductionDashboard";
 import OrderAcceptance from "./components/Admin/OrderAcceptance";
 import MyOrders from "./components/Customers/MyOrders";
-import OrderTracking from "./components/Customers/OrderTracking";
+// import OrderTracking from "./components/Customers/OrderTracking";
 import SimpleOrderTracking from "./components/Customers/SimpleOrderTracking";
 import UserProfile from "./components/Customers/UserProfile";
 
@@ -50,7 +49,6 @@ function App() {
                 <Route path="/order-acceptance" element={isAuthenticated() ? <OrderAcceptance /> : <Navigate to="/" />} /> 
                 <Route path="/reports" element={isAuthenticated() ? <Report /> : <Navigate to="/" />} /> 
                 <Route path="/advanced-reports" element={isAuthenticated() ? <AdvancedReportsPage /> : <Navigate to="/" />} /> 
-                <Route path="/inventory-reports" element={isAuthenticated() ? <InventoryReportsDashboard /> : <Navigate to="/" />} /> 
                 <Route path="/track/:orderId" element={isAuthenticated() ? <TrackWrapper /> : <Navigate to="/" />} />
 
                 {/* Redirect unknown routes */}
