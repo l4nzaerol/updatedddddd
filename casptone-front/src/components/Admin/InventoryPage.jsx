@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
 import Pusher from "pusher-js";
@@ -477,6 +477,13 @@ const InventoryPage = () => {
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
   const [activeTab, setActiveTab] = useState("raw"); // New state for tab management
+  
+  // Raw materials specific filtering state
+  const [rawMaterialsFilter, setRawMaterialsFilter] = useState({
+    search: "",
+    category: "all",
+    status: "all"
+  });
   const [alkansyaStats, setAlkansyaStats] = useState({
     totalOutput: 0,
     averageDaily: 0,
@@ -489,7 +496,7 @@ const InventoryPage = () => {
 
   // API helper function
   const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-  const apiCall = async (path, options = {}) => {
+  const apiCall = useCallback(async (path, options = {}) => {
     const token = localStorage.getItem("token");
     const headers = {
       'Content-Type': 'application/json',
@@ -509,15 +516,9 @@ const InventoryPage = () => {
     }
 
     return response.json();
-  };
+  }, [apiBase]);
 
-  // Fetch inventory and usage data
-  useEffect(() => {
-    fetchInventory();
-    fetchAlkansyaStats();
-  }, []);
-
-  const fetchInventory = async () => {
+  const fetchInventory = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -536,9 +537,9 @@ const InventoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiCall]);
 
-  const fetchAlkansyaStats = async () => {
+  const fetchAlkansyaStats = useCallback(async () => {
     try {
       console.log('Fetching Alkansya statistics...');
       // Use the working test route temporarily
@@ -553,7 +554,13 @@ const InventoryPage = () => {
     } catch (err) {
       console.error('Failed to fetch Alkansya statistics:', err);
     }
-  };
+  }, [apiCall]);
+
+  // Fetch inventory and usage data
+  useEffect(() => {
+    fetchInventory();
+    fetchAlkansyaStats();
+  }, [fetchInventory, fetchAlkansyaStats]);
 
   // Material CRUD operations
   const handleAddMaterial = () => {
@@ -749,6 +756,26 @@ const InventoryPage = () => {
     }
   };
 
+  // Additional polling for production status updates when on made-to-order tab
+  useEffect(() => {
+    let productionStatusInterval = null;
+    
+    if (activeTab === 'made-to-order') {
+      console.log("Starting production status polling for made-to-order tab");
+      productionStatusInterval = setInterval(async () => {
+        console.log("Polling for production status updates...");
+        await fetchInventory();
+      }, 10000); // Poll every 10 seconds
+    }
+
+    return () => {
+      if (productionStatusInterval) {
+        console.log("Stopping production status polling");
+        clearInterval(productionStatusInterval);
+      }
+    };
+  }, [activeTab, fetchInventory]);
+
   // Cleanup deletion state on unmount
   useEffect(() => {
     return () => {
@@ -769,9 +796,19 @@ const InventoryPage = () => {
         setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, ...item } : it)));
       };
       ch.bind("inventory-updated", handler);
+      // Listen for order acceptance events to refresh inventory
+      ch.bind("order-accepted", () => {
+        console.log("Order accepted - refreshing inventory for production status update");
+        toast.success("Order accepted! Production status updated.", {
+          description: "Made-to-order products status has been refreshed.",
+          duration: 3000,
+        });
+        fetchInventory();
+      });
       wsRef.current = p;
       return () => {
         ch.unbind("inventory-updated", handler);
+        ch.unbind("order-accepted");
         p.unsubscribe("inventory-channel");
         p.disconnect();
       };
@@ -794,7 +831,7 @@ const InventoryPage = () => {
         }
       }, DEFAULTS.pollIntervalMs);
     }
-  }, []);
+  }, [apiCall, fetchInventory]);
 
   // Derived analytics per item
   const enriched = useMemo(() => {
@@ -941,6 +978,38 @@ const InventoryPage = () => {
     return { raw, finished, madeToOrder };
   }, [filtered]);
 
+  // Filter raw materials based on search and filters
+  const filteredRawMaterials = useMemo(() => {
+    let filtered = groupedInventory.raw || [];
+    
+    // Search filter
+    if (rawMaterialsFilter.search) {
+      const searchTerm = rawMaterialsFilter.search.toLowerCase();
+      filtered = filtered.filter(item => 
+        item.name?.toLowerCase().includes(searchTerm) ||
+        item.sku?.toLowerCase().includes(searchTerm) ||
+        item.location?.toLowerCase().includes(searchTerm) ||
+        item.description?.toLowerCase().includes(searchTerm)
+      );
+    }
+    
+    // Status filter
+    if (rawMaterialsFilter.status !== "all") {
+      filtered = filtered.filter(item => {
+        if (rawMaterialsFilter.status === "low_stock") {
+          return item.status?.variant === "warning" || item.status?.variant === "danger";
+        } else if (rawMaterialsFilter.status === "in_stock") {
+          return item.status?.variant === "success";
+        } else if (rawMaterialsFilter.status === "out_of_stock") {
+          return item.status?.variant === "danger";
+        }
+        return true;
+      });
+    }
+    
+    return filtered;
+  }, [groupedInventory.raw, rawMaterialsFilter]);
+
   // CSV usage upload
   const onUploadUsage = async (e) => {
     const file = e.target.files?.[0];
@@ -1053,104 +1122,129 @@ const InventoryPage = () => {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="card mb-4 shadow-sm">
-        <div className="card-header">
-          <ul className="nav nav-tabs card-header-tabs" role="tablist">
-            <li className="nav-item" role="presentation">
-              <button 
-                className={`nav-link ${activeTab === 'raw' ? 'active' : ''}`}
-                onClick={() => setActiveTab('raw')}
-                type="button"
-              >
-                <i className="fas fa-boxes me-2"></i>
-                Raw Materials ({groupedInventory.raw.length})
-              </button>
-            </li>
-            <li className="nav-item" role="presentation">
-              <button 
-                className={`nav-link ${activeTab === 'finished' ? 'active' : ''}`}
-                onClick={() => setActiveTab('finished')}
-                type="button"
-              >
-                <i className="fas fa-check-circle me-2"></i>
-                Finished Goods ({groupedInventory.finished.length})
-              </button>
-            </li>
-            <li className="nav-item" role="presentation">
-              <button 
-                className={`nav-link ${activeTab === 'made-to-order' ? 'active' : ''}`}
-                onClick={() => setActiveTab('made-to-order')}
-                type="button"
-              >
-                <i className="fas fa-hammer me-2"></i>
-                Made-to-Order ({groupedInventory.madeToOrder.length})
-              </button>
-            </li>
-            <li className="nav-item" role="presentation">
-              <button 
-                className={`nav-link ${activeTab === 'daily-output' ? 'active' : ''}`}
-                onClick={() => setActiveTab('daily-output')}
-                type="button"
-              >
-                <i className="fas fa-piggy-bank me-2"></i>
-                Daily Output
-              </button>
-            </li>
-          </ul>
+      {/* Enhanced Tab Navigation - Simple Design */}
+      <div className="mb-4">
+        <div className="d-flex border-bottom">
+          <button 
+            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+              activeTab === 'raw' 
+                ? 'text-primary border-bottom border-primary border-2' 
+                : 'text-muted'
+            }`}
+            onClick={() => setActiveTab('raw')}
+            style={{
+              backgroundColor: activeTab === 'raw' ? '#f8f9fa' : 'transparent',
+              fontWeight: activeTab === 'raw' ? '600' : '400'
+            }}
+          >
+            <i className="fas fa-boxes me-2"></i>
+            Raw Materials 
+            <span className="badge bg-secondary ms-2">{groupedInventory.raw.length}</span>
+          </button>
+          <button 
+            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+              activeTab === 'finished' 
+                ? 'text-primary border-bottom border-primary border-2' 
+                : 'text-muted'
+            }`}
+            onClick={() => setActiveTab('finished')}
+            style={{
+              backgroundColor: activeTab === 'finished' ? '#f8f9fa' : 'transparent',
+              fontWeight: activeTab === 'finished' ? '600' : '400'
+            }}
+          >
+            <i className="fas fa-check-circle me-2"></i>
+            Finished Goods 
+            <span className="badge bg-secondary ms-2">{groupedInventory.finished.length}</span>
+          </button>
+          <button 
+            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+              activeTab === 'made-to-order' 
+                ? 'text-primary border-bottom border-primary border-2' 
+                : 'text-muted'
+            }`}
+            onClick={() => setActiveTab('made-to-order')}
+            style={{
+              backgroundColor: activeTab === 'made-to-order' ? '#f8f9fa' : 'transparent',
+              fontWeight: activeTab === 'made-to-order' ? '600' : '400'
+            }}
+          >
+            <i className="fas fa-hammer me-2"></i>
+            Made-to-Order 
+            <span className="badge bg-secondary ms-2">{groupedInventory.madeToOrder.length}</span>
+          </button>
+          <button 
+            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+              activeTab === 'daily-output' 
+                ? 'text-primary border-bottom border-primary border-2' 
+                : 'text-muted'
+            }`}
+            onClick={() => setActiveTab('daily-output')}
+            style={{
+              backgroundColor: activeTab === 'daily-output' ? '#f8f9fa' : 'transparent',
+              fontWeight: activeTab === 'daily-output' ? '600' : '400'
+            }}
+          >
+            <i className="fas fa-piggy-bank me-2"></i>
+            Daily Output
+          </button>
         </div>
       </div>
 
-      {/* Search and Filter */}
-      <div className="card mb-4 shadow-sm">
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label small text-muted mb-1">Search</label>
-              <input
-                className="form-control"
-                placeholder="Search by name, SKU, location..."
-                value={filter.q}
-                onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-              />
-            </div>
-            <div className="col-md-3">
-              <label className="form-label small text-muted mb-1">Category</label>
-              <select
-                className="form-select"
-                value={filter.type}
-                onChange={(e) => setFilter((f) => ({ ...f, type: e.target.value }))}
-              >
-                <option value="all">All Categories</option>
-                <option value="raw">Raw Materials</option>
-                <option value="finished">Finished Goods</option>
-                <option value="made-to-order">Made-to-Order</option>
-              </select>
-            </div>
-            <div className="col-md-3">
-              <label className="form-label small text-muted mb-1">Product Filter</label>
-              <select
-                className="form-select"
-                value={filter.product}
-                onChange={(e) => setFilter((f) => ({ ...f, product: e.target.value }))}
-              >
-                <option value="all">All Products</option>
-                <option value="alkansya">Alkansya</option>
-                <option value="table">Dining Table</option>
-                <option value="chair">Chair</option>
-              </select>
-            </div>
-            <div className="col-md-2 d-flex align-items-end">
-              <button 
-                className="btn btn-outline-secondary w-100"
-                onClick={() => setFilter({ q: "", type: "all", product: "all" })}
-              >
-                Clear Filters
-              </button>
+      {/* Raw Materials Search and Filter - Only for Raw Materials Tab */}
+      {activeTab === 'raw' && (
+        <div className="card mb-4 shadow-sm border-0" style={{ backgroundColor: '#f8f9fa' }}>
+          <div className="card-body py-3">
+            <div className="row g-3 align-items-end">
+              <div className="col-md-5">
+                <label className="form-label small text-muted mb-1 fw-semibold">Search Raw Materials</label>
+                <div className="input-group">
+                  <span className="input-group-text bg-white border-end-0">
+                    <i className="fas fa-search text-muted"></i>
+                  </span>
+                  <input
+                    className="form-control border-start-0"
+                    placeholder="Search by name, SKU, location..."
+                    value={rawMaterialsFilter.search}
+                    onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, search: e.target.value }))}
+                    style={{ boxShadow: 'none' }}
+                  />
+                </div>
+              </div>
+              <div className="col-md-3">
+                <label className="form-label small text-muted mb-1 fw-semibold">Status</label>
+                <select
+                  className="form-select"
+                  value={rawMaterialsFilter.status}
+                  onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, status: e.target.value }))}
+                  style={{ boxShadow: 'none' }}
+                >
+                  <option value="all">All Status</option>
+                  <option value="in_stock">In Stock</option>
+                  <option value="low_stock">Low Stock</option>
+                  <option value="out_of_stock">Out of Stock</option>
+                </select>
+              </div>
+              <div className="col-md-2">
+                <button 
+                  className="btn btn-outline-secondary w-100"
+                  onClick={() => setRawMaterialsFilter({ search: "", category: "all", status: "all" })}
+                >
+                  <i className="fas fa-times me-1"></i>
+                  Clear
+                </button>
+              </div>
+              <div className="col-md-2">
+                <div className="text-end">
+                  <small className="text-muted">
+                    Showing {filteredRawMaterials.length} of {groupedInventory.raw.length} items
+                  </small>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {loading && (
         <div className="alert alert-info">Loading inventory…</div>
@@ -1160,75 +1254,125 @@ const InventoryPage = () => {
       )}
 
 
-      {/* Tab Content */}
+      {/* Enhanced Raw Materials Tab Content */}
       {activeTab === 'raw' && (
         <div className="mb-4">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="mb-0">📦 Raw Materials</h5>
-            <span className="badge bg-primary">{groupedInventory.raw.length} items</span>
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <h5 className="mb-1 text-dark fw-semibold">
+                <i className="fas fa-boxes me-2 text-primary"></i>
+                Raw Materials
+              </h5>
+              <small className="text-muted">
+                {filteredRawMaterials.length === groupedInventory.raw.length 
+                  ? `All ${groupedInventory.raw.length} items` 
+                  : `${filteredRawMaterials.length} of ${groupedInventory.raw.length} items`
+                }
+              </small>
+            </div>
+            <div className="d-flex gap-2">
+              <span className="badge bg-primary fs-6">{groupedInventory.raw.length} total</span>
+              {filteredRawMaterials.length !== groupedInventory.raw.length && (
+                <span className="badge bg-info fs-6">{filteredRawMaterials.length} filtered</span>
+              )}
+            </div>
           </div>
           
-          <div className="card shadow-sm">
+          <div className="card shadow-sm border-0" style={{ backgroundColor: 'white' }}>
             <div className="table-responsive">
               <table className="table table-hover mb-0">
-                <thead className="table-light">
+                <thead style={{ backgroundColor: '#f8f9fa' }}>
                   <tr>
-                    <th>SKU</th>
-                    <th>Name</th>
-                    <th>Location</th>
-                    <th className="text-end">Stock</th>
-                    <th className="text-end">Daily Use</th>
-                    <th>Status</th>
-                    <th className="text-end">Reorder Qty</th>
-                    <th>Actions</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted">SKU</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Name</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Location</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Stock</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Daily Use</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Status</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Reorder Qty</th>
+                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {groupedInventory.raw.map((item) => (
-                    <tr key={item.id || item.sku}>
-                      <td><code className="small">{item.sku}</code></td>
-                      <td>
-                        <div>{item.name}</div>
-                        {item.description && <small className="text-muted">{item.description.substring(0, 40)}...</small>}
-                      </td>
-                      <td><small>{item.location}</small></td>
-                      <td className="text-end">
-                        <strong>{item.onHand}</strong> <small className="text-muted">{item.unit}</small>
-                      </td>
-                      <td className="text-end">{item.avgDaily}</td>
-                      <td>
-                        <span className={`badge bg-${item.status.variant}`}>
-                          {item.status.label}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        {item.suggestedOrderQty > 0 ? (
-                          <strong className="text-danger">{item.suggestedOrderQty}</strong>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <button 
-                          className="btn btn-sm btn-outline-primary me-1"
-                          onClick={() => handleEditMaterial(item)}
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteMaterial(item.id, e);
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                        >
-                          Delete
-                        </button>
+                  {filteredRawMaterials.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-5">
+                        <div className="text-muted">
+                          <i className="fas fa-search fa-2x mb-3 d-block"></i>
+                          <h6>No raw materials found</h6>
+                          <small>
+                            {rawMaterialsFilter.search || rawMaterialsFilter.status !== "all" 
+                              ? "Try adjusting your search or filters" 
+                              : "No raw materials available"
+                            }
+                          </small>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredRawMaterials.map((item) => (
+                      <tr key={item.id || item.sku} className="border-bottom">
+                        <td className="py-3 px-4">
+                          <code className="small bg-light px-2 py-1 rounded">{item.sku}</code>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="fw-semibold text-dark">{item.name}</div>
+                          {item.description && (
+                            <small className="text-muted">{item.description.substring(0, 50)}...</small>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <small className="text-muted">
+                            <i className="fas fa-map-marker-alt me-1"></i>
+                            {item.location}
+                          </small>
+                        </td>
+                        <td className="py-3 px-4 text-end">
+                          <div className="fw-bold text-dark">{item.onHand}</div>
+                          <small className="text-muted">{item.unit}</small>
+                        </td>
+                        <td className="py-3 px-4 text-end">
+                          <div className="fw-semibold">{item.avgDaily}</div>
+                          <small className="text-muted">per day</small>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`badge bg-${item.status.variant} px-2 py-1`}>
+                            {item.status.label}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-end">
+                          {item.suggestedOrderQty > 0 ? (
+                            <div className="fw-bold text-danger">{item.suggestedOrderQty}</div>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="btn-group" role="group">
+                            <button 
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => handleEditMaterial(item)}
+                              title="Edit Material"
+                            >
+                              <i className="fas fa-edit"></i>
+                            </button>
+                            <button 
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleDeleteMaterial(item.id, e);
+                              }}
+                              onMouseDown={(e) => e.preventDefault()}
+                              title="Delete Material"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1311,7 +1455,22 @@ const InventoryPage = () => {
         <div className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="mb-0">🔨 Made-to-Order Products</h5>
-            <span className="badge bg-warning">{groupedInventory.madeToOrder.length} items</span>
+            <div className="d-flex align-items-center gap-2">
+              {(() => {
+                const totalInProduction = groupedInventory.madeToOrder.reduce((sum, item) => sum + (item.productionCount || 0), 0);
+                return (
+                  <>
+                    {totalInProduction > 0 && (
+                      <span className="badge bg-primary">
+                        <i className="fas fa-cog fa-spin me-1"></i>
+                        {totalInProduction} Order{totalInProduction > 1 ? 's' : ''} in Production
+                      </span>
+                    )}
+                    <span className="badge bg-warning">{groupedInventory.madeToOrder.length} items</span>
+                  </>
+                );
+              })()}
+            </div>
           </div>
           
           <div className="card shadow-sm">
@@ -1347,8 +1506,19 @@ const InventoryPage = () => {
                             {item.status.label}
                           </span>
                           {item.productionCount > 0 && (
+                            <div className="text-center">
+                              <small className="text-primary fw-bold">
+                                {item.productionCount} Order{item.productionCount > 1 ? 's' : ''} in Production
+                              </small>
+                              <br />
+                              <small className="text-muted">
+                                {item.productionStatus === 'in_production' ? 'Active Production' : 'Processing'}
+                              </small>
+                            </div>
+                          )}
+                          {item.productionCount === 0 && item.status.label === 'Not in Production' && (
                             <small className="text-muted">
-                              {item.productionCount} in Production
+                              No active orders
                             </small>
                           )}
                         </div>

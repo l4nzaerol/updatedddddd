@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
+use App\Models\ProductionAnalytics;
 use Carbon\Carbon;
 
 class AlkansyaFactorySeeder extends Seeder
@@ -66,7 +67,20 @@ class AlkansyaFactorySeeder extends Seeder
         }
 
         $this->command->info("✅ Created {$totalCreated} days of Alkansya daily output data using factory");
-        $this->command->info("📊 Final stock levels:");
+        
+        // Check final finished goods inventory
+        $alkansyaFinishedGoods = InventoryItem::where('sku', 'FG-ALKANSYA')->first();
+        if ($alkansyaFinishedGoods) {
+            $this->command->info("📦 Final Alkansya finished goods inventory: {$alkansyaFinishedGoods->quantity_on_hand} pieces");
+        }
+        
+        // Check ProductionAnalytics sync
+        $analyticsCount = ProductionAnalytics::whereHas('product', function($query) {
+            $query->where('name', 'Alkansya');
+        })->count();
+        $this->command->info("📊 ProductionAnalytics records created: {$analyticsCount}");
+        
+        $this->command->info("📊 Final raw materials stock levels:");
         foreach ($stockLevels as $itemId => $stock) {
             $item = InventoryItem::find($itemId);
             $this->command->info("   - {$item->name}: {$stock} {$item->unit}");
@@ -146,7 +160,7 @@ class AlkansyaFactorySeeder extends Seeder
         $defects = rand(0, max(0, floor($quantityProduced * 0.05)));
 
         // Create daily output record using factory
-        AlkansyaDailyOutput::factory()->create([
+        $dailyOutput = AlkansyaDailyOutput::factory()->create([
             'date' => $date->format('Y-m-d'),
             'quantity_produced' => $quantityProduced,
             'materials_used' => $materialsUsed,
@@ -155,6 +169,12 @@ class AlkansyaFactorySeeder extends Seeder
             'notes' => $this->generateProductionNotes($date, $quantityProduced, $efficiency),
             'produced_by' => $this->getRandomProducer(),
         ]);
+
+        // Add finished goods to inventory
+        $this->addFinishedGoodsToInventory($quantityProduced, $date);
+
+        // Sync to ProductionAnalytics for dashboard display
+        $this->syncToProductionAnalytics($dailyOutput);
 
         return true;
     }
@@ -299,5 +319,80 @@ class AlkansyaFactorySeeder extends Seeder
         ];
 
         return $producers[array_rand($producers)];
+    }
+
+    /**
+     * Add finished goods to inventory
+     */
+    private function addFinishedGoodsToInventory($quantityProduced, $date)
+    {
+        // Find or create Alkansya finished goods inventory item
+        $alkansyaFinishedGoods = InventoryItem::where('sku', 'FG-ALKANSYA')
+            ->where('category', 'finished')
+            ->first();
+
+        if (!$alkansyaFinishedGoods) {
+            // Create Alkansya finished goods inventory item if it doesn't exist
+            $alkansyaFinishedGoods = InventoryItem::create([
+                'sku' => 'FG-ALKANSYA',
+                'name' => 'Alkansya (Finished Good)',
+                'category' => 'finished',
+                'status' => 'in_stock',
+                'location' => 'Windfield 2',
+                'unit' => 'piece',
+                'unit_cost' => 150.00,
+                'supplier' => 'In-House Production',
+                'description' => 'Completed Alkansya ready for sale',
+                'quantity_on_hand' => 0,
+                'safety_stock' => 50,
+                'reorder_point' => 100,
+                'max_level' => 500,
+                'lead_time_days' => 7,
+            ]);
+        }
+
+        // Add produced quantity to inventory
+        $alkansyaFinishedGoods->quantity_on_hand += $quantityProduced;
+        
+        // Update status based on quantity
+        if ($alkansyaFinishedGoods->quantity_on_hand > 0) {
+            $alkansyaFinishedGoods->status = 'in_stock';
+        } else {
+            $alkansyaFinishedGoods->status = 'out_of_stock';
+        }
+        
+        $alkansyaFinishedGoods->save();
+
+        $this->command->info("✅ Added {$quantityProduced} Alkansya finished goods to inventory (Total: {$alkansyaFinishedGoods->quantity_on_hand})");
+    }
+
+    /**
+     * Sync daily output to ProductionAnalytics for dashboard display
+     */
+    private function syncToProductionAnalytics($dailyOutput)
+    {
+        // Get Alkansya product
+        $alkansyaProduct = Product::where('name', 'Alkansya')->first();
+        if (!$alkansyaProduct) {
+            $this->command->warn("⚠️  Alkansya product not found for ProductionAnalytics sync");
+            return;
+        }
+
+        // Create or update ProductionAnalytics record
+        ProductionAnalytics::updateOrCreate(
+            [
+                'date' => $dailyOutput->date,
+                'product_id' => $alkansyaProduct->id,
+            ],
+            [
+                'actual_output' => $dailyOutput->quantity_produced,
+                'target_output' => $dailyOutput->quantity_produced, // Assuming target is actual for seeded data
+                'efficiency_percentage' => $dailyOutput->efficiency_percentage,
+                'total_duration_minutes' => 0, // Not tracked in AlkansyaDailyOutput
+                'avg_process_duration_minutes' => 0, // Not tracked
+            ]
+        );
+
+        $this->command->info("📊 Synced daily output to ProductionAnalytics for {$dailyOutput->date}");
     }
 }

@@ -100,32 +100,32 @@ const Report = () => {
                 {/* New separate container with border design */}
                 <div className="bg-white rounded-3 shadow-sm border p-4">
                     {/* Report Tabs - Aligned in One Row */}
-                    <div className="row mb-4">
-                        <div className="col-12">
-                            <ul className="nav nav-tabs nav-fill border-0" role="tablist">
-                                {reportTabs.map((tab, index) => (
-                                    <li className="nav-item" key={tab.id}>
-                                        <button
+                <div className="row mb-4">
+                    <div className="col-12">
+                                <ul className="nav nav-tabs nav-fill border-0" role="tablist">
+                                    {reportTabs.map((tab, index) => (
+                                        <li className="nav-item" key={tab.id}>
+                                            <button
                                             className={`nav-link ${activeReport === tab.id ? 'active' : ''}`}
-                                            onClick={() => setActiveReport(tab.id)}
-                                            style={{
-                                                border: 'none',
+                                                onClick={() => setActiveReport(tab.id)}
+                                                style={{
+                                                    border: 'none',
                                                 borderBottom: activeReport === tab.id ? '3px solid #007bff' : 'none',
                                                 color: activeReport === tab.id ? '#007bff' : '#6c757d',
                                                 fontWeight: activeReport === tab.id ? '600' : 'normal',
                                                 backgroundColor: 'transparent',
                                                 transition: 'all 0.3s ease',
-                                                padding: '1rem 1.5rem',
+                                                    padding: '1rem 1.5rem',
                                                 fontSize: '1.05rem'
                                             }}
                                         >
                                             {tab.name}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    </div>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                            </div>
+                                        </div>
 
                     {/* Report Content */}
                     <div className="row">

@@ -201,6 +201,35 @@ class OrderAcceptanceController extends Controller
             DB::commit();
             \Log::info("Transaction committed successfully");
 
+            // Send Pusher event for inventory updates (optional)
+            try {
+                $pusherKey = config('broadcasting.connections.pusher.key');
+                $pusherSecret = config('broadcasting.connections.pusher.secret');
+                $pusherAppId = config('broadcasting.connections.pusher.app_id');
+                
+                // Only attempt Pusher if all required config is available
+                if ($pusherKey && $pusherSecret && $pusherAppId) {
+                    $pusher = new \Pusher\Pusher(
+                        $pusherKey,
+                        $pusherSecret,
+                        $pusherAppId,
+                        config('broadcasting.connections.pusher.options')
+                    );
+                    
+                    $pusher->trigger('inventory-channel', 'order-accepted', [
+                        'message' => 'Order accepted - inventory status updated',
+                        'order_id' => $order->id,
+                        'timestamp' => now()->toISOString()
+                    ]);
+                    
+                    \Log::info("Pusher event sent for order acceptance");
+                } else {
+                    \Log::info("Pusher not configured - skipping real-time notification");
+                }
+            } catch (\Exception $e) {
+                \Log::warning("Failed to send Pusher event: " . $e->getMessage());
+            }
+
             // Count productions created
             $productionCount = Production::where('order_id', $order->id)->count();
             \Log::info("Total productions created for order #{$orderId}: {$productionCount}");
@@ -404,31 +433,51 @@ class OrderAcceptanceController extends Controller
                            str_contains(strtolower($product->name), 'dining');
             
             if ($isMadeToOrder) {
-                // Find the corresponding inventory item
+                \Log::info("Processing made-to-order product: {$product->name}");
+                
+                // Find the corresponding inventory item using more specific matching
+                $inventoryItem = null;
+                
+                // Try exact product name matching first
                 $inventoryItem = InventoryItem::where('category', 'made-to-order')
-                    ->where(function($query) use ($product) {
-                        $query->where('name', 'like', '%' . $product->name . '%')
-                              ->orWhere('name', 'like', '%' . str_replace(' ', '%', $product->name) . '%');
-                    })
+                    ->where('name', 'like', '%' . $product->name . '%')
                     ->first();
                 
+                // If not found, try more specific matching based on product type
+                if (!$inventoryItem) {
+                    if (str_contains(strtolower($product->name), 'table')) {
+                        $inventoryItem = InventoryItem::where('category', 'made-to-order')
+                            ->where('name', 'like', '%Dining Table%')
+                            ->first();
+                    } elseif (str_contains(strtolower($product->name), 'chair')) {
+                        $inventoryItem = InventoryItem::where('category', 'made-to-order')
+                            ->where('name', 'like', '%Wooden Chair%')
+                            ->first();
+                    }
+                }
+                
                 if ($inventoryItem) {
-                    // Calculate total production count for this product
+                    \Log::info("Found inventory item: {$inventoryItem->name} for product: {$product->name}");
+                    
+                    // Calculate total production count for this specific product
                     $totalProductionCount = DB::table('orders')
                         ->join('order_items', 'orders.id', '=', 'order_items.order_id')
                         ->join('products', 'order_items.product_id', '=', 'products.id')
                         ->whereIn('orders.status', ['processing', 'in_production'])
-                        ->where('products.name', 'like', '%' . $inventoryItem->name . '%')
+                        ->where('products.id', $product->id) // Use product ID for exact matching
                         ->sum('order_items.quantity');
                     
-                    // Update inventory status
-                    $inventoryItem->update([
-                        'status' => 'in_production',
-                        'production_status' => 'in_production',
-                        'production_count' => $totalProductionCount
-                    ]);
+                    \Log::info("Total production count for {$product->name}: {$totalProductionCount}");
+                    
+                    // Update inventory status - use direct assignment to ensure save
+                    $inventoryItem->status = 'in_production';
+                    $inventoryItem->production_status = 'in_production';
+                    $inventoryItem->production_count = $totalProductionCount;
+                    $inventoryItem->save();
                     
                     \Log::info("Updated inventory status for {$inventoryItem->name}: in_production, count: {$totalProductionCount}");
+                } else {
+                    \Log::warning("No inventory item found for made-to-order product: {$product->name}");
                 }
             }
         }
