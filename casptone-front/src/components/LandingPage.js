@@ -132,8 +132,6 @@ const LandingPage = () => {
                             className="banner-right"
                         >
                             <div className="banner-description">
-                                <h1 className="banner-title">Discover Quality Furniture</h1>
-                                <p className="banner-subtitle">Crafted with care, designed for comfort</p>
                             </div>
                             
                             {/* Search Filter */}
