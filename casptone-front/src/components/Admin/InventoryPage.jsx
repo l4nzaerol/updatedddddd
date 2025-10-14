@@ -102,10 +102,65 @@ function projectOnHand(onHand, dailyUsage, days) {
   return arr;
 }
 
-function statusFromLevels({ onHand, rop, maxLevel }) {
-  if (onHand <= rop) return { label: "Reorder now", variant: "danger" };
-  if (maxLevel && onHand > maxLevel) return { label: "Overstock", variant: "warning" };
-  return { label: "OK", variant: "success" };
+function statusFromLevels({ onHand, rop, maxLevel, category, name, productionCount = 0, isMadeToOrder = false, productionStatus = null, status = null }) {
+  // Use database status if available, otherwise calculate
+  if (status) {
+    switch (status) {
+      case 'in_stock':
+        return { label: "In Stock", variant: "success" };
+      case 'low_stock':
+        return { label: "Low Stock", variant: "warning" };
+      case 'out_of_stock':
+        return { label: "Out of Stock", variant: "danger" };
+      case 'reorder_now':
+        return { label: "Reorder now", variant: "danger" };
+      case 'overstock':
+        return { label: "Overstock", variant: "warning" };
+      case 'not_in_production':
+        return { label: "Not in Production", variant: "secondary" };
+      case 'in_production':
+        return { label: "In Production", variant: "warning" };
+      case 'ready_to_deliver':
+        return { label: "Ready to Deliver", variant: "info" };
+      case 'completed':
+        return { label: "Completed", variant: "success" };
+      default:
+        break;
+    }
+  }
+  
+  // Fallback calculation if no database status
+  // For raw materials - use reorder logic with "In Stock" instead of "OK"
+  if (category === 'raw') {
+    if (onHand <= rop) return { label: "Reorder now", variant: "danger" };
+    if (maxLevel && onHand > maxLevel) return { label: "Overstock", variant: "warning" };
+    return { label: "In Stock", variant: "success" };
+  }
+  
+  // For mass-produced finished goods (Alkansya)
+  if (category === 'finished' && !isMadeToOrder) {
+    if (onHand === 0) return { label: "Out of Stock", variant: "danger" };
+    if (onHand <= rop) return { label: "Low Stock", variant: "warning" };
+    return { label: "In Stock", variant: "success" };
+  }
+  
+  // For made-to-order products (Table and Chair)
+  if (isMadeToOrder || (category === 'finished' && (name.toLowerCase().includes('table') || name.toLowerCase().includes('chair')))) {
+    // Check production status first
+    if (productionStatus === 'completed') {
+      return { label: "Completed", variant: "success" };
+    }
+    if (productionStatus === 'ready_to_deliver') {
+      return { label: "Ready to Deliver", variant: "info" };
+    }
+    if (productionCount > 0 || productionStatus === 'in_production') {
+      return { label: "In Production", variant: "warning" };
+    }
+    return { label: "Not in Production", variant: "secondary" };
+  }
+  
+  // Default fallback
+  return { label: "In Stock", variant: "success" };
 }
 
 // Material Form Modal Component
@@ -372,7 +427,12 @@ const MaterialModal = ({ show, onHide, material, onSave }) => {
                   onChange={(e) => handleChange("reorder_point", Math.max(0, parseInt(e.target.value || 0, 10)))}
                   min="0"
                   step="1"
+                  readOnly={formData.category === 'finished'}
+                  style={formData.category === 'finished' ? { backgroundColor: '#f8f9fa', cursor: 'not-allowed' } : {}}
                 />
+                {formData.category === 'finished' && (
+                  <small className="text-muted">Reorder point is read-only for finished goods</small>
+                )}
               </div>
               <div className="col-12">
                 <label className="form-label">Description</label>
@@ -416,6 +476,7 @@ const InventoryPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("raw"); // New state for tab management
   const [alkansyaStats, setAlkansyaStats] = useState({
     totalOutput: 0,
     averageDaily: 0,
@@ -768,10 +829,20 @@ const InventoryPage = () => {
       const daysCover = daysUntil(onHand, avgDaily);
       const projected = projectOnHand(onHand, avgDaily, DEFAULTS.planningHorizonDays);
 
-      const status = statusFromLevels({ onHand, rop, maxLevel });
+      const status = statusFromLevels({ 
+        onHand, 
+        rop, 
+        maxLevel, 
+        category: it.category, 
+        name: it.name,
+        productionCount: it.productionCount || 0,
+        isMadeToOrder: it.isMadeToOrder || (it.category === 'finished' && (it.name.toLowerCase().includes('table') || it.name.toLowerCase().includes('chair'))),
+        productionStatus: it.productionStatus || null,
+        status: it.status || null
+      });
 
       const target = maxLevel || rop + safety;
-      const suggestedOrderQty = onHand <= rop ? Math.max(0, Math.round(target - onHand)) : 0;
+      const suggestedOrderQty = (it.category === 'raw' && onHand <= rop) ? Math.max(0, Math.round(target - onHand)) : 0;
 
       const rawDaysToROP = (onHand - rop) / (avgDaily > 0 ? avgDaily : Infinity);
       const daysToROP = Number.isFinite(rawDaysToROP) ? Math.max(0, Math.ceil(rawDaysToROP)) : null;
@@ -791,6 +862,8 @@ const InventoryPage = () => {
         suggestedOrderQty,
         etaReorderDate,
         maxLevel,
+        productionCount: it.production_count || 0,
+        productionStatus: it.production_status || null,
       };
     });
 
@@ -800,7 +873,7 @@ const InventoryPage = () => {
     });
   }, [inventory, usage]);
 
-  // Filters and grouping with product-specific filtering
+  // Filters and grouping with product-specific filtering and tab-based filtering
   const filtered = useMemo(() => {
     const q = filter.q.trim().toLowerCase();
     const type = filter.type;
@@ -810,7 +883,13 @@ const InventoryPage = () => {
       const matchesQ = !q || [it.name, it.sku, it.location, it.category, it.description].join(" ").toLowerCase().includes(q);
       const matchesType = type === "all" || 
         (type === "raw" && it.category.toLowerCase().includes("raw")) || 
-        (type === "finished" && it.category.toLowerCase().includes("finished"));
+        (type === "finished" && it.category.toLowerCase().includes("finished") && 
+          !it.isMadeToOrder && 
+          !it.name.toLowerCase().includes('table') && 
+          !it.name.toLowerCase().includes('chair')) ||
+        (type === "made-to-order" && (it.isMadeToOrder || 
+          it.category.toLowerCase().includes("made-to-order") ||
+          (it.category.toLowerCase().includes("finished") && (it.name.toLowerCase().includes('table') || it.name.toLowerCase().includes('chair')))));
       
       // Product-specific filtering
       let matchesProduct = true;
@@ -825,15 +904,41 @@ const InventoryPage = () => {
         }
       }
       
-      return matchesQ && matchesType && matchesProduct;
+      // Tab-based filtering
+      let matchesTab = true;
+      if (activeTab === 'raw') {
+        matchesTab = it.category.toLowerCase().includes("raw");
+      } else if (activeTab === 'finished') {
+        matchesTab = it.category.toLowerCase().includes("finished") && 
+          !it.isMadeToOrder && 
+          !it.name.toLowerCase().includes('table') && 
+          !it.name.toLowerCase().includes('chair');
+      } else if (activeTab === 'made-to-order') {
+        matchesTab = it.isMadeToOrder || 
+          it.category.toLowerCase().includes("made-to-order") ||
+          (it.category.toLowerCase().includes("finished") && (it.name.toLowerCase().includes('table') || it.name.toLowerCase().includes('chair')));
+      }
+      // For daily-output tab, show all items (no filtering)
+      
+      return matchesQ && matchesType && matchesProduct && matchesTab;
     });
-  }, [enriched, filter]);
+  }, [enriched, filter, activeTab]);
 
-  // Group materials by category - Raw Materials first, then Finished Products
+  // Group materials by category - Raw Materials, Finished Goods, and Made-to-Order
   const groupedInventory = useMemo(() => {
     const raw = filtered.filter(item => item.category.toLowerCase().includes("raw"));
-    const finished = filtered.filter(item => item.category.toLowerCase().includes("finished"));
-    return { raw, finished };
+    const finished = filtered.filter(item => 
+      item.category.toLowerCase().includes("finished") && 
+      !item.isMadeToOrder && 
+      !item.name.toLowerCase().includes('table') && 
+      !item.name.toLowerCase().includes('chair')
+    );
+    const madeToOrder = filtered.filter(item => 
+      item.isMadeToOrder || 
+      item.category.toLowerCase().includes("made-to-order") ||
+      (item.category.toLowerCase().includes("finished") && (item.name.toLowerCase().includes('table') || item.name.toLowerCase().includes('chair')))
+    );
+    return { raw, finished, madeToOrder };
   }, [filtered]);
 
   // CSV usage upload
@@ -890,7 +995,7 @@ const InventoryPage = () => {
         <div className="d-flex gap-2 flex-wrap">
           <button className="btn btn-info" onClick={() => setShowAlkansyaModal(true)}>
             <i className="fas fa-piggy-bank me-2"></i>
-            + Finished Alkansya for Daily Output
+            + Daily Alkansya Output
           </button>
           <button className="btn btn-success" onClick={handleAddMaterial}>
             + Add Material
@@ -899,6 +1004,100 @@ const InventoryPage = () => {
             Upload Usage CSV
             <input ref={fileInputRef} type="file" accept=".csv" onChange={onUploadUsage} hidden />
           </label>
+        </div>
+      </div>
+
+      {/* Inventory Summary Cards */}
+      <div className="row mb-4">
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Items</div>
+              <div className="h3 mb-1 text-primary fw-bold">{inventory.length}</div>
+              <div className="small text-muted">
+                {groupedInventory.raw.length} raw • {groupedInventory.finished.length} finished
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body">
+              <div className="text-muted small mb-1">Reorder Alerts</div>
+              <div className="h3 mb-1 text-danger fw-bold">{inventory.filter(item => item.category === 'raw' && item.quantity_on_hand <= item.reorder_point).length}</div>
+              <div className="small text-muted">
+                {inventory.filter(item => item.category === 'raw' && item.quantity_on_hand <= item.reorder_point).length > 0 ? "Action required" : "All stocked"}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body">
+              <div className="text-muted small mb-1">Low Stock</div>
+              <div className="h3 mb-1 text-warning fw-bold">
+                {inventory.filter(item => item.category === 'raw' && item.quantity_on_hand > item.reorder_point && item.quantity_on_hand <= (item.reorder_point * 1.5)).length}
+              </div>
+              <div className="small text-muted">Less than 14 days</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body">
+              <div className="text-muted small mb-1">Total Finished Goods</div>
+              <div className="h3 mb-1 text-success fw-bold">{groupedInventory.finished.length}</div>
+              <div className="small text-muted">Mass-produced products</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="card mb-4 shadow-sm">
+        <div className="card-header">
+          <ul className="nav nav-tabs card-header-tabs" role="tablist">
+            <li className="nav-item" role="presentation">
+              <button 
+                className={`nav-link ${activeTab === 'raw' ? 'active' : ''}`}
+                onClick={() => setActiveTab('raw')}
+                type="button"
+              >
+                <i className="fas fa-boxes me-2"></i>
+                Raw Materials ({groupedInventory.raw.length})
+              </button>
+            </li>
+            <li className="nav-item" role="presentation">
+              <button 
+                className={`nav-link ${activeTab === 'finished' ? 'active' : ''}`}
+                onClick={() => setActiveTab('finished')}
+                type="button"
+              >
+                <i className="fas fa-check-circle me-2"></i>
+                Finished Goods ({groupedInventory.finished.length})
+              </button>
+            </li>
+            <li className="nav-item" role="presentation">
+              <button 
+                className={`nav-link ${activeTab === 'made-to-order' ? 'active' : ''}`}
+                onClick={() => setActiveTab('made-to-order')}
+                type="button"
+              >
+                <i className="fas fa-hammer me-2"></i>
+                Made-to-Order ({groupedInventory.madeToOrder.length})
+              </button>
+            </li>
+            <li className="nav-item" role="presentation">
+              <button 
+                className={`nav-link ${activeTab === 'daily-output' ? 'active' : ''}`}
+                onClick={() => setActiveTab('daily-output')}
+                type="button"
+              >
+                <i className="fas fa-piggy-bank me-2"></i>
+                Daily Output
+              </button>
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -924,7 +1123,8 @@ const InventoryPage = () => {
               >
                 <option value="all">All Categories</option>
                 <option value="raw">Raw Materials</option>
-                <option value="finished">Finished Products</option>
+                <option value="finished">Finished Goods</option>
+                <option value="made-to-order">Made-to-Order</option>
               </select>
             </div>
             <div className="col-md-3">
@@ -959,56 +1159,9 @@ const InventoryPage = () => {
         <div className="alert alert-danger">{error}</div>
       )}
 
-      {/* KPI Summary - Simplified */}
-      {!loading && (
-        <div className="row g-3 mb-4">
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm h-100">
-              <div className="card-body">
-                <div className="text-muted small mb-1">Total Items</div>
-                <div className="h3 mb-1 text-primary fw-bold">{enriched.length}</div>
-                <div className="small text-muted">
-                  {groupedInventory.raw.length} materials • {groupedInventory.finished.length} products
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm h-100">
-              <div className="card-body">
-                <div className="text-muted small mb-1">Reorder Alerts</div>
-                <div className="h3 mb-1 text-danger fw-bold">{enriched.filter((x) => x.status.variant === "danger").length}</div>
-                <div className="small text-muted">
-                  {enriched.filter((x) => x.status.variant === "danger").length > 0 ? "Action required" : "All stocked"}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm h-100">
-              <div className="card-body">
-                <div className="text-muted small mb-1">Low Stock</div>
-                <div className="h3 mb-1 text-warning fw-bold">
-                  {enriched.filter((x) => typeof x.daysCover === 'number' && x.daysCover < 14).length}
-                </div>
-                <div className="small text-muted">Less than 14 days</div>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm h-100">
-              <div className="card-body">
-                <div className="text-muted small mb-1">Showing</div>
-                <div className="h3 mb-1 text-success fw-bold">{filtered.length}</div>
-                <div className="small text-muted">Filtered items</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* RAW MATERIALS SECTION */}
-      {(filter.type === "all" || filter.type === "raw") && groupedInventory.raw.length > 0 && (
+      {/* Tab Content */}
+      {activeTab === 'raw' && (
         <div className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
             <h5 className="mb-0">📦 Raw Materials</h5>
@@ -1083,62 +1236,11 @@ const InventoryPage = () => {
         </div>
       )}
 
-      {/* ALKANSYA DAILY OUTPUT SECTION */}
-      <div className="mb-4">
-        <div className="d-flex align-items-center justify-content-between mb-2">
-          <h5 className="mb-0">🐷 Alkansya Daily Output</h5>
-          <button 
-            className="btn btn-info btn-sm"
-            onClick={() => setShowAlkansyaModal(true)}
-          >
-            <i className="fas fa-plus me-1"></i>
-            Add Daily Output
-          </button>
-        </div>
-        
-        <div className="card shadow-sm">
-          <div className="card-body">
-            <div className="row g-3">
-              <div className="col-md-3">
-                <div className="text-center">
-                  <div className="h4 text-primary mb-1">{alkansyaStats.totalOutput}</div>
-                  <small className="text-muted">Total Produced</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="text-center">
-                  <div className="h4 text-success mb-1">{alkansyaStats.averageDaily}</div>
-                  <small className="text-muted">Avg Daily</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="text-center">
-                  <div className="h4 text-info mb-1">{alkansyaStats.last7Days}</div>
-                  <small className="text-muted">Last 7 Days</small>
-                </div>
-              </div>
-              <div className="col-md-3">
-                <div className="text-center">
-                  <div className="h4 text-warning mb-1">{alkansyaStats.productionDays}</div>
-                  <small className="text-muted">Production Days</small>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3">
-              <small className="text-muted">
-                <i className="fas fa-info-circle me-1"></i>
-                Click "Add Daily Output" to record today's Alkansya production and automatically deduct materials from inventory.
-              </small>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* FINISHED PRODUCTS SECTION */}
-      {(filter.type === "all" || filter.type === "finished") && groupedInventory.finished.length > 0 && (
+      {/* FINISHED GOODS TAB */}
+      {activeTab === 'finished' && (
         <div className="mb-4">
           <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="mb-0">✅ Finished Products</h5>
+            <h5 className="mb-0">✅ Finished Goods</h5>
             <span className="badge bg-success">{groupedInventory.finished.length} items</span>
           </div>
           
@@ -1151,9 +1253,9 @@ const InventoryPage = () => {
                     <th>Name</th>
                     <th>Location</th>
                     <th className="text-end">Stock</th>
-                    <th className="text-end">Daily Sales</th>
+                    <th className="text-end">Unit Cost</th>
+                    <th className="text-end">Total Value</th>
                     <th>Status</th>
-                    <th className="text-end">Production Needed</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -1169,18 +1271,12 @@ const InventoryPage = () => {
                       <td className="text-end">
                         <strong>{item.onHand}</strong> <small className="text-muted">{item.unit}</small>
                       </td>
-                      <td className="text-end">{item.avgDaily}</td>
+                      <td className="text-end">₱{(item.unit_cost || 0).toLocaleString()}</td>
+                      <td className="text-end">₱{((item.unit_cost || 0) * item.onHand).toLocaleString()}</td>
                       <td>
                         <span className={`badge bg-${item.status.variant}`}>
                           {item.status.label}
                         </span>
-                      </td>
-                      <td className="text-end">
-                        {item.suggestedOrderQty > 0 ? (
-                          <strong className="text-danger">{item.suggestedOrderQty}</strong>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
                       </td>
                       <td>
                         <button 
@@ -1209,6 +1305,129 @@ const InventoryPage = () => {
           </div>
         </div>
       )}
+
+      {/* MADE-TO-ORDER TAB */}
+      {activeTab === 'made-to-order' && (
+        <div className="mb-4">
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <h5 className="mb-0">🔨 Made-to-Order Products</h5>
+            <span className="badge bg-warning">{groupedInventory.madeToOrder.length} items</span>
+          </div>
+          
+          <div className="card shadow-sm">
+            <div className="table-responsive">
+              <table className="table table-hover mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Location</th>
+                    <th className="text-end">Stock</th>
+                    <th className="text-end">Unit Cost</th>
+                    <th>Production Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedInventory.madeToOrder.map((item) => (
+                    <tr key={item.id || item.sku}>
+                      <td><code className="small">{item.sku}</code></td>
+                      <td>
+                        <div>{item.name}</div>
+                        {item.description && <small className="text-muted">{item.description.substring(0, 40)}...</small>}
+                      </td>
+                      <td><small>{item.location}</small></td>
+                      <td className="text-end">
+                        <strong>{item.onHand}</strong> <small className="text-muted">{item.unit}</small>
+                      </td>
+                      <td className="text-end">₱{(item.unit_cost || 0).toLocaleString()}</td>
+                      <td className="text-center">
+                        <div className="d-flex flex-column align-items-center">
+                          <span className={`badge bg-${item.status.variant} mb-1`}>
+                            {item.status.label}
+                          </span>
+                          {item.productionCount > 0 && (
+                            <small className="text-muted">
+                              {item.productionCount} in Production
+                            </small>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-outline-primary me-1"
+                          onClick={() => handleEditMaterial(item)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteMaterial(item.id, e);
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DAILY OUTPUT TAB */}
+      {activeTab === 'daily-output' && (
+        <div className="mb-4">
+          <div className="d-flex align-items-center justify-content-between mb-2">
+            <h5 className="mb-0">🐷 Daily Alkansya Output</h5>
+            <button 
+              className="btn btn-info btn-sm"
+              onClick={() => setShowAlkansyaModal(true)}
+            >
+              <i className="fas fa-plus me-1"></i>
+              Add Daily Output
+            </button>
+          </div>
+          
+          <div className="card shadow-sm">
+            <div className="card-body">
+              <div className="row g-3">
+                <div className="col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-primary mb-1">{alkansyaStats.totalOutput}</div>
+                    <div className="small text-muted">Total Output</div>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-success mb-1">{alkansyaStats.averageDaily}</div>
+                    <div className="small text-muted">Avg Daily</div>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-info mb-1">{alkansyaStats.last7Days}</div>
+                    <div className="small text-muted">Last 7 Days</div>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-warning mb-1">{alkansyaStats.productionDays}</div>
+                    <div className="small text-muted">Production Days</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* No Results Message */}
       {filtered.length === 0 && !loading && (

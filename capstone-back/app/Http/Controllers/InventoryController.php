@@ -14,14 +14,81 @@ use App\Services\InventoryForecastService;
 class InventoryController extends Controller
 {
     public function index() {
-        return response()->json(InventoryItem::all());
+        $items = InventoryItem::all();
+        
+        // Update production status for made-to-order products based on actual orders
+        foreach ($items as $item) {
+            if ($item->category === 'made-to-order') {
+                $productionStatus = $this->getProductionStatus($item);
+                $productionCount = $this->getProductionCount($item);
+                
+                // Update status in database
+                $item->update([
+                    'production_status' => $productionStatus,
+                    'production_count' => $productionCount,
+                    'status' => $productionStatus
+                ]);
+                
+                \Log::info("Updated inventory status for {$item->name}: {$productionStatus}, count: {$productionCount}");
+                
+                // Refresh the item to get updated values
+                $item->refresh();
+            }
+        }
+        
+        return response()->json($items);
+    }
+    
+    private function getProductionStatus($item) {
+        // Check if there are any active orders for this product
+        // Extract the base product name from inventory item name
+        $baseName = str_replace([' (Made-to-Order)', ' (Finished Good)'], '', $item->name);
+        
+        $activeOrders = DB::table('orders')
+            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->where('orders.status', '!=', 'cancelled')
+            ->where('orders.status', '!=', 'delivered')
+            ->where('products.name', 'like', '%' . $baseName . '%')
+            ->whereIn('orders.status', ['accepted', 'processing', 'in_production', 'ready_for_delivery'])
+            ->count();
+            
+        if ($activeOrders > 0) {
+            // Check if any orders are ready for delivery
+            $readyForDelivery = DB::table('orders')
+                ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+                ->join('products', 'order_items.product_id', '=', 'products.id')
+                ->where('orders.status', 'ready_for_delivery')
+                ->where('products.name', 'like', '%' . $baseName . '%')
+                ->count();
+                
+            if ($readyForDelivery > 0) {
+                return 'ready_to_deliver';
+            }
+            
+            return 'in_production';
+        }
+        
+        return 'not_in_production';
+    }
+    
+    private function getProductionCount($item) {
+        // Extract the base product name from inventory item name
+        $baseName = str_replace([' (Made-to-Order)', ' (Finished Good)'], '', $item->name);
+        
+        return DB::table('orders')
+            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->whereIn('orders.status', ['processing', 'in_production'])
+            ->where('products.name', 'like', '%' . $baseName . '%')
+            ->sum('order_items.quantity');
     }
 
     public function store(Request $request) {
         $data = $request->validate([
             'sku' => 'required|unique:inventory_items',
             'name' => 'required',
-            'category' => 'required|in:raw,finished',
+            'category' => 'required|in:raw,finished,made-to-order',
             'location' => 'nullable',
             'unit' => 'nullable|string',
             'unit_cost' => 'nullable|numeric|min:0',
@@ -42,7 +109,7 @@ class InventoryController extends Controller
         $item = InventoryItem::findOrFail($id);
         $data = $request->validate([
             'name' => 'sometimes|string',
-            'category' => 'sometimes|in:raw,finished',
+            'category' => 'sometimes|in:raw,finished,made-to-order',
             'location' => 'nullable',
             'unit' => 'nullable|string',
             'unit_cost' => 'nullable|numeric|min:0',

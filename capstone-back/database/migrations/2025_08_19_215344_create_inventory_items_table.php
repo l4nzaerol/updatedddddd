@@ -10,7 +10,10 @@ return new class extends Migration {
             $table->id();
             $table->string('sku')->unique();
             $table->string('name');
-            $table->enum('category', ['raw', 'finished'])->default('raw');
+            $table->enum('category', ['raw', 'finished', 'made-to-order'])->default('raw');
+            $table->string('status', 50)->default('in_stock');
+            $table->integer('production_count')->default(0);
+            $table->string('production_status', 50)->nullable();
             $table->string('location')->nullable();
             $table->integer('quantity_on_hand')->default(0);
             $table->integer('safety_stock')->default(0);

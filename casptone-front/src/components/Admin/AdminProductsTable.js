@@ -6,6 +6,21 @@ import "./admin_products.css";
 
 const AdminProductsTable = () => {
   const [products, setProducts] = useState([]);
+  
+  // Function to format quantity for display - remove unnecessary decimal places
+  const formatQuantity = (qty) => {
+    if (qty == null || qty === '') return '';
+    const num = parseFloat(qty);
+    if (isNaN(num)) return qty;
+    
+    // If it's a whole number, display without decimals
+    if (num === Math.floor(num)) {
+      return num.toString();
+    }
+    
+    // For decimal numbers, remove trailing zeros
+    return num.toString().replace(/\.?0+$/, '');
+  };
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -632,8 +647,9 @@ const AdminProductsTable = () => {
                                 type="number" 
                                 className="form-control form-control-sm" 
                                 style={{ maxWidth: '120px' }}
-                                min="1" 
-                                value={row.qty_per_unit}
+                                min="0.001"
+                                step="0.001"
+                                value={formatQuantity(row.qty_per_unit)}
                                 onChange={(e) => updateBomRow(idx, 'qty_per_unit', Number(e.target.value))} 
                               />
                             </td>

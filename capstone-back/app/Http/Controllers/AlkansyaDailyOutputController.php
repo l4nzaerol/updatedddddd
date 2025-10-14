@@ -39,7 +39,7 @@ class AlkansyaDailyOutputController extends Controller
     }
 
     /**
-     * Store a newly created daily output
+     * Store a newly created daily output with automatic material deduction
      */
     public function store(Request $request)
     {
@@ -79,6 +79,7 @@ class AlkansyaDailyOutputController extends Controller
                 if ($requiredQuantity > 0) {
                     // Check if enough stock
                     if ($inventoryItem->quantity_on_hand < $requiredQuantity) {
+                        DB::rollBack();
                         return response()->json([
                             'error' => "Insufficient stock for {$inventoryItem->name}. Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}"
                         ], 400);
@@ -106,6 +107,8 @@ class AlkansyaDailyOutputController extends Controller
                         'qty_used' => $requiredQuantity,
                         'date' => $request->date,
                     ]);
+
+                    Log::info("Auto-deducted {$requiredQuantity} {$inventoryItem->unit} of {$inventoryItem->name} for Alkansya daily output");
                 }
             }
 
@@ -122,15 +125,25 @@ class AlkansyaDailyOutputController extends Controller
                 ]
             );
 
+            // Update finished goods inventory
+            $alkansyaFinishedGood = InventoryItem::where('sku', 'FG-ALKANSYA')->first();
+            if ($alkansyaFinishedGood) {
+                $alkansyaFinishedGood->quantity_on_hand += $quantity;
+                $alkansyaFinishedGood->save();
+            }
+
             DB::commit();
 
             return response()->json([
-                'message' => 'Daily output added successfully',
-                'data' => $dailyOutput
+                'message' => 'Daily output added and materials automatically deducted successfully',
+                'data' => $dailyOutput,
+                'materials_used' => $materialsUsed,
+                'total_cost' => $totalCost
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Alkansya daily output auto deduction failed: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Failed to add daily output: ' . $e->getMessage()
             ], 500);

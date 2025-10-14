@@ -21,6 +21,7 @@ use App\Http\Controllers\PriceCalculatorController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\SalesAnalyticsController;
 use App\Http\Controllers\AlkansyaDailyOutputController;
+use App\Http\Controllers\AutoDeductionController;
 use App\Http\Controllers\ProfileController;
 
 use App\Models\Production;
@@ -263,6 +264,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/', [AlkansyaDailyOutputController::class, 'store']);
         Route::get('/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
         Route::get('/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
+    });
+
+    // Auto Deduction Routes
+    Route::prefix('auto-deduction')->group(function () {
+        Route::post('/production', [AutoDeductionController::class, 'deductForProduction']);
+        Route::post('/alkansya-daily', [AutoDeductionController::class, 'deductForAlkansyaDailyOutput']);
+        Route::get('/history', [AutoDeductionController::class, 'getDeductionHistory']);
+        Route::get('/consumption-analysis', [AutoDeductionController::class, 'getConsumptionAnalysis']);
     });
 
     // Profile Routes

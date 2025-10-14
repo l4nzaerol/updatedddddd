@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Production;
 use App\Models\OrderTracking;
 use App\Models\ProductionProcess;
+use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -192,6 +193,9 @@ class OrderAcceptanceController extends Controller
                     ]
                 );
             }
+
+            // Update inventory status for made-to-order products
+            $this->updateInventoryStatusForOrder($order);
 
             \Log::info("Committing transaction for order #{$orderId}");
             DB::commit();
@@ -383,6 +387,50 @@ class OrderAcceptanceController extends Controller
             ]);
 
             \Log::info("Deducted {$requiredQty} {$inventoryItem->unit} of {$inventoryItem->name} (Remaining: {$inventoryItem->fresh()->quantity_on_hand})");
+        }
+    }
+
+    /**
+     * Update inventory status for made-to-order products when orders are accepted
+     */
+    private function updateInventoryStatusForOrder($order)
+    {
+        foreach ($order->items as $item) {
+            $product = $item->product;
+            
+            // Check if this is a made-to-order product
+            $isMadeToOrder = str_contains(strtolower($product->name), 'table') || 
+                           str_contains(strtolower($product->name), 'chair') ||
+                           str_contains(strtolower($product->name), 'dining');
+            
+            if ($isMadeToOrder) {
+                // Find the corresponding inventory item
+                $inventoryItem = InventoryItem::where('category', 'made-to-order')
+                    ->where(function($query) use ($product) {
+                        $query->where('name', 'like', '%' . $product->name . '%')
+                              ->orWhere('name', 'like', '%' . str_replace(' ', '%', $product->name) . '%');
+                    })
+                    ->first();
+                
+                if ($inventoryItem) {
+                    // Calculate total production count for this product
+                    $totalProductionCount = DB::table('orders')
+                        ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+                        ->join('products', 'order_items.product_id', '=', 'products.id')
+                        ->whereIn('orders.status', ['processing', 'in_production'])
+                        ->where('products.name', 'like', '%' . $inventoryItem->name . '%')
+                        ->sum('order_items.quantity');
+                    
+                    // Update inventory status
+                    $inventoryItem->update([
+                        'status' => 'in_production',
+                        'production_status' => 'in_production',
+                        'production_count' => $totalProductionCount
+                    ]);
+                    
+                    \Log::info("Updated inventory status for {$inventoryItem->name}: in_production, count: {$totalProductionCount}");
+                }
+            }
         }
     }
 }

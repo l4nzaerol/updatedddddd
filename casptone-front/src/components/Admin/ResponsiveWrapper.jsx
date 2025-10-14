@@ -25,3 +25,4 @@ const ResponsiveWrapper = ({ children, className = "", style = {} }) => {
 };
 
 export default ResponsiveWrapper;
+

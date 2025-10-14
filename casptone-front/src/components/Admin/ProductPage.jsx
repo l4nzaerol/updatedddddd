@@ -434,8 +434,12 @@ const ProductPage = () => {
                               <Form.Control
                                 size="sm"
                                 type="number"
-                                min="1"
-                                value={item.qty_per_unit}
+                                min="0.001"
+                                step="0.001"
+                                value={item.qty_per_unit == null || item.qty_per_unit === '' ? '' : 
+                                  (parseFloat(item.qty_per_unit) === Math.floor(parseFloat(item.qty_per_unit)) ? 
+                                    parseFloat(item.qty_per_unit).toString() : 
+                                    parseFloat(item.qty_per_unit).toString().replace(/\.?0+$/, ''))}
                                 onChange={(e) => handleBomItemChange(index, 'qty_per_unit', e.target.value)}
                                 placeholder="Qty"
                                 style={{ maxWidth: '120px' }}
