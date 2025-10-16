@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { getAnalytics } from "../../api/productionApi";
 import api from "../../api/client";
 import KPICards from "./Analytics/KPICards";
 import DailyOutputChart from "./Analytics/DailyOutputChart";
@@ -14,9 +13,6 @@ const AdminDashboard = () => {
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
-      // Fetch production analytics
-      const productionData = await getAnalytics({});
-      
       // Fetch order analytics
       let orderData = {
         pending_orders: 0,
@@ -48,38 +44,117 @@ const AdminDashboard = () => {
           pending_orders: pendingOrders,
           completed_orders: completedOrders,
           total_sales_revenue: totalRevenue,
-          completed_productions: productionData.products?.alkansya?.totals?.total_productions || 0,
-          in_progress: productionData.products?.alkansya?.totals?.in_progress || 0
+          completed_productions: 0,
+          in_progress: 0
         };
       } catch (orderError) {
-        console.warn('Order API not available, using fallback data');
-        // Use fallback data if order API is not available
+        console.warn('Order API not available, using zero values');
         orderData = {
-          pending_orders: 5,
-          completed_orders: 12,
-          total_sales_revenue: 245000,
-          completed_productions: productionData.products?.alkansya?.totals?.total_productions || 0,
-          in_progress: productionData.products?.alkansya?.totals?.in_progress || 0
+          pending_orders: 0,
+          completed_orders: 0,
+          total_sales_revenue: 0,
+          completed_productions: 0,
+          in_progress: 0
         };
+      }
+
+      // Fetch production analytics data
+      let productionData = {
+        daily_output: [],
+        top_products: [],
+        alkansya_stats: { total: 0, avg: 0 },
+        furniture_stats: { total: 0, avg: 0 }
+      };
+
+      try {
+        // Fetch production output analytics
+        const productionResponse = await api.get('/analytics/production-output');
+        const productionAnalytics = productionResponse.data || {};
+        
+        if (productionAnalytics.products) {
+          // Transform Alkansya data
+          const alkansyaData = productionAnalytics.products.alkansya;
+          if (alkansyaData && alkansyaData.output_trend) {
+            productionData.daily_output = alkansyaData.output_trend.map(item => ({
+              date: item.period,
+              alkansya: item.output,
+              furniture: 0, // Will be updated with furniture data
+              quantity: item.output
+            }));
+          }
+
+          // Transform furniture data (tables and chairs)
+          const tableData = productionAnalytics.products.table;
+          const chairData = productionAnalytics.products.chair;
+          
+          if (tableData && tableData.output_trend) {
+            tableData.output_trend.forEach(item => {
+              const existingItem = productionData.daily_output.find(d => d.date === item.period);
+              if (existingItem) {
+                existingItem.furniture += item.output;
+                existingItem.quantity += item.output;
+              } else {
+                productionData.daily_output.push({
+                  date: item.period,
+                  alkansya: 0,
+                  furniture: item.output,
+                  quantity: item.output
+                });
+              }
+            });
+          }
+
+          if (chairData && chairData.output_trend) {
+            chairData.output_trend.forEach(item => {
+              const existingItem = productionData.daily_output.find(d => d.date === item.period);
+              if (existingItem) {
+                existingItem.furniture += item.output;
+                existingItem.quantity += item.output;
+              } else {
+                productionData.daily_output.push({
+                  date: item.period,
+                  alkansya: 0,
+                  furniture: item.output,
+                  quantity: item.output
+                });
+              }
+            });
+          }
+
+          // Calculate stats
+          const totalAlkansya = alkansyaData?.totals?.total_output || 0;
+          const totalFurniture = (tableData?.totals?.total_output || 0) + (chairData?.totals?.total_output || 0);
+          
+          productionData.alkansya_stats = {
+            total: totalAlkansya,
+            avg: alkansyaData?.totals?.avg_per_period || 0
+          };
+          
+          productionData.furniture_stats = {
+            total: totalFurniture,
+            avg: Math.round(totalFurniture / Math.max(1, productionData.daily_output.length))
+          };
+
+          // Create top products data
+          productionData.top_products = productionAnalytics.top_performing || [];
+        }
+      } catch (productionError) {
+        console.warn('Production analytics API not available:', productionError);
+        // Keep empty arrays for production data
       }
       
       // Transform the API response to match the expected dashboard structure
       const transformedData = {
         kpis: {
-          total: productionData.products?.alkansya?.totals?.total_productions || 0,
+          total: productionData.alkansya_stats.total + productionData.furniture_stats.total,
           completed_productions: orderData.completed_productions,
           in_progress: orderData.in_progress,
           pending_orders: orderData.pending_orders,
           completed_orders: orderData.completed_orders,
           total_sales_revenue: orderData.total_sales_revenue
         },
-        daily_output: productionData.products?.alkansya?.output_trend?.map(item => ({
-          date: item.period,
-          alkansya: item.output,
-          furniture: 0,
-          quantity: item.output
-        })) || [],
-        top_products: productionData.top_performing || [],
+        daily_output: productionData.daily_output,
+        top_products: productionData.top_products,
         top_users: [],
         top_staff: []
       };

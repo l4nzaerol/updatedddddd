@@ -19,6 +19,14 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
   });
   const [errors, setErrors] = useState({});
 
+  // Helper function to get image URL (matching ProductCatalog implementation)
+  const getImageUrl = (product) => {
+    if (!product?.image) return "https://via.placeholder.com/200x200/8B4513/FFFFFF?text=No+Image";
+    
+    // Use the same URL construction as ProductCatalog
+    return `http://localhost:8000/${product.image}`;
+  };
+
   // Philippine location data
   const philippineLocations = {
     provinces: [
@@ -185,6 +193,7 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
 
   useEffect(() => {
     if (show && product) {
+      console.log("BuyNowModal opened with product:", product);
       setQuantity(1);
       setFormData({
         phone: "",
@@ -293,96 +302,99 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
 
   const totalPrice = product ? (product.price * quantity).toFixed(2) : 0;
 
-  if (!show || !product) return null;
+  if (!show || !product) {
+    console.log("BuyNowModal not showing - show:", show, "product:", product);
+    return null;
+  }
 
   return (
     <AnimatePresence>
       <motion.div
-        className="buy-now-modal-overlay"
+        className="buy-now-modal-backdrop"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
       >
         <motion.div
-          className="buy-now-modal-content"
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.8, opacity: 0 }}
+          className="buy-now-modal-card"
+          initial={{ scale: 0.8, opacity: 0, y: 50 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.8, opacity: 0, y: 50 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="modal-header">
-            <h3>Buy Now - {product.name}</h3>
-            <button className="close-btn" onClick={onClose}>
-              <i className="fas fa-times"></i>
+          <div className="buy-now-modal-header">
+            <h3>🛒 Buy Now - {product.name}</h3>
+            <button className="buy-now-close-btn" onClick={onClose} disabled={loading}>
+              ×
             </button>
           </div>
 
-          <div className="modal-body">
-            {/* Product Summary */}
-            <div className="product-summary">
-              <div className="product-image-container">
-                <img 
-                  src={product.image_url || product.image} 
-                  alt={product.name}
-                  className="product-image"
-                  onError={(e) => {
-                    e.target.src = 'https://via.placeholder.com/300x300?text=No+Image';
-                  }}
-                />
-              </div>
-              <div className="product-details">
-                <h4>{product.name}</h4>
-                <p className="product-price">₱{product.price.toLocaleString()}</p>
-                <div className="quantity-selector">
-                  <label>Quantity:</label>
-                  <div className="quantity-controls">
-                    <button 
-                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                      disabled={quantity <= 1}
-                    >
-                      -
-                    </button>
-                    <span>{quantity}</span>
-                    <button 
-                      onClick={() => setQuantity(quantity + 1)}
-                    >
-                      +
-                    </button>
+          <div className="buy-now-modal-content">
+            {/* Selected Items Section - Matching Image 2 Design */}
+            <div className="selected-items-section">
+              <h4>Selected Items (1)</h4>
+              <div className="selected-items-list">
+                <div className="selected-item-card">
+                  <div className="selected-item-image-container">
+                    <img 
+                      src={getImageUrl(product)} 
+                      alt={product.name}
+                      className="selected-item-image"
+                      onError={(e) => {
+                        e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
+                      }}
+                    />
+                  </div>
+                  <div className="selected-item-details">
+                    <h5 className="selected-item-name">{product.name}</h5>
+                    <div className="selected-item-meta">
+                      <span className="selected-item-quantity">Qty: {quantity}</span>
+                      <span className="selected-item-price">₱{product.price.toLocaleString()} each</span>
+                    </div>
+                    <div className="selected-item-subtotal">
+                      Subtotal: ₱{(product.price * quantity).toLocaleString()}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Order Form */}
-            <div className="order-form">
+            {/* Order Form Section */}
+            <div className="order-form-section">
               <h4>Order Details</h4>
               
               {/* Contact Number */}
               <div className="form-group">
-                <label>Contact Number *</label>
+                <label className="form-label">
+                  <i className="fas fa-phone"></i>
+                  Contact Number *
+                </label>
                 <input
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => handleInputChange("phone", e.target.value)}
                   placeholder="09XXXXXXXXX"
-                  className={errors.phone ? "error" : ""}
+                  className={`form-control ${errors.phone ? "error" : ""}`}
                 />
-                {errors.phone && <span className="error-text">{errors.phone}</span>}
+                {errors.phone && <span className="error-message">{errors.phone}</span>}
               </div>
 
               {/* Address Selection */}
-              <div className="address-section">
-                <h5>Shipping Address *</h5>
+              <div className="address-selection-section">
+                <div className="section-title">
+                  <i className="fas fa-map-marker-alt"></i>
+                  Shipping Address *
+                </div>
                 
-                <div className="address-grid">
+                <div className="address-form-grid">
                   <div className="form-group">
-                    <label>Province *</label>
+                    <label className="form-label">Province *</label>
                     <select
                       value={formData.selectedProvince}
                       onChange={(e) => handleInputChange("selectedProvince", e.target.value)}
-                      className={errors.selectedProvince ? "error" : ""}
+                      className={`form-control ${errors.selectedProvince ? "error" : ""}`}
                     >
                       <option value="">Select Province</option>
                       {philippineLocations.provinces.map(province => (
@@ -391,16 +403,16 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                         </option>
                       ))}
                     </select>
-                    {errors.selectedProvince && <span className="error-text">{errors.selectedProvince}</span>}
+                    {errors.selectedProvince && <span className="error-message">{errors.selectedProvince}</span>}
                   </div>
 
                   <div className="form-group">
-                    <label>City/Municipality *</label>
+                    <label className="form-label">City/Municipality *</label>
                     <select
                       value={formData.selectedCity}
                       onChange={(e) => handleInputChange("selectedCity", e.target.value)}
                       disabled={!formData.selectedProvince}
-                      className={errors.selectedCity ? "error" : ""}
+                      className={`form-control ${errors.selectedCity ? "error" : ""}`}
                     >
                       <option value="">Select City</option>
                       {formData.selectedProvince && philippineLocations.cities[formData.selectedProvince]?.map(city => (
@@ -409,16 +421,16 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                         </option>
                       ))}
                     </select>
-                    {errors.selectedCity && <span className="error-text">{errors.selectedCity}</span>}
+                    {errors.selectedCity && <span className="error-message">{errors.selectedCity}</span>}
                   </div>
 
                   <div className="form-group">
-                    <label>Barangay *</label>
+                    <label className="form-label">Barangay *</label>
                     <select
                       value={formData.selectedBarangay}
                       onChange={(e) => handleInputChange("selectedBarangay", e.target.value)}
                       disabled={!formData.selectedCity}
-                      className={errors.selectedBarangay ? "error" : ""}
+                      className={`form-control ${errors.selectedBarangay ? "error" : ""}`}
                     >
                       <option value="">Select Barangay</option>
                       {formData.selectedCity && philippineLocations.barangays[formData.selectedCity]?.map(barangay => (
@@ -427,28 +439,31 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                         </option>
                       ))}
                     </select>
-                    {errors.selectedBarangay && <span className="error-text">{errors.selectedBarangay}</span>}
+                    {errors.selectedBarangay && <span className="error-message">{errors.selectedBarangay}</span>}
                   </div>
 
                   <div className="form-group">
-                    <label>House/Unit Number *</label>
+                    <label className="form-label">House/Unit Number *</label>
                     <input
                       type="text"
                       value={formData.houseUnit}
                       onChange={(e) => handleInputChange("houseUnit", e.target.value)}
                       placeholder="e.g., 123, Unit 4A, Lot 5"
-                      className={errors.houseUnit ? "error" : ""}
+                      className={`form-control ${errors.houseUnit ? "error" : ""}`}
                     />
-                    {errors.houseUnit && <span className="error-text">{errors.houseUnit}</span>}
+                    {errors.houseUnit && <span className="error-message">{errors.houseUnit}</span>}
                   </div>
                 </div>
               </div>
 
               {/* Payment Method */}
               <div className="form-group">
-                <label>Payment Method *</label>
-                <div className="payment-options">
-                  <label className="payment-option">
+                <label className="form-label">
+                  <i className="fas fa-credit-card"></i>
+                  Payment Method *
+                </label>
+                <div className="payment-methods-grid">
+                  <div className={`payment-option-card ${formData.paymentMethod === "cod" ? "selected" : ""}`}>
                     <input
                       type="radio"
                       name="paymentMethod"
@@ -456,9 +471,15 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                       checked={formData.paymentMethod === "cod"}
                       onChange={(e) => handleInputChange("paymentMethod", e.target.value)}
                     />
-                    <span>Cash on Delivery (COD)</span>
-                  </label>
-                  <label className="payment-option">
+                    <div className="payment-content">
+                      <div className="payment-icon">💰</div>
+                      <div className="payment-text">
+                        <div className="payment-title">Cash on Delivery</div>
+                        <div className="payment-desc">Pay when you receive</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`payment-option-card ${formData.paymentMethod === "maya" ? "selected" : ""}`}>
                     <input
                       type="radio"
                       name="paymentMethod"
@@ -466,44 +487,63 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                       checked={formData.paymentMethod === "maya"}
                       onChange={(e) => handleInputChange("paymentMethod", e.target.value)}
                     />
-                    <span>Maya Payment</span>
-                  </label>
+                    <div className="payment-content">
+                      <div className="payment-icon">📱</div>
+                      <div className="payment-text">
+                        <div className="payment-title">Maya Payment</div>
+                        <div className="payment-desc">Digital wallet payment</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Order Summary */}
-            <div className="order-summary">
-              <h4>Order Summary</h4>
-              <div className="summary-row">
-                <span>Product:</span>
-                <span>{product.name}</span>
-              </div>
-              <div className="summary-row">
-                <span>Quantity:</span>
-                <span>{quantity}</span>
-              </div>
-              <div className="summary-row">
-                <span>Unit Price:</span>
-                <span>₱{product.price.toLocaleString()}</span>
-              </div>
-              <div className="summary-row total">
-                <span>Total:</span>
-                <span>₱{totalPrice}</span>
+            {/* Order Total Section */}
+            <div className="order-total-section">
+              <div className="order-total-card">
+                <h4>Order Total</h4>
+                <div className="total-breakdown">
+                  <div className="total-row">
+                    <span>Product:</span>
+                    <span>{product.name}</span>
+                  </div>
+                  <div className="total-row">
+                    <span>Quantity:</span>
+                    <span>{quantity}</span>
+                  </div>
+                  <div className="total-row">
+                    <span>Unit Price:</span>
+                    <span>₱{product.price.toLocaleString()}</span>
+                  </div>
+                  <div className="total-row final-total">
+                    <span>Total:</span>
+                    <span className="final-amount">₱{totalPrice}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="modal-footer">
-            <button className="cancel-btn" onClick={onClose}>
+          <div className="buy-now-modal-footer">
+            <button className="btn-cancel-order" onClick={onClose} disabled={loading}>
               Cancel
             </button>
             <button 
-              className="place-order-btn"
+              className="btn-place-order"
               onClick={handlePlaceOrder}
               disabled={loading}
             >
-              {loading ? "Placing Order..." : "Place Order"}
+              {loading ? (
+                <>
+                  <div className="btn-spinner"></div>
+                  Placing Order...
+                </>
+              ) : (
+                <>
+                  Place Order • ₱{totalPrice}
+                </>
+              )}
             </button>
           </div>
         </motion.div>

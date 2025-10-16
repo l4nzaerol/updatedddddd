@@ -388,7 +388,14 @@ class OrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json(Order::with('user', 'items.product')->get());
+        $orders = Order::with('user', 'items.product')->get();
+        
+        // Return empty array if no orders exist
+        if ($orders->isEmpty()) {
+            return response()->json([]);
+        }
+
+        return response()->json($orders);
     }
 
     public function myOrders()

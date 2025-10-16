@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -15,7 +15,6 @@ import {
   X, 
   Eye, 
   EyeOff,
-  CheckCircle,
   AlertCircle,
   ArrowLeft
 } from 'lucide-react';
@@ -27,15 +26,8 @@ const UserProfile = () => {
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showOtpModal, setShowOtpModal] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
-  const [otpData, setOtpData] = useState({
-    email: '',
-    otp: '',
     newPassword: '',
     confirmPassword: ''
   });
@@ -44,12 +36,13 @@ const UserProfile = () => {
     new: false,
     confirm: false
   });
+  const [passwordErrors, setPasswordErrors] = useState({
+    current: '',
+    new: '',
+    confirm: ''
+  });
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       setError(null);
       const token = localStorage.getItem('token');
@@ -84,8 +77,11 @@ const UserProfile = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
@@ -107,8 +103,47 @@ const UserProfile = () => {
     }
   };
 
+  const validatePassword = (field, value) => {
+    const errors = { ...passwordErrors };
+    
+    if (field === 'newPassword') {
+      if (value.length < 6) {
+        errors.new = 'Password must be at least 6 characters';
+      } else {
+        errors.new = '';
+      }
+    }
+    
+    if (field === 'confirmPassword') {
+      if (value !== passwordData.newPassword) {
+        errors.confirm = 'Passwords do not match';
+      } else {
+        errors.confirm = '';
+      }
+    }
+    
+    setPasswordErrors(errors);
+  };
+
+  const handlePasswordInputChange = (field, value) => {
+    setPasswordData({ ...passwordData, [field]: value });
+    validatePassword(field, value);
+  };
+
   const handlePasswordChange = async (e) => {
     e.preventDefault();
+    
+    // Client-side validation
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordErrors({ ...passwordErrors, confirm: 'Passwords do not match' });
+      return;
+    }
+    
+    if (passwordData.newPassword.length < 6) {
+      setPasswordErrors({ ...passwordErrors, new: 'Password must be at least 6 characters' });
+      return;
+    }
+    
     try {
       const token = localStorage.getItem('token');
       await axios.post('http://localhost:8000/api/profile/change-password', {
@@ -121,6 +156,7 @@ const UserProfile = () => {
       
       setShowPasswordModal(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPasswordErrors({ current: '', new: '', confirm: '' });
       toast.success('Password changed successfully!');
     } catch (error) {
       console.error('Error changing password:', error);
@@ -128,39 +164,6 @@ const UserProfile = () => {
     }
   };
 
-  const handleSendOtp = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('http://localhost:8000/api/profile/send-reset-otp', {
-        email: otpData.email
-      });
-      
-      setShowOtpModal(true);
-      toast.success('OTP sent to your email!');
-    } catch (error) {
-      console.error('Error sending OTP:', error);
-      toast.error(error.response?.data?.message || 'Failed to send OTP');
-    }
-  };
-
-  const handleResetPassword = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('http://localhost:8000/api/profile/reset-password', {
-        email: otpData.email,
-        otp: otpData.otp,
-        new_password: otpData.newPassword,
-        new_password_confirmation: otpData.confirmPassword
-      });
-      
-      setShowOtpModal(false);
-      setOtpData({ email: '', otp: '', newPassword: '', confirmPassword: '' });
-      toast.success('Password reset successfully!');
-    } catch (error) {
-      console.error('Error resetting password:', error);
-      toast.error(error.response?.data?.message || 'Failed to reset password');
-    }
-  };
 
   if (loading) {
     return (
@@ -483,7 +486,7 @@ const UserProfile = () => {
         </div>
       </div>
 
-      {/* Password Change Modal */}
+      {/* Minimalist Password Change Modal */}
       <AnimatePresence>
         {showPasswordModal && (
           <motion.div
@@ -494,8 +497,8 @@ const UserProfile = () => {
             style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
           >
             <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content">
-                <div className="modal-header">
+              <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+                <div className="modal-header border-0 pb-0">
                   <h5 className="modal-title">Change Password</h5>
                   <button
                     type="button"
@@ -504,15 +507,17 @@ const UserProfile = () => {
                   />
                 </div>
                 <form onSubmit={handlePasswordChange}>
-                  <div className="modal-body">
+                  <div className="modal-body pt-0">
+                    {/* Current Password */}
                     <div className="mb-3">
                       <label className="form-label">Current Password</label>
                       <div className="input-group">
                         <input
                           type={showPasswords.current ? 'text' : 'password'}
-                          className="form-control"
+                          className={`form-control ${passwordErrors.current ? 'is-invalid' : ''}`}
                           value={passwordData.currentPassword}
-                          onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+                          onChange={(e) => handlePasswordInputChange('currentPassword', e.target.value)}
+                          placeholder={`Current password (${passwordData.currentPassword.length} chars)`}
                           required
                         />
                         <button
@@ -523,15 +528,21 @@ const UserProfile = () => {
                           {showPasswords.current ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
+                      {passwordErrors.current && (
+                        <div className="text-danger small mt-1">{passwordErrors.current}</div>
+                      )}
                     </div>
+
+                    {/* New Password */}
                     <div className="mb-3">
                       <label className="form-label">New Password</label>
                       <div className="input-group">
                         <input
                           type={showPasswords.new ? 'text' : 'password'}
-                          className="form-control"
+                          className={`form-control ${passwordErrors.new ? 'is-invalid' : ''}`}
                           value={passwordData.newPassword}
-                          onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                          onChange={(e) => handlePasswordInputChange('newPassword', e.target.value)}
+                          placeholder={`New password (${passwordData.newPassword.length} chars, min 6)`}
                           required
                         />
                         <button
@@ -542,15 +553,21 @@ const UserProfile = () => {
                           {showPasswords.new ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
+                      {passwordErrors.new && (
+                        <div className="text-danger small mt-1">{passwordErrors.new}</div>
+                      )}
                     </div>
+
+                    {/* Confirm New Password */}
                     <div className="mb-3">
                       <label className="form-label">Confirm New Password</label>
                       <div className="input-group">
                         <input
                           type={showPasswords.confirm ? 'text' : 'password'}
-                          className="form-control"
+                          className={`form-control ${passwordErrors.confirm ? 'is-invalid' : passwordData.confirmPassword && passwordData.confirmPassword === passwordData.newPassword ? 'is-valid' : ''}`}
                           value={passwordData.confirmPassword}
-                          onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                          onChange={(e) => handlePasswordInputChange('confirmPassword', e.target.value)}
+                          placeholder={`Confirm password (${passwordData.confirmPassword.length} chars)`}
                           required
                         />
                         <button
@@ -561,18 +578,28 @@ const UserProfile = () => {
                           {showPasswords.confirm ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
+                      {passwordErrors.confirm && (
+                        <div className="text-danger small mt-1">{passwordErrors.confirm}</div>
+                      )}
+                      {passwordData.confirmPassword && passwordData.confirmPassword === passwordData.newPassword && (
+                        <div className="text-success small mt-1">✓ Passwords match</div>
+                      )}
                     </div>
                   </div>
-                  <div className="modal-footer">
-                    <button type="submit" className="btn btn-primary">
-                      Change Password
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
+                  <div className="modal-footer border-0 pt-0">
+                    <button 
+                      type="button" 
+                      className="btn btn-outline-secondary"
                       onClick={() => setShowPasswordModal(false)}
                     >
                       Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary"
+                      disabled={passwordData.newPassword !== passwordData.confirmPassword || passwordData.newPassword.length < 6}
+                    >
+                      Change Password
                     </button>
                   </div>
                 </form>
@@ -582,89 +609,6 @@ const UserProfile = () => {
         )}
       </AnimatePresence>
 
-      {/* OTP Reset Modal */}
-      <AnimatePresence>
-        {showOtpModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="modal fade show d-block"
-            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          >
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content">
-                <div className="modal-header">
-                  <h5 className="modal-title">Reset Password with OTP</h5>
-                  <button
-                    type="button"
-                    className="btn-close"
-                    onClick={() => setShowOtpModal(false)}
-                  />
-                </div>
-                <form onSubmit={handleResetPassword}>
-                  <div className="modal-body">
-                    <div className="mb-3">
-                      <label className="form-label">Email</label>
-                      <input
-                        type="email"
-                        className="form-control"
-                        value={otpData.email}
-                        onChange={(e) => setOtpData({...otpData, email: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">OTP Code</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={otpData.otp}
-                        onChange={(e) => setOtpData({...otpData, otp: e.target.value})}
-                        placeholder="Enter 6-digit OTP"
-                        maxLength="6"
-                        required
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">New Password</label>
-                      <input
-                        type="password"
-                        className="form-control"
-                        value={otpData.newPassword}
-                        onChange={(e) => setOtpData({...otpData, newPassword: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">Confirm New Password</label>
-                      <input
-                        type="password"
-                        className="form-control"
-                        value={otpData.confirmPassword}
-                        onChange={(e) => setOtpData({...otpData, confirmPassword: e.target.value})}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="modal-footer">
-                    <button type="submit" className="btn btn-primary">
-                      Reset Password
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setShowOtpModal(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

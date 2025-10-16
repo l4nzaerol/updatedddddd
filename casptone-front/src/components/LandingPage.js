@@ -371,11 +371,6 @@ const LandingPage = () => {
                                         >
                                             <div className="product-image-container">
                                                 {/* Wood Type Badge */}
-                                                <div className="wood-type-badge">
-                                                    {product.name.toLowerCase().includes('mahogany') ? 'Mahogany Wood' : 
-                                                     product.name.toLowerCase().includes('acacia') ? 'Mahogany/Acacia Wood' : 
-                                                     'Premium Wood'}
-                                                </div>
                                                 
                                                 <img
                                                     src={`http://localhost:8000/${product.image}`}

@@ -44,6 +44,36 @@ class ProductsTableSeeder extends Seeder
             ]
         );
 
+        $alkansya = Product::updateOrCreate(
+            ['name' => 'Alkansya (Forda Iphone)'],
+            [
+                'description' => 'Traditional Filipino wooden chest',
+                'price' => 279, // Will be updated after BOM calculation
+                'stock' => 50,
+                'image' => 'storage/products/Forda.webp',
+            ]
+        );
+
+        $alkansya = Product::updateOrCreate(
+            ['name' => 'Alkansya (For Rhinoplasty)'],
+            [
+                'description' => 'Traditional Filipino wooden chest',
+                'price' => 279.00, // Will be updated after BOM calculation
+                'stock' => 50,
+                'image' => 'storage/products/Rhino.webp',
+            ]
+        );
+
+        $alkansya = Product::updateOrCreate(
+            ['name' => 'Alkansya (100k Challenge)'],
+            [
+                'description' => 'Traditional Filipino wooden chest',
+                'price' => 279.00, // Will be updated after BOM calculation
+                'stock' => 50,
+                'image' => 'storage/products/100kyaw.webp',
+            ]
+        );
+
         $this->command->info('Products created. Attempting to calculate BOM-based prices...');
 
         // Try to calculate and update prices based on BOM (if available)

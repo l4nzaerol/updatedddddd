@@ -92,10 +92,10 @@ class AlkansyaFactorySeeder extends Seeder
      */
     private function createDailyOutputWithFactory($date, $bomMaterials, &$stockLevels)
     {
-        // Generate realistic production quantity (300-500 range)
+        // Generate realistic production quantity (200-400 range)
         $baseProduction = $this->getBaseProduction($date);
         $variation = $this->getProductionVariation($date);
-        $quantityProduced = max(300, min(500, $baseProduction + $variation));
+        $quantityProduced = max(200, min(400, $baseProduction + $variation));
 
         // Check if we have enough materials before production
         $canProduce = $this->checkMaterialAvailability($bomMaterials, $quantityProduced, $stockLevels);
@@ -213,23 +213,23 @@ class AlkansyaFactorySeeder extends Seeder
     }
 
     /**
-     * Get base production quantity based on day of week and season (300-500 range)
+     * Get base production quantity based on day of week and season (200-400 range)
      */
     private function getBaseProduction($date)
     {
         $dayOfWeek = $date->dayOfWeek;
         $month = $date->month;
         
-        // Base production by day of week (300-500 range)
+        // Base production by day of week (200-400 range)
         $baseByDay = [
-            1 => 350, // Monday
-            2 => 400, // Tuesday
-            3 => 450, // Wednesday
-            4 => 450, // Thursday
-            5 => 400, // Friday
+            1 => 250, // Monday
+            2 => 300, // Tuesday
+            3 => 350, // Wednesday
+            4 => 350, // Thursday
+            5 => 300, // Friday
         ];
 
-        $baseProduction = $baseByDay[$dayOfWeek] ?? 350;
+        $baseProduction = $baseByDay[$dayOfWeek] ?? 300;
 
         // Seasonal adjustments
         $seasonalMultiplier = 1.0;
@@ -249,8 +249,8 @@ class AlkansyaFactorySeeder extends Seeder
      */
     private function getProductionVariation($date)
     {
-        // Random variation between -50 and +50
-        return rand(-50, 50);
+        // Random variation between -30 and +30
+        return rand(-30, 30);
     }
 
     /**
@@ -270,11 +270,11 @@ class AlkansyaFactorySeeder extends Seeder
             $notes[] = "Below target efficiency - needs improvement";
         }
 
-        if ($quantity >= 450) {
+        if ($quantity >= 380) {
             $notes[] = "High output achieved";
-        } elseif ($quantity >= 400) {
+        } elseif ($quantity >= 300) {
             $notes[] = "Good production output";
-        } elseif ($quantity < 350) {
+        } elseif ($quantity < 250) {
             $notes[] = "Lower than expected output";
         }
 

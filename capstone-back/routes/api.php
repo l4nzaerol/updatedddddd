@@ -33,8 +33,6 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 // Public Profile Routes (no auth required)
-Route::post('/profile/send-reset-otp', [ProfileController::class, 'sendPasswordResetOtp']);
-Route::post('/profile/reset-password', [ProfileController::class, 'resetPasswordWithOtp']);
 
 // Advanced Analytics Routes (Public for testing - move inside auth if needed)
 Route::get('/analytics/production-output', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getProductionOutputAnalytics']);
@@ -87,8 +85,37 @@ Route::get('/test-alkansya-stats', function() {
     ]);
 });
 
+// Test inventory reports endpoint
+Route::get('/test-inventory-reports', function() {
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Inventory reports API is working',
+        'timestamp' => now(),
+        'available_endpoints' => [
+            '/inventory/dashboard',
+            '/inventory/report',
+            '/inventory/consumption-trends',
+            '/inventory/replenishment-schedule',
+            '/inventory/forecast',
+            '/inventory/turnover-report',
+            '/inventory/alkansya-daily-output/statistics',
+            '/inventory/alkansya-daily-output/materials-analysis'
+        ]
+    ]);
+});
+
 // Temporary public statistics route for testing
 Route::get('/alkansya-daily-output/statistics', [\App\Http\Controllers\AlkansyaDailyOutputController::class, 'statistics']);
+
+// Public inventory routes for testing
+Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
+Route::get('/inventory/report', [InventoryController::class, 'getInventoryReport']);
+Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
+Route::get('/inventory/replenishment-schedule', [InventoryController::class, 'getReplenishmentSchedule']);
+Route::get('/inventory/forecast', [InventoryController::class, 'getMaterialForecast']);
+Route::get('/inventory/turnover-report', [InventoryController::class, 'getTurnoverReport']);
+Route::get('/inventory/alkansya-daily-output/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
+Route::get('/inventory/alkansya-daily-output/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
 
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
@@ -151,15 +178,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
     Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy']);
 
-    // Inventory Routes
+    // Inventory Routes (Protected - for authenticated users)
     Route::get('/inventory', [InventoryController::class, 'index']);
     Route::post('/inventory', [InventoryController::class, 'store']);
     Route::put('/inventory/{id}', [InventoryController::class, 'update']);
     Route::delete('/inventory/{id}', [InventoryController::class, 'destroy']);
     Route::get('/inventory/reorder-items', [InventoryController::class, 'getReorderItems']);
     Route::get('/inventory/daily-usage', [InventoryController::class, 'getDailyUsage']);
-    Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
-    Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
     Route::get('/inventory/alkansya-daily-output', [AlkansyaDailyOutputController::class, 'index']);
     Route::post('/inventory/alkansya-daily-output', [AlkansyaDailyOutputController::class, 'store']);
     
@@ -170,10 +195,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/price-calculator/bulk', [PriceCalculatorController::class, 'bulkCalculate']);
     
     // Inventory Reports (NEW)
-    Route::get('/inventory/report', [InventoryController::class, 'getInventoryReport']);
-    Route::get('/inventory/turnover-report', [InventoryController::class, 'getStockTurnoverReport']);
-    Route::get('/inventory/forecast', [InventoryController::class, 'getMaterialForecast']);
-    Route::get('/inventory/replenishment-schedule', [InventoryController::class, 'getReplenishmentSchedule']);
     Route::get('/inventory/abc-analysis', [InventoryController::class, 'getABCAnalysis']);
 
     // Usage
@@ -272,6 +293,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/', [AlkansyaDailyOutputController::class, 'store']);
         Route::get('/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
         Route::get('/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
+        Route::delete('/clear-date', [AlkansyaDailyOutputController::class, 'clearDate']); // For debugging
     });
 
     // Auto Deduction Routes

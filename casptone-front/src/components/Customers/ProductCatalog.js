@@ -11,7 +11,7 @@ const ProductCatalog = ({ products }) => {
   const [showModal, setShowModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(new Set());
   const [error, setError] = useState(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -37,11 +37,17 @@ const ProductCatalog = ({ products }) => {
 
   // Buy Now handlers
   const handleBuyNow = (product) => {
+    console.log("Buy Now clicked for product:", product);
     setBuyNowProduct(product);
     setShowBuyNowModal(true);
+    // Close the view details modal if it's open
+    if (showModal) {
+      setShowModal(false);
+    }
   };
 
   const handleCloseBuyNowModal = () => {
+    console.log("Closing BuyNowModal");
     setShowBuyNowModal(false);
     setBuyNowProduct(null);
   };
@@ -55,14 +61,19 @@ const ProductCatalog = ({ products }) => {
 
   const handleAddToCart = async () => {
     if (!selectedProduct) return;
-    setLoading(true);
+    // Add this product to loading set
+    setLoadingProducts(prev => new Set(prev).add(selectedProduct.id));
     setError(null);
 
     try {
       const token = localStorage.getItem("token");
       if (!token) {
         setError("You need to be logged in to add to cart.");
-        setLoading(false);
+        setLoadingProducts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(selectedProduct.id);
+          return newSet;
+        });
         return;
       }
 
@@ -92,19 +103,29 @@ const ProductCatalog = ({ products }) => {
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong");
     } finally {
-      setLoading(false);
+      // Remove this product from loading set
+      setLoadingProducts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(selectedProduct.id);
+        return newSet;
+      });
     }
   };
 
   const handleAddToCartDirect = async (product) => {
-    setLoading(true);
+    // Add this product to loading set
+    setLoadingProducts(prev => new Set(prev).add(product.id));
     setError(null);
 
     try {
       const token = localStorage.getItem("token");
       if (!token) {
         setError("You need to be logged in to add to cart.");
-        setLoading(false);
+        setLoadingProducts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(product.id);
+          return newSet;
+        });
         return;
       }
 
@@ -133,7 +154,12 @@ const ProductCatalog = ({ products }) => {
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong");
     } finally {
-      setLoading(false);
+      // Remove this product from loading set
+      setLoadingProducts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(product.id);
+        return newSet;
+      });
     }
   };
 
@@ -151,12 +177,6 @@ const ProductCatalog = ({ products }) => {
       }}
     >
       <div className="product-image-container">
-        {/* Wood Type Badge */}
-        <div className="wood-type-badge">
-          {product.name.toLowerCase().includes('mahogany') ? 'Mahogany Wood' : 
-           product.name.toLowerCase().includes('acacia') ? 'Mahogany/Acacia Wood' : 
-           'Premium Wood'}
-        </div>
         
         <img
           src={`http://localhost:8000/${product.image}`}
@@ -210,12 +230,12 @@ const ProductCatalog = ({ products }) => {
           <motion.button
             className="add-to-cart-btn"
             onClick={() => handleAddToCartDirect(product)}
-            disabled={loading || product.stock === 0}
+            disabled={loadingProducts.has(product.id) || product.stock === 0}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
             <i className="fas fa-shopping-cart"></i>
-            {loading ? 'Adding...' : 'Add to Cart'}
+            {loadingProducts.has(product.id) ? 'Adding...' : 'Add to Cart'}
           </motion.button>
           
           <motion.button
@@ -371,17 +391,17 @@ const ProductCatalog = ({ products }) => {
                     <motion.button 
                       className="modal-add-to-cart-btn"
                       onClick={handleAddToCart}
-                      disabled={loading || selectedProduct.stock === 0}
+                      disabled={loadingProducts.has(selectedProduct.id) || selectedProduct.stock === 0}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >
                       <i className="fas fa-shopping-cart"></i>
-                      {loading ? 'Adding...' : 'Add to Cart'}
+                      {loadingProducts.has(selectedProduct.id) ? 'Adding...' : 'Add to Cart'}
                     </motion.button>
                     
                     <motion.button 
                       className="modal-buy-now-btn"
-                      onClick={handleBuyNow}
+                      onClick={() => handleBuyNow(selectedProduct)}
                       disabled={selectedProduct.stock === 0}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}

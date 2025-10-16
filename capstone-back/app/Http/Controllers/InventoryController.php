@@ -340,15 +340,30 @@ class InventoryController extends Controller
         // Cache dashboard data for 5 minutes to improve performance
         return cache()->remember('inventory_dashboard', 300, function () {
             $totalItems = InventoryItem::count();
-            $lowStockItems = InventoryItem::whereRaw('quantity_on_hand <= reorder_point')->count();
-            $outOfStockItems = InventoryItem::where('quantity_on_hand', 0)->count();
+            $lowStockItems = InventoryItem::whereRaw('quantity_on_hand <= reorder_point')
+                ->where('category', '!=', 'made-to-order')
+                ->count();
+            $outOfStockItems = InventoryItem::where('quantity_on_hand', 0)
+                ->where('category', '!=', 'made-to-order')
+                ->count();
             
-            // Get recent usage
-            $recentUsage = InventoryUsage::where('date', '>=', Carbon::now()->subDays(7))
-                ->sum('qty_used');
+            // Get Alkansya production statistics for better insights
+            $alkansyaStats = \App\Models\AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subMonths(3))
+                ->selectRaw('
+                    COUNT(*) as total_days,
+                    SUM(quantity_produced) as total_output,
+                    AVG(quantity_produced) as avg_daily,
+                    SUM(CASE WHEN date >= ? THEN quantity_produced ELSE 0 END) as last_7_days
+                ', [Carbon::now()->subDays(7)])
+                ->first();
+            
+            // Get recent usage from Alkansya production
+            $recentUsage = InventoryUsage::where('date', '>=', Carbon::now()->subDays(7))->sum('qty_used');
+            $totalUsage3Months = InventoryUsage::where('date', '>=', Carbon::now()->subMonths(3))->sum('qty_used');
 
-            // Get items that need immediate attention
+            // Get items that need immediate attention (excluding made-to-order)
             $criticalItems = InventoryItem::whereRaw('quantity_on_hand <= safety_stock')
+                ->where('category', '!=', 'made-to-order')
                 ->get()
                 ->map(function($item) {
                     $item->urgency = 'critical';
@@ -361,7 +376,14 @@ class InventoryController extends Controller
                     'total_items' => $totalItems,
                     'low_stock_items' => $lowStockItems,
                     'out_of_stock_items' => $outOfStockItems,
-                    'recent_usage' => $recentUsage
+                    'recent_usage' => $recentUsage,
+                    'total_usage_3months' => $totalUsage3Months,
+                    'alkansya_production' => [
+                        'total_output' => $alkansyaStats->total_output ?? 0,
+                        'avg_daily' => round($alkansyaStats->avg_daily ?? 0, 2),
+                        'last_7_days' => $alkansyaStats->last_7_days ?? 0,
+                        'production_days' => $alkansyaStats->total_days ?? 0
+                    ]
                 ],
                 'critical_items' => $criticalItems
             ];
@@ -419,8 +441,12 @@ class InventoryController extends Controller
                 ],
                 'summary' => [
                     'total_items' => $items->count(),
-                    'items_needing_reorder' => $report->where('reorder_needed', true)->count(),
-                    'critical_items' => $report->where('stock_status', 'critical')->count(),
+                    'items_needing_reorder' => $report->where('reorder_needed', true)
+                        ->where('category', '!=', 'made-to-order')
+                        ->count(),
+                    'critical_items' => $report->where('stock_status', 'critical')
+                        ->where('category', '!=', 'made-to-order')
+                        ->count(),
                     'total_usage' => $report->sum('total_usage'),
                 ],
                 'items' => $report
@@ -523,9 +549,10 @@ class InventoryController extends Controller
         
         $startDate = Carbon::now()->subDays($historicalDays);
         
-        $items = InventoryItem::with(['usages' => function($query) use ($startDate) {
-            $query->where('date', '>=', $startDate);
-        }])->get();
+        $items = InventoryItem::where('category', '!=', 'made-to-order')
+            ->with(['usages' => function($query) use ($startDate) {
+                $query->where('date', '>=', $startDate);
+            }])->get();
 
         $forecasts = $items->map(function($item) use ($days, $historicalDays) {
             $totalUsage = $item->usages->sum('qty_used');
@@ -565,9 +592,10 @@ class InventoryController extends Controller
      */
     public function getReplenishmentSchedule(Request $request)
     {
-        $items = InventoryItem::with(['usages' => function($query) {
-            $query->where('date', '>=', Carbon::now()->subDays(30));
-        }])->get();
+        $items = InventoryItem::where('category', '!=', 'made-to-order')
+            ->with(['usages' => function($query) {
+                $query->where('date', '>=', Carbon::now()->subDays(30));
+            }])->get();
 
         $schedule = $items->map(function($item) {
             $totalUsage = $item->usages->sum('qty_used');
@@ -705,4 +733,51 @@ class InventoryController extends Controller
         ];
         return $recommendations[$classification] ?? 'Review required';
     }
+
+    /**
+     * Get stock turnover report
+     */
+    public function getTurnoverReport(Request $request)
+    {
+        $days = $request->get('days', 30);
+        $startDate = Carbon::now()->subDays($days);
+        
+        $items = InventoryItem::where('category', '!=', 'made-to-order')
+            ->with(['usages' => function($query) use ($startDate) {
+                $query->where('date', '>=', $startDate);
+            }])->get();
+
+        $turnoverData = $items->map(function($item) use ($days) {
+            $totalUsage = $item->usages->sum('qty_used');
+            $avgInventory = $item->quantity_on_hand;
+            $turnoverRate = $avgInventory > 0 ? ($totalUsage / $avgInventory) * (365 / $days) : 0;
+            
+            $category = 'slow';
+            if ($turnoverRate >= 12) $category = 'fast';
+            elseif ($turnoverRate >= 6) $category = 'medium';
+            
+            return [
+                'sku' => $item->sku,
+                'name' => $item->name,
+                'category' => $item->category,
+                'current_stock' => $item->quantity_on_hand,
+                'total_usage' => $totalUsage,
+                'turnover_rate' => round($turnoverRate, 2),
+                'turnover_category' => $category,
+                'unit' => $item->unit,
+            ];
+        })->sortByDesc('turnover_rate')->values();
+
+        return response()->json([
+            'period_days' => $days,
+            'summary' => [
+                'fast_moving' => $turnoverData->where('turnover_category', 'fast')->count(),
+                'medium_moving' => $turnoverData->where('turnover_category', 'medium')->count(),
+                'slow_moving' => $turnoverData->where('turnover_category', 'slow')->count(),
+                'avg_turnover_rate' => round($turnoverData->avg('turnover_rate'), 2),
+            ],
+            'items' => $turnoverData
+        ]);
+    }
+
 }

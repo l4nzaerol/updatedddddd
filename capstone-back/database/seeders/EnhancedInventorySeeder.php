@@ -38,10 +38,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'Pine wood board 1x4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 200,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 500,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'PLY-4.2-4x8',
@@ -50,10 +50,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'Plywood sheet 4.2mm thickness 4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 100,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 500,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'ACR-1.5-4x8',
@@ -62,10 +62,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 120.00,
                 'description' => 'Acrylic sheet 1.5mm thickness 4x8 ft (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 100,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 500,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'PN-F30',
@@ -74,10 +74,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'F30 pin nails (1000 pcs per box) (for Alkansya)',
-                'quantity_on_hand' => 140000, // Large quantity for small items
-                'safety_stock' => 2000,
-                'reorder_point' => 10000,
-                'max_level' => 50000,
+                'quantity_on_hand' => 300000, // Large quantity for small items + 2 weeks buffer + testing
+                'safety_stock' => 5000,
+                'reorder_point' => 20000,
+                'max_level' => 100000,
             ],
             [
                 'sku' => 'BS-1.5',
@@ -86,10 +86,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 90.00,
                 'description' => 'Black screw 1.5 inch (500 pcs per box) (for Alkansya)',
-                'quantity_on_hand' => 50000, // Large quantity for small items
-                'safety_stock' => 1000,
-                'reorder_point' => 5000,
-                'max_level' => 25000,
+                'quantity_on_hand' => 100000, // Large quantity for small items + 2 weeks buffer + testing
+                'safety_stock' => 2000,
+                'reorder_point' => 10000,
+                'max_level' => 50000,
             ],
             [
                 'sku' => 'STKW-250',
@@ -98,10 +98,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 60.00,
                 'description' => 'Stikwell adhesive 250ml (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 100,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 500,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'GRP-4-120',
@@ -110,10 +110,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 30.00,
                 'description' => 'Grinding pad 4 inch, 120 grit (for Alkansya)',
-                'quantity_on_hand' => 20000, // Increased for 3 months production
-                'safety_stock' => 200,
-                'reorder_point' => 1000,
-                'max_level' => 5000,
+                'quantity_on_hand' => 40000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 500,
+                'reorder_point' => 2000,
+                'max_level' => 10000,
             ],
             [
                 'sku' => 'STK-24-W',
@@ -122,10 +122,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 300.00,
                 'description' => 'White sticker roll, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 50,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'STK-24-B',
@@ -134,10 +134,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 300.00,
                 'description' => 'Black sticker roll, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 50,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'TFT-24',
@@ -146,10 +146,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 180.00,
                 'description' => 'Transfer tape, 24 inch x 50m (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 50,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'TAPE-2-300',
@@ -158,10 +158,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 50.00,
                 'description' => 'General packing tape, 2 inch x 300 m (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 100,
-                'reorder_point' => 1000,
-                'max_level' => 5000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 200,
+                'reorder_point' => 2000,
+                'max_level' => 10000,
             ],
             [
                 'sku' => 'FRAG-2-300',
@@ -170,10 +170,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 60.00,
                 'description' => 'Fragile tape, 2 inch x 300 m (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 100,
-                'reorder_point' => 1000,
-                'max_level' => 5000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 200,
+                'reorder_point' => 2000,
+                'max_level' => 10000,
             ],
             [
                 'sku' => 'BWRAP-40-100',
@@ -182,10 +182,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 180.00,
                 'description' => 'Bubble wrap roll 40 inch width x 100 m length (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 50,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             [
                 'sku' => 'INS-8-40-100',
@@ -194,10 +194,10 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 210.00,
                 'description' => 'Insulation foam 8mm, 40 inch width x 100 m length (for Alkansya)',
-                'quantity_on_hand' => 10000, // Increased for 3 months production
-                'safety_stock' => 50,
-                'reorder_point' => 500,
-                'max_level' => 2000,
+                'quantity_on_hand' => 20000, // Increased for 3 months production + 2 weeks buffer + testing
+                'safety_stock' => 100,
+                'reorder_point' => 1000,
+                'max_level' => 5000,
             ],
             
             // ========================================
@@ -522,16 +522,16 @@ class EnhancedInventorySeeder extends Seeder
                 'sku' => 'FG-ALKANSYA',
                 'name' => 'Alkansya (Finished Good)',
                 'category' => 'finished',
-                'status' => 'out_of_stock', // No inventory initially
+                'status' => 'in_stock', // Initial stock for testing and manual orders
                 'location' => 'Windfield 2',
                 'unit' => 'piece',
                 'unit_cost' => 150.00,
                 'supplier' => 'In-House Production',
                 'description' => 'Completed Alkansya ready for sale',
-                'quantity_on_hand' => 0,
-                'safety_stock' => 50,
-                'reorder_point' => 100,
-                'max_level' => 500,
+                'quantity_on_hand' => 1000, // Initial stock for testing and manual orders
+                'safety_stock' => 100,
+                'reorder_point' => 200,
+                'max_level' => 2000,
                 'lead_time_days' => 7,
             ],
             [

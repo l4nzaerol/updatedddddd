@@ -10,6 +10,7 @@ use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AlkansyaDailyOutputController extends Controller
 {
@@ -56,15 +57,24 @@ class AlkansyaDailyOutputController extends Controller
             // Get Alkansya product and BOM
             $alkansyaProduct = Product::where('name', 'Alkansya')->first();
             if (!$alkansyaProduct) {
-                return response()->json(['error' => 'Alkansya product not found'], 404);
+                Log::error('Alkansya product not found in database');
+                return response()->json(['error' => 'Alkansya product not found. Please ensure the product exists in the database.'], 404);
             }
+
+            Log::info('Found Alkansya product with ID: ' . $alkansyaProduct->id);
 
             $bomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
                 ->with('inventoryItem')
                 ->get();
 
+            Log::info('Found ' . $bomMaterials->count() . ' BOM materials for Alkansya');
+
             if ($bomMaterials->isEmpty()) {
-                return response()->json(['error' => 'Alkansya BOM not found'], 404);
+                Log::error('No BOM materials found for Alkansya product ID: ' . $alkansyaProduct->id);
+                return response()->json([
+                    'error' => 'Alkansya BOM not found. Please run the database seeders to create the Bill of Materials.',
+                    'details' => 'Product ID: ' . $alkansyaProduct->id . ', Product Name: ' . $alkansyaProduct->name
+                ], 404);
             }
 
             $quantity = $request->quantity;
@@ -74,14 +84,33 @@ class AlkansyaDailyOutputController extends Controller
             // Calculate materials needed and deduct from inventory
             foreach ($bomMaterials as $bomMaterial) {
                 $inventoryItem = $bomMaterial->inventoryItem;
+                
+                if (!$inventoryItem) {
+                    Log::error('Inventory item not found for BOM material ID: ' . $bomMaterial->id);
+                    DB::rollBack();
+                    return response()->json([
+                        'error' => 'Inventory item not found for BOM material. Please check the database setup.'
+                    ], 500);
+                }
+                
                 $requiredQuantity = $bomMaterial->qty_per_unit * $quantity;
+                
+                Log::info("Processing material: {$inventoryItem->name} (SKU: {$inventoryItem->sku}), Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}");
                 
                 if ($requiredQuantity > 0) {
                     // Check if enough stock
                     if ($inventoryItem->quantity_on_hand < $requiredQuantity) {
                         DB::rollBack();
+                        Log::error("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}");
                         return response()->json([
-                            'error' => "Insufficient stock for {$inventoryItem->name}. Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}"
+                            'error' => "Insufficient stock for {$inventoryItem->name}",
+                            'details' => [
+                                'material' => $inventoryItem->name,
+                                'sku' => $inventoryItem->sku,
+                                'required' => $requiredQuantity,
+                                'available' => $inventoryItem->quantity_on_hand,
+                                'shortage' => $requiredQuantity - $inventoryItem->quantity_on_hand
+                            ]
                         ], 400);
                     }
 
@@ -112,6 +141,14 @@ class AlkansyaDailyOutputController extends Controller
                 }
             }
 
+            // Check if there's already a record for this date
+            $existingRecord = AlkansyaDailyOutput::where('date', $request->date)->first();
+            if ($existingRecord) {
+                Log::info("Updating existing record for date: {$request->date}. Previous quantity: {$existingRecord->quantity_produced}");
+            } else {
+                Log::info("Creating new record for date: {$request->date}");
+            }
+
             // Create or update daily output record
             $dailyOutput = AlkansyaDailyOutput::updateOrCreate(
                 ['date' => $request->date],
@@ -130,6 +167,9 @@ class AlkansyaDailyOutputController extends Controller
             if ($alkansyaFinishedGood) {
                 $alkansyaFinishedGood->quantity_on_hand += $quantity;
                 $alkansyaFinishedGood->save();
+                Log::info("Updated finished goods inventory: {$alkansyaFinishedGood->name} now has {$alkansyaFinishedGood->quantity_on_hand} units");
+            } else {
+                Log::warning('Finished goods inventory item (FG-ALKANSYA) not found. Daily output recorded but finished goods inventory not updated.');
             }
 
             DB::commit();
@@ -144,8 +184,27 @@ class AlkansyaDailyOutputController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Alkansya daily output auto deduction failed: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            // Check if it's a validation error
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return response()->json([
+                    'error' => 'Validation failed',
+                    'details' => $e->errors()
+                ], 400);
+            }
+            
+            // Check if it's a database constraint error
+            if (strpos($e->getMessage(), 'constraint') !== false || strpos($e->getMessage(), 'duplicate') !== false) {
+                return response()->json([
+                    'error' => 'Database constraint error',
+                    'details' => $e->getMessage()
+                ], 400);
+            }
+            
             return response()->json([
-                'error' => 'Failed to add daily output: ' . $e->getMessage()
+                'error' => 'Failed to add daily output: ' . $e->getMessage(),
+                'type' => get_class($e)
             ], 500);
         }
     }
@@ -155,8 +214,11 @@ class AlkansyaDailyOutputController extends Controller
      */
     public function statistics()
     {
-        $totalOutput = AlkansyaDailyOutput::sum('quantity_produced');
-        $totalDays = AlkansyaDailyOutput::count();
+        // Get 3 months of data for accurate statistics
+        $threeMonthsAgo = Carbon::now()->subMonths(3);
+        
+        $totalOutput = AlkansyaDailyOutput::where('date', '>=', $threeMonthsAgo)->sum('quantity_produced');
+        $totalDays = AlkansyaDailyOutput::where('date', '>=', $threeMonthsAgo)->count();
         $averageDaily = $totalDays > 0 ? $totalOutput / $totalDays : 0;
         
         $last7Days = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays(7))
@@ -165,6 +227,7 @@ class AlkansyaDailyOutputController extends Controller
         $last30Days = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays(30))
             ->sum('quantity_produced');
 
+        // Get monthly output for the last 6 months
         $monthlyOutput = AlkansyaDailyOutput::select(
                 DB::raw('YEAR(date) as year'),
                 DB::raw('MONTH(date) as month'),
@@ -174,7 +237,22 @@ class AlkansyaDailyOutputController extends Controller
             ->groupBy('year', 'month')
             ->orderBy('year', 'desc')
             ->orderBy('month', 'desc')
-            ->get();
+            ->get()
+            ->map(function($item) {
+                $date = Carbon::create($item->year, $item->month, 1);
+                return [
+                    'month' => $date->format('M Y'),
+                    'total' => $item->total
+                ];
+            });
+
+        // Get production efficiency metrics
+        $productionDays = AlkansyaDailyOutput::where('date', '>=', $threeMonthsAgo)
+            ->where('quantity_produced', '>', 0)
+            ->count();
+        
+        $totalWorkingDays = $threeMonthsAgo->diffInDays(Carbon::now());
+        $efficiency = $totalWorkingDays > 0 ? round(($productionDays / $totalWorkingDays) * 100, 2) : 0;
 
         return response()->json([
             'total_output' => $totalOutput,
@@ -182,14 +260,44 @@ class AlkansyaDailyOutputController extends Controller
             'average_daily' => round($averageDaily, 2),
             'last_7_days' => $last7Days,
             'last_30_days' => $last30Days,
-            'monthly_output' => $monthlyOutput
+            'monthly_output' => $monthlyOutput,
+            'production_efficiency' => $efficiency,
+            'period' => [
+                'start_date' => $threeMonthsAgo->format('Y-m-d'),
+                'end_date' => Carbon::now()->format('Y-m-d'),
+                'days' => $totalWorkingDays
+            ]
         ]);
+    }
+
+    /**
+     * Clear daily output for a specific date (for testing/debugging)
+     */
+    public function clearDate(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date'
+        ]);
+
+        try {
+            $deleted = AlkansyaDailyOutput::where('date', $request->date)->delete();
+            
+            return response()->json([
+                'message' => "Cleared {$deleted} record(s) for date {$request->date}",
+                'deleted_count' => $deleted
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to clear daily output for date: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to clear daily output: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Get materials consumption analysis
      */
-    public function materialsAnalysis()
+public function materialsAnalysis()
     {
         $alkansyaProduct = Product::where('name', 'Alkansya')->first();
         if (!$alkansyaProduct) {
@@ -222,4 +330,5 @@ class AlkansyaDailyOutputController extends Controller
 
         return response()->json($materialsAnalysis);
     }
+
 }

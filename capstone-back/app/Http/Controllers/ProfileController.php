@@ -5,9 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\UserProfile;
-use App\Models\PasswordResetOtp;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -79,81 +77,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    // Send OTP for password reset
-    public function sendPasswordResetOtp(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users,email'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $email = $request->email;
-        $otpRecord = PasswordResetOtp::generateOtp($email);
-
-        // Send OTP via email
-        try {
-            Mail::raw("Your password reset OTP is: {$otpRecord->otp_code}\n\nThis OTP will expire in 10 minutes.", function ($message) use ($email) {
-                $message->to($email)
-                        ->subject('Password Reset OTP - UNICK FURNITURE');
-            });
-
-            return response()->json([
-                'message' => 'OTP sent successfully to your email',
-                'expires_in' => 600 // 10 minutes in seconds
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to send OTP. Please try again.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // Verify OTP and reset password
-    public function resetPasswordWithOtp(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'email' => 'required|email|exists:users,email',
-            'otp' => 'required|string|size:6',
-            'new_password' => 'required|string|min:6|confirmed'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $otpRecord = PasswordResetOtp::where('email', $request->email)
-            ->where('otp_code', $request->otp)
-            ->first();
-
-        if (!$otpRecord || !$otpRecord->isValid()) {
-            return response()->json([
-                'message' => 'Invalid or expired OTP'
-            ], 400);
-        }
-
-        // Update password
-        $user = User::where('email', $request->email)->first();
-        $user->update([
-            'password' => Hash::make($request->new_password)
-        ]);
-
-        // Mark OTP as used
-        $otpRecord->markAsUsed();
-
-        return response()->json([
-            'message' => 'Password updated successfully'
-        ]);
-    }
 
     // Change password (for authenticated users)
     public function changePassword(Request $request)

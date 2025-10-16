@@ -22,32 +22,32 @@ const DEFAULTS = {
   pollIntervalMs: 15000,
 };
 
-// Utility functions
-function toCSV(rows) {
-  if (!rows || rows.length === 0) return "";
-  const headers = Object.keys(rows[0]);
-  const escape = (v) =>
-    v === null || v === undefined
-      ? ""
-      : String(v)
-          .replaceAll("\"", '""')
-          .replace(/[\n\r]/g, " ");
-  const lines = [headers.join(",")];
-  for (const r of rows) {
-    lines.push(headers.map((h) => `"${escape(r[h])}"`).join(","));
-  }
-  return lines.join("\n");
-}
+// Utility functions (commented out as not currently used)
+// function toCSV(rows) {
+//   if (!rows || rows.length === 0) return "";
+//   const headers = Object.keys(rows[0]);
+//   const escape = (v) =>
+//     v === null || v === undefined
+//       ? ""
+//       : String(v)
+//           .replaceAll("\"", '""')
+//           .replace(/[\n\r]/g, " ");
+//   const lines = [headers.join(",")];
+//   for (const r of rows) {
+//     lines.push(headers.map((h) => `"${escape(r[h])}"`).join(","));
+//   }
+//   return lines.join("\n");
+// }
 
-function download(filename, text) {
-  const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// function download(filename, text) {
+//   const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
+//   const url = URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   a.click();
+//   URL.revokeObjectURL(url);
+// }
 
 function groupBy(arr, keyFn) {
   return arr.reduce((acc, x) => {
@@ -102,36 +102,12 @@ function projectOnHand(onHand, dailyUsage, days) {
   return arr;
 }
 
-function statusFromLevels({ onHand, rop, maxLevel, category, name, productionCount = 0, isMadeToOrder = false, productionStatus = null, status = null }) {
-  // Use database status if available, otherwise calculate
-  if (status) {
-    switch (status) {
-      case 'in_stock':
-        return { label: "In Stock", variant: "success" };
-      case 'low_stock':
-        return { label: "Low Stock", variant: "warning" };
-      case 'out_of_stock':
-        return { label: "Out of Stock", variant: "danger" };
-      case 'reorder_now':
-        return { label: "Reorder now", variant: "danger" };
-      case 'overstock':
-        return { label: "Overstock", variant: "warning" };
-      case 'not_in_production':
-        return { label: "Not in Production", variant: "secondary" };
-      case 'in_production':
-        return { label: "In Production", variant: "warning" };
-      case 'ready_to_deliver':
-        return { label: "Ready to Deliver", variant: "info" };
-      case 'completed':
-        return { label: "Completed", variant: "success" };
-      default:
-        break;
-    }
-  }
-  
-  // Fallback calculation if no database status
-  // For raw materials - use reorder logic with "In Stock" instead of "OK"
+function statusFromLevels({ onHand, rop, maxLevel, category, name, productionCount = 0, isMadeToOrder = false, productionStatus = null, status = null, safetyStock = 0 }) {
+  // Always calculate status based on current stock levels for accuracy
+  // For raw materials - use accurate reorder logic
   if (category === 'raw') {
+    if (onHand === 0) return { label: "Out of Stock", variant: "danger" };
+    if (onHand <= safetyStock) return { label: "Critical Stock", variant: "danger" };
     if (onHand <= rop) return { label: "Reorder now", variant: "danger" };
     if (maxLevel && onHand > maxLevel) return { label: "Overstock", variant: "warning" };
     return { label: "In Stock", variant: "success" };
@@ -140,7 +116,7 @@ function statusFromLevels({ onHand, rop, maxLevel, category, name, productionCou
   // For mass-produced finished goods (Alkansya)
   if (category === 'finished' && !isMadeToOrder) {
     if (onHand === 0) return { label: "Out of Stock", variant: "danger" };
-    if (onHand <= rop) return { label: "Low Stock", variant: "warning" };
+    if (onHand <= (rop || 0)) return { label: "Low Stock", variant: "warning" };
     return { label: "In Stock", variant: "success" };
   }
   
@@ -154,12 +130,13 @@ function statusFromLevels({ onHand, rop, maxLevel, category, name, productionCou
       return { label: "Ready to Deliver", variant: "info" };
     }
     if (productionCount > 0 || productionStatus === 'in_production') {
-      return { label: "In Production", variant: "warning" };
+      return { label: `${productionCount} Order${productionCount > 1 ? 's' : ''} in Production`, variant: "warning" };
     }
-    return { label: "Not in Production", variant: "secondary" };
+    return { label: "No Production", variant: "secondary" };
   }
   
-  // Default fallback
+  // Default fallback - always check stock levels first
+  if (onHand === 0) return { label: "Out of Stock", variant: "danger" };
   return { label: "In Stock", variant: "success" };
 }
 
@@ -472,7 +449,7 @@ const InventoryPage = () => {
   const [usage, setUsage] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState({ q: "", type: "all", product: "all" });
+  const [filter] = useState({ q: "", type: "all", product: "all" });
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
@@ -542,8 +519,8 @@ const InventoryPage = () => {
   const fetchAlkansyaStats = useCallback(async () => {
     try {
       console.log('Fetching Alkansya statistics...');
-      // Use the working test route temporarily
-      const data = await apiCall('/test-alkansya-stats');
+      // Use the proper statistics endpoint
+      const data = await apiCall('/inventory/alkansya-daily-output/statistics');
       console.log('Alkansya statistics data:', data);
       setAlkansyaStats({
         totalOutput: data.total_output || 0,
@@ -553,6 +530,18 @@ const InventoryPage = () => {
       });
     } catch (err) {
       console.error('Failed to fetch Alkansya statistics:', err);
+      // Fallback to test route if main route fails
+      try {
+        const data = await apiCall('/test-alkansya-stats');
+        setAlkansyaStats({
+          totalOutput: data.total_output || 0,
+          averageDaily: data.average_daily || 0,
+          last7Days: data.last_7_days || 0,
+          productionDays: data.total_days || 0
+        });
+      } catch (fallbackErr) {
+        console.error('Fallback Alkansya statistics also failed:', fallbackErr);
+      }
     }
   }, [apiCall]);
 
@@ -778,9 +767,10 @@ const InventoryPage = () => {
 
   // Cleanup deletion state on unmount
   useEffect(() => {
+    const currentDeletionState = deletionState.current;
     return () => {
       // Clear all pending deletion states
-      deletionState.current.clear();
+      currentDeletionState.clear();
     };
   }, []);
 
@@ -875,7 +865,8 @@ const InventoryPage = () => {
         productionCount: it.productionCount || 0,
         isMadeToOrder: it.isMadeToOrder || (it.category === 'finished' && (it.name.toLowerCase().includes('table') || it.name.toLowerCase().includes('chair'))),
         productionStatus: it.productionStatus || null,
-        status: it.status || null
+        status: it.status || null,
+        safetyStock: safety
       });
 
       const target = maxLevel || rop + safety;
@@ -1124,64 +1115,60 @@ const InventoryPage = () => {
 
       {/* Enhanced Tab Navigation - Simple Design */}
       <div className="mb-4">
-        <div className="d-flex border-bottom">
+        <div className="d-flex border-bottom bg-white rounded-top">
           <button 
-            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+            className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
               activeTab === 'raw' 
-                ? 'text-primary border-bottom border-primary border-2' 
+                ? 'text-primary border-bottom border-primary border-2 bg-light' 
                 : 'text-muted'
             }`}
             onClick={() => setActiveTab('raw')}
             style={{
-              backgroundColor: activeTab === 'raw' ? '#f8f9fa' : 'transparent',
               fontWeight: activeTab === 'raw' ? '600' : '400'
             }}
           >
             <i className="fas fa-boxes me-2"></i>
             Raw Materials 
-            <span className="badge bg-secondary ms-2">{groupedInventory.raw.length}</span>
+            <span className="badge bg-primary ms-2">{groupedInventory.raw.length}</span>
           </button>
           <button 
-            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+            className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
               activeTab === 'finished' 
-                ? 'text-primary border-bottom border-primary border-2' 
+                ? 'text-primary border-bottom border-primary border-2 bg-light' 
                 : 'text-muted'
             }`}
             onClick={() => setActiveTab('finished')}
             style={{
-              backgroundColor: activeTab === 'finished' ? '#f8f9fa' : 'transparent',
               fontWeight: activeTab === 'finished' ? '600' : '400'
             }}
           >
             <i className="fas fa-check-circle me-2"></i>
             Finished Goods 
-            <span className="badge bg-secondary ms-2">{groupedInventory.finished.length}</span>
+            <span className="badge bg-success ms-2">{groupedInventory.finished.length}</span>
           </button>
           <button 
-            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+            className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
               activeTab === 'made-to-order' 
-                ? 'text-primary border-bottom border-primary border-2' 
+                ? 'text-primary border-bottom border-primary border-2 bg-light' 
                 : 'text-muted'
             }`}
             onClick={() => setActiveTab('made-to-order')}
             style={{
-              backgroundColor: activeTab === 'made-to-order' ? '#f8f9fa' : 'transparent',
               fontWeight: activeTab === 'made-to-order' ? '600' : '400'
             }}
           >
             <i className="fas fa-hammer me-2"></i>
             Made-to-Order 
-            <span className="badge bg-secondary ms-2">{groupedInventory.madeToOrder.length}</span>
+            <span className="badge bg-warning ms-2">{groupedInventory.madeToOrder.length}</span>
           </button>
           <button 
-            className={`btn btn-link text-decoration-none px-3 py-2 border-0 rounded-0 ${
+            className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
               activeTab === 'daily-output' 
-                ? 'text-primary border-bottom border-primary border-2' 
+                ? 'text-primary border-bottom border-primary border-2 bg-light' 
                 : 'text-muted'
             }`}
             onClick={() => setActiveTab('daily-output')}
             style={{
-              backgroundColor: activeTab === 'daily-output' ? '#f8f9fa' : 'transparent',
               fontWeight: activeTab === 'daily-output' ? '600' : '400'
             }}
           >
@@ -1191,58 +1178,34 @@ const InventoryPage = () => {
         </div>
       </div>
 
-      {/* Raw Materials Search and Filter - Only for Raw Materials Tab */}
+      {/* Hidden Search and Filter - Functionality preserved but UI removed */}
       {activeTab === 'raw' && (
-        <div className="card mb-4 shadow-sm border-0" style={{ backgroundColor: '#f8f9fa' }}>
-          <div className="card-body py-3">
-            <div className="row g-3 align-items-end">
-              <div className="col-md-5">
-                <label className="form-label small text-muted mb-1 fw-semibold">Search Raw Materials</label>
-                <div className="input-group">
-                  <span className="input-group-text bg-white border-end-0">
-                    <i className="fas fa-search text-muted"></i>
-                  </span>
-                  <input
-                    className="form-control border-start-0"
-                    placeholder="Search by name, SKU, location..."
-                    value={rawMaterialsFilter.search}
-                    onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, search: e.target.value }))}
-                    style={{ boxShadow: 'none' }}
-                  />
-                </div>
-              </div>
-              <div className="col-md-3">
-                <label className="form-label small text-muted mb-1 fw-semibold">Status</label>
-                <select
-                  className="form-select"
-                  value={rawMaterialsFilter.status}
-                  onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, status: e.target.value }))}
-                  style={{ boxShadow: 'none' }}
-                >
-                  <option value="all">All Status</option>
-                  <option value="in_stock">In Stock</option>
-                  <option value="low_stock">Low Stock</option>
-                  <option value="out_of_stock">Out of Stock</option>
-                </select>
-              </div>
-              <div className="col-md-2">
-                <button 
-                  className="btn btn-outline-secondary w-100"
-                  onClick={() => setRawMaterialsFilter({ search: "", category: "all", status: "all" })}
-                >
-                  <i className="fas fa-times me-1"></i>
-                  Clear
-                </button>
-              </div>
-              <div className="col-md-2">
-                <div className="text-end">
-                  <small className="text-muted">
-                    Showing {filteredRawMaterials.length} of {groupedInventory.raw.length} items
-                  </small>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div style={{ display: 'none' }}>
+          <input
+            type="text"
+            value={rawMaterialsFilter.search}
+            onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, search: e.target.value }))}
+          />
+          <select
+            value={rawMaterialsFilter.status}
+            onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, status: e.target.value }))}
+          >
+            <option value="all">All Status</option>
+            <option value="in_stock">In Stock</option>
+            <option value="low_stock">Low Stock</option>
+            <option value="out_of_stock">Out of Stock</option>
+          </select>
+        </div>
+      )}
+
+      {/* Hidden Search for Other Tabs - Functionality preserved but UI removed */}
+      {(activeTab === 'finished' || activeTab === 'made-to-order') && (
+        <div style={{ display: 'none' }}>
+          <input
+            type="text"
+            value={rawMaterialsFilter.search}
+            onChange={(e) => setRawMaterialsFilter(prev => ({ ...prev, search: e.target.value }))}
+          />
         </div>
       )}
 
@@ -1264,39 +1227,34 @@ const InventoryPage = () => {
                 Raw Materials
               </h5>
               <small className="text-muted">
-                {filteredRawMaterials.length === groupedInventory.raw.length 
-                  ? `All ${groupedInventory.raw.length} items` 
-                  : `${filteredRawMaterials.length} of ${groupedInventory.raw.length} items`
-                }
+                {groupedInventory.raw.length} raw materials
               </small>
             </div>
             <div className="d-flex gap-2">
               <span className="badge bg-primary fs-6">{groupedInventory.raw.length} total</span>
-              {filteredRawMaterials.length !== groupedInventory.raw.length && (
-                <span className="badge bg-info fs-6">{filteredRawMaterials.length} filtered</span>
-              )}
             </div>
           </div>
           
-          <div className="card shadow-sm border-0" style={{ backgroundColor: 'white' }}>
+          <div className="card border-0 shadow-sm">
             <div className="table-responsive">
               <table className="table table-hover mb-0">
-                <thead style={{ backgroundColor: '#f8f9fa' }}>
+                <thead className="table-light">
                   <tr>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted">SKU</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Name</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Location</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Stock</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Daily Use</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Status</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted text-end">Reorder Qty</th>
-                    <th className="border-0 py-3 px-4 fw-semibold text-muted">Actions</th>
+                    <th className="py-3 px-3 fw-semibold">SKU</th>
+                    <th className="py-3 px-3 fw-semibold">Name</th>
+                    <th className="py-3 px-3 fw-semibold">Location</th>
+                    <th className="py-3 px-3 fw-semibold text-end">Current Stock</th>
+                    <th className="py-3 px-3 fw-semibold text-end">Reorder Point</th>
+                    <th className="py-3 px-3 fw-semibold text-end">Daily Use</th>
+                    <th className="py-3 px-3 fw-semibold">Status</th>
+                    <th className="py-3 px-3 fw-semibold text-end">Reorder Qty</th>
+                    <th className="py-3 px-3 fw-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRawMaterials.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center py-5">
+                      <td colSpan="9" className="text-center py-5">
                         <div className="text-muted">
                           <i className="fas fa-search fa-2x mb-3 d-block"></i>
                           <h6>No raw materials found</h6>
@@ -1311,53 +1269,58 @@ const InventoryPage = () => {
                     </tr>
                   ) : (
                     filteredRawMaterials.map((item) => (
-                      <tr key={item.id || item.sku} className="border-bottom">
-                        <td className="py-3 px-4">
+                      <tr key={item.id || item.sku}>
+                        <td className="py-3 px-3">
                           <code className="small bg-light px-2 py-1 rounded">{item.sku}</code>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3">
                           <div className="fw-semibold text-dark">{item.name}</div>
                           {item.description && (
                             <small className="text-muted">{item.description.substring(0, 50)}...</small>
                           )}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3">
                           <small className="text-muted">
                             <i className="fas fa-map-marker-alt me-1"></i>
                             {item.location}
                           </small>
                         </td>
-                        <td className="py-3 px-4 text-end">
+                        <td className="py-3 px-3 text-end">
                           <div className="fw-bold text-dark">{item.onHand}</div>
                           <small className="text-muted">{item.unit}</small>
                         </td>
-                        <td className="py-3 px-4 text-end">
+                        <td className="py-3 px-3 text-end">
+                          <div className="fw-semibold text-info">{item.rop}</div>
+                          <small className="text-muted">reorder at</small>
+                        </td>
+                        <td className="py-3 px-3 text-end">
                           <div className="fw-semibold">{item.avgDaily}</div>
                           <small className="text-muted">per day</small>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3">
                           <span className={`badge bg-${item.status.variant} px-2 py-1`}>
                             {item.status.label}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-end">
+                        <td className="py-3 px-3 text-end">
                           {item.suggestedOrderQty > 0 ? (
                             <div className="fw-bold text-danger">{item.suggestedOrderQty}</div>
                           ) : (
                             <span className="text-muted">—</span>
                           )}
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="btn-group" role="group">
+                        <td className="py-3 px-3">
+                          <div className="d-flex gap-1">
                             <button 
-                              className="btn btn-sm btn-outline-primary"
+                              className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
                               onClick={() => handleEditMaterial(item)}
                               title="Edit Material"
+                              style={{ minWidth: '32px', height: '32px' }}
                             >
                               <i className="fas fa-edit"></i>
                             </button>
                             <button 
-                              className="btn btn-sm btn-outline-danger"
+                              className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -1365,6 +1328,7 @@ const InventoryPage = () => {
                               }}
                               onMouseDown={(e) => e.preventDefault()}
                               title="Delete Material"
+                              style={{ minWidth: '32px', height: '32px' }}
                             >
                               <i className="fas fa-trash"></i>
                             </button>
@@ -1423,23 +1387,29 @@ const InventoryPage = () => {
                         </span>
                       </td>
                       <td>
-                        <button 
-                          className="btn btn-sm btn-outline-primary me-1"
-                          onClick={() => handleEditMaterial(item)}
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteMaterial(item.id, e);
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                        >
-                          Delete
-                        </button>
+                        <div className="d-flex gap-1">
+                          <button 
+                            className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
+                            onClick={() => handleEditMaterial(item)}
+                            title="Edit Material"
+                            style={{ minWidth: '32px', height: '32px' }}
+                          >
+                            <i className="fas fa-edit"></i>
+                          </button>
+                          <button 
+                            className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteMaterial(item.id, e);
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            title="Delete Material"
+                            style={{ minWidth: '32px', height: '32px' }}
+                          >
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1516,7 +1486,7 @@ const InventoryPage = () => {
                               </small>
                             </div>
                           )}
-                          {item.productionCount === 0 && item.status.label === 'Not in Production' && (
+                          {item.productionCount === 0 && item.status.label === 'No Production' && (
                             <small className="text-muted">
                               No active orders
                             </small>
@@ -1524,23 +1494,29 @@ const InventoryPage = () => {
                         </div>
                       </td>
                       <td>
-                        <button 
-                          className="btn btn-sm btn-outline-primary me-1"
-                          onClick={() => handleEditMaterial(item)}
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteMaterial(item.id, e);
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                        >
-                          Delete
-                        </button>
+                        <div className="d-flex gap-1">
+                          <button 
+                            className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
+                            onClick={() => handleEditMaterial(item)}
+                            title="Edit Material"
+                            style={{ minWidth: '32px', height: '32px' }}
+                          >
+                            <i className="fas fa-edit"></i>
+                          </button>
+                          <button 
+                            className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteMaterial(item.id, e);
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            title="Delete Material"
+                            style={{ minWidth: '32px', height: '32px' }}
+                          >
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1554,42 +1530,105 @@ const InventoryPage = () => {
       {/* DAILY OUTPUT TAB */}
       {activeTab === 'daily-output' && (
         <div className="mb-4">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h5 className="mb-0">🐷 Daily Alkansya Output</h5>
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <h5 className="mb-1 text-dark fw-semibold">
+                <i className="fas fa-piggy-bank me-2 text-info"></i>
+                Daily Alkansya Output
+              </h5>
+              <small className="text-muted">
+                Track daily production and manage Alkansya inventory
+              </small>
+            </div>
             <button 
-              className="btn btn-info btn-sm"
+              className="btn btn-info"
               onClick={() => setShowAlkansyaModal(true)}
             >
-              <i className="fas fa-plus me-1"></i>
+              <i className="fas fa-plus me-2"></i>
               Add Daily Output
             </button>
           </div>
           
-          <div className="card shadow-sm">
+          <div className="row g-3 mb-4">
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="h3 text-primary mb-2">{alkansyaStats.totalOutput}</div>
+                  <div className="small text-muted fw-semibold">Total Output</div>
+                  <div className="small text-muted">All time production</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="h3 text-success mb-2">{alkansyaStats.averageDaily}</div>
+                  <div className="small text-muted fw-semibold">Avg Daily</div>
+                  <div className="small text-muted">Per day average</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="h3 text-info mb-2">{alkansyaStats.last7Days}</div>
+                  <div className="small text-muted fw-semibold">Last 7 Days</div>
+                  <div className="small text-muted">Recent production</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="h3 text-warning mb-2">{alkansyaStats.productionDays}</div>
+                  <div className="small text-muted fw-semibold">Production Days</div>
+                  <div className="small text-muted">Active days</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card shadow-sm border-0">
+            <div className="card-header bg-info text-white">
+              <h6 className="mb-0">
+                <i className="fas fa-chart-line me-2"></i>
+                Production Overview
+              </h6>
+            </div>
             <div className="card-body">
               <div className="row g-3">
-                <div className="col-md-3">
-                  <div className="text-center">
-                    <div className="h4 text-primary mb-1">{alkansyaStats.totalOutput}</div>
-                    <div className="small text-muted">Total Output</div>
+                <div className="col-md-6">
+                  <div className="d-flex align-items-center">
+                    <div className="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
+                      <i className="fas fa-piggy-bank text-primary"></i>
+                    </div>
+                    <div>
+                      <div className="fw-semibold">Current Alkansya Stock</div>
+                      <div className="h5 text-primary mb-0">
+                        {(() => {
+                          const alkansyaItem = inventory.find(item => 
+                            item.name.toLowerCase().includes('alkansya') && 
+                            item.category === 'finished'
+                          );
+                          return alkansyaItem ? alkansyaItem.quantity_on_hand || 0 : 0;
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="col-md-3">
-                  <div className="text-center">
-                    <div className="h4 text-success mb-1">{alkansyaStats.averageDaily}</div>
-                    <div className="small text-muted">Avg Daily</div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="text-center">
-                    <div className="h4 text-info mb-1">{alkansyaStats.last7Days}</div>
-                    <div className="small text-muted">Last 7 Days</div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="text-center">
-                    <div className="h4 text-warning mb-1">{alkansyaStats.productionDays}</div>
-                    <div className="small text-muted">Production Days</div>
+                <div className="col-md-6">
+                  <div className="d-flex align-items-center">
+                    <div className="bg-success bg-opacity-10 rounded-circle p-3 me-3">
+                      <i className="fas fa-trending-up text-success"></i>
+                    </div>
+                    <div>
+                      <div className="fw-semibold">Production Efficiency</div>
+                      <div className="h5 text-success mb-0">
+                        {alkansyaStats.productionDays > 0 ? 
+                          Math.round((alkansyaStats.totalOutput / alkansyaStats.productionDays) * 100) / 100 : 0
+                        } per day
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1628,45 +1667,6 @@ const InventoryPage = () => {
         }}
       />
 
-      {/* Mini projected stock cards for top 5 critical */}
-      <div className="row g-3 mt-3">
-        {enriched
-          .filter((x) => x.status.variant !== "success")
-          .slice(0, 5)
-          .map((it) => (
-            <div className="col-md-6" key={`proj-${it.sku}`}>
-              <div className="card h-100">
-                <div className="card-body">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                      <div className="fw-semibold">{it.name} <span className="text-muted">({it.sku})</span></div>
-                      <div className="small text-muted">Projected stock (next {DEFAULTS.planningHorizonDays} days)</div>
-                    </div>
-                    <span className={`badge text-bg-${it.status.variant}`}>{it.status.label}</span>
-                  </div>
-                  {/* simple sparkline using inline SVG */}
-                  <div style={{ width: "100%", height: 80 }}>
-                    <svg viewBox={`0 0 ${DEFAULTS.planningHorizonDays} 100`} preserveAspectRatio="none" width="100%" height="100%">
-                      {(() => {
-                        const max = Math.max(1, ...it.projected.map((p) => p.projected));
-                        const pts = it.projected
-                          .map((p) => `${p.day},${100 - Math.round((p.projected / max) * 100)}`)
-                          .join(" ");
-                        return (
-                          <>
-                            <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1" />
-                            {/* ROP line */}
-                            <line x1="0" y1={100 - Math.round((it.rop / max) * 100)} x2={DEFAULTS.planningHorizonDays} y2={100 - Math.round((it.rop / max) * 100)} stroke="red" strokeDasharray="2,2" />
-                          </>
-                        );
-                      })()}
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-      </div>
 
       
     </div>
