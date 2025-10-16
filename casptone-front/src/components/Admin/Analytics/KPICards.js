@@ -39,7 +39,7 @@ export default function KPICards({ kpis }) {
     },
     { 
       label: "Total Sales Revenue", 
-      value: kpis.total_sales_revenue || "₱0", 
+      value: kpis.total_sales_revenue ? `₱${kpis.total_sales_revenue.toLocaleString()}` : "₱0", 
       icon: "fa-dollar-sign",
       isPrimary: false,
       route: "/reports?tab=sales",

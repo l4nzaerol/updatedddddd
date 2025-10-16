@@ -16,8 +16,8 @@ class UsersTableSeeder extends Seeder
                 'name' => 'Admin',
                 'password' => Hash::make('admin'),
                 'role' => 'employee',
-                'is_active' => true,
-                'email_verified_at' => now(),
+
+
             ]
         );
 
@@ -27,8 +27,8 @@ class UsersTableSeeder extends Seeder
                 'name' => 'Customer',
                 'password' => Hash::make('customer'),
                 'role' => 'customer',
-                'is_active' => true,
-                'email_verified_at' => now(),
+
+
             ]
         );
 
@@ -38,8 +38,6 @@ class UsersTableSeeder extends Seeder
                 'name' => 'Staff User',
                 'password' => Hash::make('staff'),
                 'role' => 'staff',
-                'is_active' => true,
-                'email_verified_at' => now(),
             ]
         );
     }
