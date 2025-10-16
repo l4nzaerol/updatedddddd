@@ -186,5 +186,5 @@ const CustomerDashboard = () => {
     );
 };
 
-// Memoize the component to prevent unnecessary re-renders
-export default memo(CustomerDashboard);
+
+export default CustomerDashboard;

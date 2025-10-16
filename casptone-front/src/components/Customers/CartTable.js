@@ -8,6 +8,8 @@ const CartTable = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [showOrderSummary, setShowOrderSummary] = useState(false);
+  const [selectedItems, setSelectedItems] = useState(new Set());
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cod");
@@ -16,6 +18,387 @@ const CartTable = () => {
   const [removingItems, setRemovingItems] = useState(new Set());
   const [updatingItems, setUpdatingItems] = useState(new Set());
   const [redirecting, setRedirecting] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
+  
+  // Address selection states
+  const [selectedProvince, setSelectedProvince] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedBarangay, setSelectedBarangay] = useState("");
+  const [houseUnit, setHouseUnit] = useState("");
+  const [provinceError, setProvinceError] = useState("");
+  const [cityError, setCityError] = useState("");
+  const [barangayError, setBarangayError] = useState("");
+  const [houseUnitError, setHouseUnitError] = useState("");
+
+
+  // Philippine location data
+  const philippineLocations = {
+    provinces: [
+      { id: "metro-manila", name: "Metro Manila" },
+      { id: "laguna", name: "Laguna" },
+      { id: "cavite", name: "Cavite" },
+      { id: "rizal", name: "Rizal" },
+      { id: "bulacan", name: "Bulacan" },
+      { id: "pampanga", name: "Pampanga" },
+      { id: "bataan", name: "Bataan" },
+      { id: "nueva-ecija", name: "Nueva Ecija" },
+      { id: "tarlac", name: "Tarlac" },
+      { id: "zambales", name: "Zambales" },
+      { id: "aurora", name: "Aurora" },
+      { id: "batangas", name: "Batangas" },
+      { id: "quezon", name: "Quezon" },
+      { id: "mindoro-oriental", name: "Mindoro Oriental" },
+      { id: "mindoro-occidental", name: "Mindoro Occidental" },
+      { id: "marinduque", name: "Marinduque" },
+      { id: "romblon", name: "Romblon" },
+      { id: "palawan", name: "Palawan" },
+      { id: "albay", name: "Albay" },
+      { id: "camarines-sur", name: "Camarines Sur" },
+      { id: "camarines-norte", name: "Camarines Norte" },
+      { id: "catanduanes", name: "Catanduanes" },
+      { id: "masbate", name: "Masbate" },
+      { id: "sorsogon", name: "Sorsogon" },
+      { id: "aklan", name: "Aklan" },
+      { id: "antique", name: "Antique" },
+      { id: "capiz", name: "Capiz" },
+      { id: "iloilo", name: "Iloilo" },
+      { id: "negros-occidental", name: "Negros Occidental" },
+      { id: "guimaras", name: "Guimaras" },
+      { id: "bohol", name: "Bohol" },
+      { id: "cebu", name: "Cebu" },
+      { id: "negros-oriental", name: "Negros Oriental" },
+      { id: "siquijor", name: "Siquijor" },
+      { id: "bilaran", name: "Bilaran" },
+      { id: "samar", name: "Samar" },
+      { id: "leyte", name: "Leyte" },
+      { id: "southern-leyte", name: "Southern Leyte" },
+      { id: "eastern-samar", name: "Eastern Samar" },
+      { id: "northern-samar", name: "Northern Samar" },
+      { id: "biliran", name: "Biliran" },
+      { id: "zamboanga-del-norte", name: "Zamboanga del Norte" },
+      { id: "zamboanga-del-sur", name: "Zamboanga del Sur" },
+      { id: "zamboanga-sibugay", name: "Zamboanga Sibugay" },
+      { id: "bukidnon", name: "Bukidnon" },
+      { id: "camiguin", name: "Camiguin" },
+      { id: "lanao-del-norte", name: "Lanao del Norte" },
+      { id: "misamis-occidental", name: "Misamis Occidental" },
+      { id: "misamis-oriental", name: "Misamis Oriental" },
+      { id: "davao-del-norte", name: "Davao del Norte" },
+      { id: "davao-del-sur", name: "Davao del Sur" },
+      { id: "davao-oriental", name: "Davao Oriental" },
+      { id: "davao-de-oro", name: "Davao de Oro" },
+      { id: "davao-occidental", name: "Davao Occidental" },
+      { id: "compostela-valley", name: "Compostela Valley" },
+      { id: "north-cotabato", name: "North Cotabato" },
+      { id: "south-cotabato", name: "South Cotabato" },
+      { id: "sultan-kudarat", name: "Sultan Kudarat" },
+      { id: "sarangani", name: "Sarangani" },
+      { id: "agusan-del-norte", name: "Agusan del Norte" },
+      { id: "agusan-del-sur", name: "Agusan del Sur" },
+      { id: "surigao-del-norte", name: "Surigao del Norte" },
+      { id: "surigao-del-sur", name: "Surigao del Sur" },
+      { id: "dinagat-islands", name: "Dinagat Islands" },
+      { id: "basilan", name: "Basilan" },
+      { id: "lanao-del-sur", name: "Lanao del Sur" },
+      { id: "maguindanao", name: "Maguindanao" },
+      { id: "sulu", name: "Sulu" },
+      { id: "tawi-tawi", name: "Tawi-Tawi" },
+      { id: "abra", name: "Abra" },
+      { id: "benguet", name: "Benguet" },
+      { id: "ifugao", name: "Ifugao" },
+      { id: "kalinga", name: "Kalinga" },
+      { id: "mountain-province", name: "Mountain Province" },
+      { id: "apayao", name: "Apayao" },
+      { id: "ilocos-norte", name: "Ilocos Norte" },
+      { id: "ilocos-sur", name: "Ilocos Sur" },
+      { id: "la-union", name: "La Union" },
+      { id: "pangasinan", name: "Pangasinan" },
+      { id: "cagayan", name: "Cagayan" },
+      { id: "isabela", name: "Isabela" },
+      { id: "nueva-vizcaya", name: "Nueva Vizcaya" },
+      { id: "quirino", name: "Quirino" }
+    ],
+    cities: {
+      "metro-manila": [
+        { id: "manila", name: "Manila" },
+        { id: "quezon-city", name: "Quezon City" },
+        { id: "caloocan", name: "Caloocan" },
+        { id: "las-pinas", name: "Las Piñas" },
+        { id: "makati", name: "Makati" },
+        { id: "malabon", name: "Malabon" },
+        { id: "mandaluyong", name: "Mandaluyong" },
+        { id: "marikina", name: "Marikina" },
+        { id: "muntinlupa", name: "Muntinlupa" },
+        { id: "navotas", name: "Navotas" },
+        { id: "paranaque", name: "Parañaque" },
+        { id: "pasay", name: "Pasay" },
+        { id: "pasig", name: "Pasig" },
+        { id: "pateros", name: "Pateros" },
+        { id: "san-juan", name: "San Juan" },
+        { id: "taguig", name: "Taguig" },
+        { id: "valenzuela", name: "Valenzuela" }
+      ],
+      "laguna": [
+        { id: "calamba", name: "Calamba" },
+        { id: "san-pablo", name: "San Pablo" },
+        { id: "santa-rosa", name: "Santa Rosa" },
+        { id: "biñan", name: "Biñan" },
+        { id: "cabuyao", name: "Cabuyao" },
+        { id: "san-pedro", name: "San Pedro" },
+        { id: "los-banos", name: "Los Baños" },
+        { id: "alaminos", name: "Alaminos" },
+        { id: "bay", name: "Bay" },
+        { id: "calauan", name: "Calauan" },
+        { id: "cavinti", name: "Cavinti" },
+        { id: "famy", name: "Famy" },
+        { id: "kalayaan", name: "Kalayaan" },
+        { id: "liliw", name: "Liliw" },
+        { id: "lumban", name: "Lumban" },
+        { id: "mabitac", name: "Mabitac" },
+        { id: "magdalena", name: "Magdalena" },
+        { id: "majayjay", name: "Majayjay" },
+        { id: "nagcarlan", name: "Nagcarlan" },
+        { id: "paete", name: "Paete" },
+        { id: "pagsanjan", name: "Pagsanjan" },
+        { id: "pakil", name: "Pakil" },
+        { id: "pandan", name: "Pandan" },
+        { id: "pila", name: "Pila" },
+        { id: "rizal", name: "Rizal" },
+        { id: "siniloan", name: "Siniloan" },
+        { id: "victoria", name: "Victoria" }
+      ],
+      "cavite": [
+        { id: "dasmarinas", name: "Dasmarinas" },
+        { id: "imus", name: "Imus" },
+        { id: "bacoor", name: "Bacoor" },
+        { id: "general-trias", name: "General Trias" },
+        { id: "kawit", name: "Kawit" },
+        { id: "noveleta", name: "Noveleta" },
+        { id: "rosario", name: "Rosario" },
+        { id: "silang", name: "Silang" },
+        { id: "tanza", name: "Tanza" },
+        { id: "trece-martires", name: "Trece Martires" },
+        { id: "alfonso", name: "Alfonso" },
+        { id: "amadeo", name: "Amadeo" },
+        { id: "carmona", name: "Carmona" },
+        { id: "general-emilio-aguinaldo", name: "General Emilio Aguinaldo" },
+        { id: "general-mariano-alvarez", name: "General Mariano Alvarez" },
+        { id: "indang", name: "Indang" },
+        { id: "magallanes", name: "Magallanes" },
+        { id: "maragondon", name: "Maragondon" },
+        { id: "mendez", name: "Mendez" },
+        { id: "naic", name: "Naic" },
+        { id: "tagaytay", name: "Tagaytay" }
+      ]
+    },
+    barangays: {
+      "manila": [
+        { id: "binondo", name: "Binondo" },
+        { id: "quiapo", name: "Quiapo" },
+        { id: "sampaloc", name: "Sampaloc" },
+        { id: "san-miguel", name: "San Miguel" },
+        { id: "ermita", name: "Ermita" },
+        { id: "intramuros", name: "Intramuros" },
+        { id: "malate", name: "Malate" },
+        { id: "paco", name: "Paco" },
+        { id: "pandacan", name: "Pandacan" },
+        { id: "port-area", name: "Port Area" },
+        { id: "santa-ana", name: "Santa Ana" },
+        { id: "santa-cruz", name: "Santa Cruz" },
+        { id: "santa-mesa", name: "Santa Mesa" },
+        { id: "tondo", name: "Tondo" }
+      ],
+      "quezon-city": [
+        { id: "diliman", name: "Diliman" },
+        { id: "commonwealth", name: "Commonwealth" },
+        { id: "batasan-hills", name: "Batasan Hills" },
+        { id: "bagong-silangan", name: "Bagong Silangan" },
+        { id: "novaliches", name: "Novaliches" },
+        { id: "fairview", name: "Fairview" },
+        { id: "lagro", name: "Lagro" },
+        { id: "project-4", name: "Project 4" },
+        { id: "project-6", name: "Project 6" },
+        { id: "project-7", name: "Project 7" },
+        { id: "project-8", name: "Project 8" },
+        { id: "sangandaan", name: "Sangandaan" },
+        { id: "sauyo", name: "Sauyo" },
+        { id: "talipapa", name: "Talipapa" },
+        { id: "tandang-sora", name: "Tandang Sora" },
+        { id: "ubelt", name: "UBelt" }
+      ],
+      "calamba": [
+        { id: "barangay-1", name: "Barangay 1" },
+        { id: "barangay-2", name: "Barangay 2" },
+        { id: "barangay-3", name: "Barangay 3" },
+        { id: "barangay-4", name: "Barangay 4" },
+        { id: "barangay-5", name: "Barangay 5" },
+        { id: "barangay-6", name: "Barangay 6" },
+        { id: "barangay-7", name: "Barangay 7" },
+        { id: "barangay-8", name: "Barangay 8" },
+        { id: "barangay-9", name: "Barangay 9" },
+        { id: "barangay-10", name: "Barangay 10" },
+        { id: "bagong-kalsada", name: "Bagong Kalsada" },
+        { id: "banlic", name: "Banlic" },
+        { id: "barandal", name: "Barandal" },
+        { id: "batino", name: "Batino" },
+        { id: "bubukal", name: "Bubukal" },
+        { id: "bucal", name: "Bucal" },
+        { id: "bunting", name: "Bunting" },
+        { id: "burol", name: "Burol" },
+        { id: "camaligan", name: "Camaligan" },
+        { id: "canlubang", name: "Canlubang" },
+        { id: "halang", name: "Halang" },
+        { id: "hornalan", name: "Hornalan" },
+        { id: "kay-anlog", name: "Kay Anlog" },
+        { id: "la-mesa", name: "La Mesa" },
+        { id: "lawa", name: "Lawa" },
+        { id: "lecheng", name: "Lecheng" },
+        { id: "lingga", name: "Lingga" },
+        { id: "looc", name: "Looc" },
+        { id: "mabato", name: "Mabato" },
+        { id: "majada-labas", name: "Majada Labas" },
+        { id: "makiling", name: "Makiling" },
+        { id: "mapagong", name: "Mapagong" },
+        { id: "masili", name: "Masili" },
+        { id: "maunong", name: "Maunong" },
+        { id: "mayapa", name: "Mayapa" },
+        { id: "paciano-rizal", name: "Paciano Rizal" },
+        { id: "palingon", name: "Palingon" },
+        { id: "palo-alto", name: "Palo Alto" },
+        { id: "pansol", name: "Pansol" },
+        { id: "parian", name: "Parian" },
+        { id: "prinza", name: "Prinza" },
+        { id: "pulo", name: "Pulo" },
+        { id: "puntod", name: "Puntod" },
+        { id: "real", name: "Real" },
+        { id: "saimsim", name: "Saimsim" },
+        { id: "sampiruhan", name: "Sampiruhan" },
+        { id: "san-cristobal", name: "San Cristobal" },
+        { id: "san-jose", name: "San Jose" },
+        { id: "sirang-lupa", name: "Sirang Lupa" },
+        { id: "sucol", name: "Sucol" },
+        { id: "turbina", name: "Turbina" },
+        { id: "ulango", name: "Ulango" },
+        { id: "uzon", name: "Uzon" }
+      ],
+      "cabuyao": [
+        { id: "banaybanay", name: "Banaybanay" },
+        { id: "banlic", name: "Banlic" },
+        { id: "bigaa", name: "Bigaa" },
+        { id: "butong", name: "Butong" },
+        { id: "casile", name: "Casile" },
+        { id: "diezmo", name: "Diezmo" },
+        { id: "gulod", name: "Gulod" },
+        { id: "mamatid", name: "Mamatid" },
+        { id: "marinig", name: "Marinig" },
+        { id: "niugan", name: "Niugan" },
+        { id: "pittland", name: "Pittland" },
+        { id: "pulo", name: "Pulo" },
+        { id: "puntod", name: "Puntod" },
+        { id: "salinas", name: "Salinas" },
+        { id: "sala", name: "Sala" },
+        { id: "san-isidro", name: "San Isidro" },
+        { id: "silic", name: "Silic" },
+        { id: "tuntungin-pulo", name: "Tuntungin-Pulo" },
+        { id: "ulango", name: "Ulango" },
+        { id: "villa-norbert", name: "Villa Norbert" }
+      ],
+      "santa-rosa": [
+        { id: "aplaya", name: "Aplaya" },
+        { id: "balibago", name: "Balibago" },
+        { id: "caingin", name: "Caingin" },
+        { id: "dila", name: "Dila" },
+        { id: "dita", name: "Dita" },
+        { id: "don-jose", name: "Don Jose" },
+        { id: "ibaba", name: "Ibaba" },
+        { id: "kanluran", name: "Kanluran" },
+        { id: "labas", name: "Labas" },
+        { id: "macabling", name: "Macabling" },
+        { id: "malitlit", name: "Malitlit" },
+        { id: "malusak", name: "Malusak" },
+        { id: "market-area", name: "Market Area" },
+        { id: "pooc", name: "Pooc" },
+        { id: "pulong-santa-cruz", name: "Pulong Santa Cruz" },
+        { id: "santo-domingo", name: "Santo Domingo" },
+        { id: "sinalhan", name: "Sinalhan" },
+        { id: "tagapo", name: "Tagapo" }
+      ],
+      "biñan": [
+        { id: "biñan", name: "Biñan" },
+        { id: "bungahan", name: "Bungahan" },
+        { id: "canlalay", name: "Canlalay" },
+        { id: "casile", name: "Casile" },
+        { id: "de-la-paz", name: "De La Paz" },
+        { id: "ganado", name: "Ganado" },
+        { id: "langkiwa", name: "Langkiwa" },
+        { id: "loma", name: "Loma" },
+        { id: "malaban", name: "Malaban" },
+        { id: "malamig", name: "Malamig" },
+        { id: "mamplasan", name: "Mamplasan" },
+        { id: "platero", name: "Platero" },
+        { id: "poblacion", name: "Poblacion" },
+        { id: "pulo", name: "Pulo" },
+        { id: "san-antonio", name: "San Antonio" },
+        { id: "san-francisco", name: "San Francisco" },
+        { id: "san-jose", name: "San Jose" },
+        { id: "san-vicente", name: "San Vicente" },
+        { id: "santo-tomas", name: "Santo Tomas" },
+        { id: "soro-soro", name: "Soro-Soro" },
+        { id: "tambak", name: "Tambak" },
+        { id: "timbao", name: "Timbao" },
+        { id: "tubigan", name: "Tubigan" },
+        { id: "zapote", name: "Zapote" }
+      ],
+      "dasmarinas": [
+        { id: "burol", name: "Burol" },
+        { id: "langkaan", name: "Langkaan" },
+        { id: "paliparan", name: "Paliparan" },
+        { id: "saluysoy", name: "Saluysoy" },
+        { id: "san-agustin", name: "San Agustin" },
+        { id: "san-dionisio", name: "San Dionisio" },
+        { id: "san-jose", name: "San Jose" },
+        { id: "san-miguel", name: "San Miguel" },
+        { id: "san-nicolas", name: "San Nicolas" },
+        { id: "santa-cristina", name: "Santa Cristina" },
+        { id: "santa-cruz", name: "Santa Cruz" },
+        { id: "santa-fe", name: "Santa Fe" },
+        { id: "santa-lucia", name: "Santa Lucia" },
+        { id: "santa-maria", name: "Santa Maria" },
+        { id: "santo-cristo", name: "Santo Cristo" },
+        { id: "santo-nino", name: "Santo Niño" },
+        { id: "victoria", name: "Victoria" }
+      ],
+      "imus": [
+        { id: "alapan", name: "Alapan" },
+        { id: "anabu-i", name: "Anabu I" },
+        { id: "anabu-ii", name: "Anabu II" },
+        { id: "bagong-silang", name: "Bagong Silang" },
+        { id: "bayan-luma", name: "Bayan Luma" },
+        { id: "bucandala", name: "Bucandala" },
+        { id: "burol", name: "Burol" },
+        { id: "carsadang-bago", name: "Carsadang Bago" },
+        { id: "florencia", name: "Florencia" },
+        { id: "habay", name: "Habay" },
+        { id: "hugo-perez", name: "Hugo Perez" },
+        { id: "malagasang-i", name: "Malagasang I" },
+        { id: "malagasang-ii", name: "Malagasang II" },
+        { id: "malagasang-iii", name: "Malagasang III" },
+        { id: "malagasang-iv", name: "Malagasang IV" },
+        { id: "mariano-espeleta", name: "Mariano Espeleta" },
+        { id: "medicion-i", name: "Medicion I" },
+        { id: "medicion-ii", name: "Medicion II" },
+        { id: "medicion-iii", name: "Medicion III" },
+        { id: "medicion-iv", name: "Medicion IV" },
+        { id: "paco", name: "Paco" },
+        { id: "palico", name: "Palico" },
+        { id: "pasong-buaya", name: "Pasong Buaya" },
+        { id: "poblacion", name: "Poblacion" },
+        { id: "pulo", name: "Pulo" },
+        { id: "toclong", name: "Toclong" },
+        { id: "tugbok", name: "Tugbok" }
+      ]
+    }
+  };
 
   useEffect(() => {
     fetchCartItems();
@@ -96,6 +479,12 @@ const CartTable = () => {
     try {
       await api.delete(`/cart/${itemId}`);
       await fetchCartItems();
+      // Remove from selected items if it was selected
+      setSelectedItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(itemId);
+        return newSet;
+      });
     } catch (err) {
       toast.error("Failed to remove item.");
       setRemovingItems(prev => {
@@ -106,13 +495,166 @@ const CartTable = () => {
     }
   };
 
+  // Handle item selection for checkout
+  const handleItemSelection = (itemId, isSelected) => {
+    setSelectedItems(prev => {
+      const newSet = new Set(prev);
+      if (isSelected) {
+        newSet.add(itemId);
+      } else {
+        newSet.delete(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all items
+  const handleSelectAll = () => {
+    const allItemIds = cartItems.map(item => item.id);
+    setSelectedItems(new Set(allItemIds));
+  };
+
+  // Deselect all items
+  const handleDeselectAll = () => {
+    setSelectedItems(new Set());
+  };
+
+  // Validation functions
+
+  const validatePhone = (phone) => {
+    if (!phone.trim()) {
+      setPhoneError("Contact number is required");
+      return false;
+    }
+    
+    const trimmedPhone = phone.trim();
+    
+    // Check if it starts with 09
+    if (!trimmedPhone.startsWith('09')) {
+      setPhoneError("Contact number must start with 09");
+      return false;
+    }
+    
+    // Check if it contains only digits
+    if (!/^\d+$/.test(trimmedPhone)) {
+      setPhoneError("Contact number must contain only numbers");
+      return false;
+    }
+    
+    // Check length - must be exactly 11 digits
+    if (trimmedPhone.length !== 11) {
+      if (trimmedPhone.length > 11) {
+        setPhoneError("Contact number is too long. Please enter exactly 11 digits");
+      } else {
+        setPhoneError("Contact number is too short. Please enter exactly 11 digits");
+      }
+      return false;
+    }
+    
+    setPhoneError("");
+    return true;
+  };
+
+  // Address validation functions
+  const validateProvince = (province) => {
+    if (!province) {
+      setProvinceError("Please select a province");
+      return false;
+    }
+    setProvinceError("");
+    return true;
+  };
+
+  const validateCity = (city) => {
+    if (!city) {
+      setCityError("Please select a city");
+      return false;
+    }
+    setCityError("");
+    return true;
+  };
+
+  const validateBarangay = (barangay) => {
+    if (!barangay) {
+      setBarangayError("Please select a barangay");
+      return false;
+    }
+    setBarangayError("");
+    return true;
+  };
+
+  const validateHouseUnit = (houseUnit) => {
+    if (!houseUnit.trim()) {
+      setHouseUnitError("House/Unit number is required");
+      return false;
+    }
+    if (houseUnit.trim().length < 3) {
+      setHouseUnitError("House/Unit number must be at least 3 characters");
+      return false;
+    }
+    setHouseUnitError("");
+    return true;
+  };
+
+  // Address selection handlers
+  const handleProvinceChange = (provinceId) => {
+    setSelectedProvince(provinceId);
+    setSelectedCity(""); // Reset city when province changes
+    setSelectedBarangay(""); // Reset barangay when province changes
+    if (provinceError) validateProvince(provinceId);
+  };
+
+  const handleCityChange = (cityId) => {
+    setSelectedCity(cityId);
+    setSelectedBarangay(""); // Reset barangay when city changes
+    if (cityError) validateCity(cityId);
+  };
+
+  const handleBarangayChange = (barangayId) => {
+    setSelectedBarangay(barangayId);
+    if (barangayError) validateBarangay(barangayId);
+  };
+
+  const handleHouseUnitChange = (value) => {
+    setHouseUnit(value);
+    if (houseUnitError) validateHouseUnit(value);
+  };
+
+
+  // Handle proceed to order summary
+  const handleProceedToOrderSummary = () => {
+    if (selectedItems.size === 0) {
+      toast.error("Please select at least one item to checkout");
+      return;
+    }
+    setShowOrderSummary(true);
+  };
+
 
   const handleCheckout = async () => {
+    // Validate all address fields
+    const isProvinceValid = validateProvince(selectedProvince);
+    const isCityValid = validateCity(selectedCity);
+    const isBarangayValid = validateBarangay(selectedBarangay);
+    const isHouseUnitValid = validateHouseUnit(houseUnit);
+    const isPhoneValid = validatePhone(phone);
+    
+    if (!isProvinceValid || !isCityValid || !isBarangayValid || !isHouseUnitValid || !isPhoneValid) {
+      toast.error("Please complete all required fields before proceeding");
+      return;
+    }
+
     try {
+      setPayLoading(true);
+      
+      // Create structured address
+      const structuredAddress = `${houseUnit}, ${philippineLocations.barangays[selectedCity]?.find(b => b.id === selectedBarangay)?.name || selectedBarangay}, ${philippineLocations.cities[selectedProvince]?.find(c => c.id === selectedCity)?.name || selectedCity}, ${philippineLocations.provinces.find(p => p.id === selectedProvince)?.name || selectedProvince}`;
+      
       const response = await api.post("/checkout", {
         payment_method: paymentMethod,
-        shipping_address: address,
+        shipping_address: structuredAddress,
         contact_phone: phone,
+        selected_items: Array.from(selectedItems), // Include selected items
       });
 
       // Show success message with clear instructions
@@ -120,12 +662,20 @@ const CartTable = () => {
       console.log("🎉 CHECKOUT SUCCESS - Showing NEW message!");
       toast.success(`Order placed successfully! Order ID: #${orderId}`, {
         duration: 5000,
-        description: 'Your order is being processed.'
+        description: 'Your order is being processed and will appear in the admin dashboard.'
       });
 
-      // Clear cart on successful checkout (COD doesn't need payment verification)
+      // Clear form and close modal
+      setPhone("");
+      setSelectedProvince("");
+      setSelectedCity("");
+      setSelectedBarangay("");
+      setHouseUnit("");
+      setShowOrderSummary(false);
+      
+      // Clear cart
       setCartItems([]);
-      setShowCheckout(false);
+      setSelectedItems(new Set());
 
     } catch (err) {
       console.error("Checkout failed:", err);
@@ -140,12 +690,21 @@ const CartTable = () => {
       } else {
         toast.error(`Checkout failed: ${msg}`);
       }
+    } finally {
+      setPayLoading(false);
     }
   };
 
-  const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalPrice = cartItems.reduce(
     (sum, item) => sum + (item.product?.price || item.price || 0) * item.quantity,
+    0
+  );
+
+  // Calculate selected items totals
+  const selectedItemsList = cartItems.filter(item => selectedItems.has(item.id));
+  const selectedItemsCount = selectedItemsList.reduce((sum, item) => sum + (quantities[item.id] || item.quantity), 0);
+  const selectedItemsPrice = selectedItemsList.reduce(
+    (sum, item) => sum + (item.product?.price || item.price || 0) * (quantities[item.id] || item.quantity),
     0
   );
 
@@ -200,8 +759,33 @@ const CartTable = () => {
         <>
           {/* Cart Items Header */}
           <div className="cart-header">
-            <h3>🛒 Items in your cart</h3>
-            <span className="items-count">{cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}</span>
+            <div className="cart-header-left">
+              <h3>🛒 Items in your cart</h3>
+              <span className="items-count">{cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}</span>
+            </div>
+            <div className="cart-header-right">
+              <div className="selection-controls">
+                <button 
+                  className="btn-select-all" 
+                  onClick={handleSelectAll}
+                  disabled={selectedItems.size === cartItems.length}
+                >
+                  Select All
+                </button>
+                <button 
+                  className="btn-deselect-all" 
+                  onClick={handleDeselectAll}
+                  disabled={selectedItems.size === 0}
+                >
+                  Deselect All
+                </button>
+              </div>
+              {selectedItems.size > 0 && (
+                <div className="selected-info">
+                  {selectedItems.size} item{selectedItems.size === 1 ? '' : 's'} selected
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Enhanced Cart List */}
@@ -216,8 +800,21 @@ const CartTable = () => {
                   key={item.id} 
                   className={`enhanced-cart-item wood-card wood-animated ${
                     isRemoving ? 'removing' : ''
-                  } ${isUpdating ? 'updating' : ''}`}
+                  } ${isUpdating ? 'updating' : ''} ${
+                    selectedItems.has(item.id) ? 'selected' : ''
+                  }`}
                 >
+                  {/* Selection Checkbox */}
+                  <div className="item-selection">
+                    <input
+                      type="checkbox"
+                      id={`select-${item.id}`}
+                      checked={selectedItems.has(item.id)}
+                      onChange={(e) => handleItemSelection(item.id, e.target.checked)}
+                      className="selection-checkbox"
+                    />
+                  </div>
+
                   {/* Product Image */}
                   <div className="item-image-container">
                     <img
@@ -234,9 +831,6 @@ const CartTable = () => {
                   <div className="item-details">
                     <h4 className="item-name">{getProductName(item)}</h4>
                     <div className="item-price">₱{getProductPrice(item).toLocaleString()}</div>
-                    <div className="item-meta">
-                      <span className="item-sku">SKU: {item.product?.sku || 'N/A'}</span>
-                    </div>
                   </div>
 
                   {/* Quantity Controls */}
@@ -276,24 +870,8 @@ const CartTable = () => {
                     </div>
                   </div>
 
-                  {/* Subtotal */}
-                  <div className="item-subtotal">
-                    <div className="subtotal-label">Subtotal</div>
-                    <div className="subtotal-amount">₱{(getProductPrice(item) * currentQuantity).toLocaleString()}</div>
-                  </div>
-
                   {/* Actions */}
                   <div className="item-actions">
-                    <button
-                      className="btn-wishlist"
-                      title="Save for later"
-                      onClick={() => toast.info('Wishlist feature coming soon!')}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M8 14.5L6.6 13.3C3.4 10.36 1.5 8.28 1.5 5.75 1.5 3.92 2.92 2.5 4.75 2.5c1.04 0 2.04.52 2.71 1.36C8.14 3.02 9.14 2.5 10.25 2.5c1.83 0 3.25 1.42 3.25 3.25 0 2.53-1.9 4.61-5.1 7.55L8 14.5z"/>
-                      </svg>
-                    </button>
-                    
                     <button
                       className="btn-remove-enhanced"
                       onClick={() => handleRemoveItem(item.id)}
@@ -327,8 +905,8 @@ const CartTable = () => {
         )
       )}
       
-      {/* Enhanced Order Summary */}
-      {!loading && cartItems.length > 0 && (
+      {/* Enhanced Order Summary - Only show when items are selected */}
+      {!loading && cartItems.length > 0 && selectedItems.size > 0 && (
         <div className="enhanced-summary wood-card wood-animated">
           <div className="summary-header">
             <h3>📋 Order Summary</h3>
@@ -337,25 +915,25 @@ const CartTable = () => {
           <div className="summary-details">
             <div className="summary-row">
               <span>Total Items:</span>
-              <strong>{totalItems} {totalItems === 1 ? 'item' : 'items'}</strong>
-            </div>
-            
-            <div className="summary-row">
-              <span>Subtotal:</span>
-              <strong>₱{totalPrice.toLocaleString()}</strong>
+              <strong>{selectedItemsCount} {selectedItemsCount === 1 ? 'item' : 'items'}</strong>
             </div>
             
             <div className="summary-row total-row">
               <span>Total Amount:</span>
-              <strong className="total-amount">₱{totalPrice.toLocaleString()}</strong>
+              <strong className="total-amount">₱{selectedItemsPrice.toLocaleString()}</strong>
             </div>
           </div>
           
           <button 
             className="btn-checkout-enhanced btn-wood" 
-            onClick={() => setShowCheckout(true)}
+            onClick={handleProceedToOrderSummary}
           >
-            <span>Proceed to Checkout</span>
+            <span>
+              {selectedItems.size === 1 
+                ? 'Checkout Item'
+                : `Checkout Selected Items (${selectedItems.size})`
+              }
+            </span>
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
@@ -421,13 +999,17 @@ const CartTable = () => {
                 <div className="form-group">
                   <label className="form-label">Contact Phone *</label>
                   <input 
-                    className="form-control" 
+                    className={`form-control ${phoneError ? 'error' : ''}`}
                     type="tel"
                     value={phone} 
-                    onChange={(e) => setPhone(e.target.value)} 
-                    placeholder="09xx xxx xxxx" 
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) validatePhone(e.target.value);
+                    }} 
+                    placeholder="09xxxxxxxxx (11 digits)" 
                     required
                   />
+                  {phoneError && <div className="error-message">{phoneError}</div>}
                 </div>
                 
                 <div className="form-group">
@@ -584,6 +1166,249 @@ const CartTable = () => {
           </div>
         </div>
       )}
+
+      {/* New Order Summary Modal */}
+      {showOrderSummary && (
+        <div className="order-summary-modal-backdrop" onClick={() => setShowOrderSummary(false)}>
+          <div className="order-summary-modal-card" role="dialog" aria-modal="true" aria-labelledby="order-summary-title" onClick={(e) => e.stopPropagation()}>
+            <div className="order-summary-header">
+              <h3 id="order-summary-title">📋 Order Summary</h3>
+              <button 
+                className="order-summary-close-btn"
+                onClick={() => setShowOrderSummary(false)}
+                disabled={payLoading}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="order-summary-content">
+              {/* Selected Items Display */}
+              <div className="selected-items-section">
+                <h4>Selected Items ({selectedItems.size})</h4>
+                <div className="selected-items-list">
+                  {selectedItemsList.map(item => (
+                    <div key={item.id} className="selected-item-card">
+                      <img 
+                        src={getImageUrl(item)} 
+                        alt={getProductName(item)} 
+                        className="selected-item-image"
+                        onError={(e) => {
+                          e.target.src = "https://via.placeholder.com/80?text=No+Image";
+                        }}
+                      />
+                      <div className="selected-item-details">
+                        <h5 className="selected-item-name">{getProductName(item)}</h5>
+                        <div className="selected-item-meta">
+                          <span className="selected-item-quantity">Qty: {quantities[item.id] || item.quantity}</span>
+                          <span className="selected-item-price">₱{getProductPrice(item).toLocaleString()} each</span>
+                        </div>
+                        <div className="selected-item-subtotal">
+                          Subtotal: ₱{((getProductPrice(item) * (quantities[item.id] || item.quantity))).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Order Form */}
+              <div className="order-form-section">
+                <h4>Order Information</h4>
+                
+                {/* Address Selection */}
+                <div className="address-selection-section">
+                  <h4 className="section-title">
+                    <i className="fas fa-map-marker-alt"></i>
+                    Shipping Address *
+                  </h4>
+                  
+                  <div className="address-form-grid">
+                    {/* Province Selection */}
+                    <div className="form-group">
+                      <label className="form-label">Province *</label>
+                      <select 
+                        className={`form-control ${provinceError ? 'error' : ''}`}
+                        value={selectedProvince}
+                        onChange={(e) => handleProvinceChange(e.target.value)}
+                        required
+                      >
+                        <option value="">Select Province</option>
+                        {philippineLocations.provinces.map(province => (
+                          <option key={province.id} value={province.id}>
+                            {province.name}
+                          </option>
+                        ))}
+                      </select>
+                      {provinceError && <div className="error-message">{provinceError}</div>}
+                    </div>
+
+                    {/* City Selection */}
+                    <div className="form-group">
+                      <label className="form-label">City/Municipality *</label>
+                      <select 
+                        className={`form-control ${cityError ? 'error' : ''}`}
+                        value={selectedCity}
+                        onChange={(e) => handleCityChange(e.target.value)}
+                        disabled={!selectedProvince}
+                        required
+                      >
+                        <option value="">Select City</option>
+                        {selectedProvince && philippineLocations.cities[selectedProvince]?.map(city => (
+                          <option key={city.id} value={city.id}>
+                            {city.name}
+                          </option>
+                        ))}
+                      </select>
+                      {cityError && <div className="error-message">{cityError}</div>}
+                    </div>
+
+                    {/* Barangay Selection */}
+                    <div className="form-group">
+                      <label className="form-label">Barangay *</label>
+                      <select 
+                        className={`form-control ${barangayError ? 'error' : ''}`}
+                        value={selectedBarangay}
+                        onChange={(e) => handleBarangayChange(e.target.value)}
+                        disabled={!selectedCity}
+                        required
+                      >
+                        <option value="">Select Barangay</option>
+                        {selectedCity && philippineLocations.barangays[selectedCity]?.map(barangay => (
+                          <option key={barangay.id} value={barangay.id}>
+                            {barangay.name}
+                          </option>
+                        ))}
+                      </select>
+                      {barangayError && <div className="error-message">{barangayError}</div>}
+                    </div>
+
+                    {/* House/Unit Number */}
+                    <div className="form-group">
+                      <label className="form-label">House/Unit Number *</label>
+                      <input 
+                        className={`form-control ${houseUnitError ? 'error' : ''}`}
+                        type="text"
+                        value={houseUnit}
+                        onChange={(e) => handleHouseUnitChange(e.target.value)}
+                        placeholder="e.g., 123, Unit 4A, Lot 5"
+                        required
+                      />
+                      {houseUnitError && <div className="error-message">{houseUnitError}</div>}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label">
+                    <i className="fas fa-phone"></i>
+                    Contact Number *
+                  </label>
+                  <input 
+                    className={`form-control ${phoneError ? 'error' : ''}`}
+                    type="tel"
+                    value={phone} 
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) validatePhone(e.target.value);
+                    }}
+                    placeholder="09xxxxxxxxx (11 digits)" 
+                    required
+                  />
+                  {phoneError && <div className="error-message">{phoneError}</div>}
+                </div>
+                
+                <div className="form-group">
+                  <label className="form-label">
+                    <i className="fas fa-credit-card"></i>
+                    Payment Method
+                  </label>
+                  <div className="payment-methods-grid">
+                    <label className={`payment-option-card ${paymentMethod === 'cod' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="payment" 
+                        value="cod" 
+                        checked={paymentMethod === 'cod'} 
+                        onChange={() => setPaymentMethod('cod')} 
+                      />
+                      <div className="payment-content">
+                        <div className="payment-icon">📦</div>
+                        <div className="payment-text">
+                          <span className="payment-title">Cash on Delivery</span>
+                          <span className="payment-desc">Pay when your order arrives</span>
+                        </div>
+                      </div>
+                    </label>
+                    
+                    <label className={`payment-option-card ${paymentMethod === 'maya' ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="payment" 
+                        value="maya" 
+                        checked={paymentMethod === 'maya'} 
+                        onChange={() => setPaymentMethod('maya')} 
+                      />
+                      <div className="payment-content">
+                        <div className="payment-icon">💳</div>
+                        <div className="payment-text">
+                          <span className="payment-title">Maya</span>
+                          <span className="payment-desc">Pay with Maya wallet</span>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Total */}
+              <div className="order-total-section">
+                <div className="order-total-card">
+                  <h4>Order Total</h4>
+                  <div className="total-breakdown">
+                    <div className="total-row">
+                      <span>Items ({selectedItemsCount}):</span>
+                      <span>₱{selectedItemsPrice.toLocaleString()}</span>
+                    </div>
+                    <div className="total-row final-total">
+                      <span>Total Amount:</span>
+                      <span className="final-amount">₱{selectedItemsPrice.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="order-summary-footer">
+              <button 
+                className="btn-cancel-order" 
+                onClick={() => setShowOrderSummary(false)} 
+                disabled={payLoading}
+              >
+                Cancel
+              </button>
+              
+                <button 
+                  className="btn-place-order btn-wood" 
+                  onClick={handleCheckout}
+                  disabled={payLoading || !selectedProvince || !selectedCity || !selectedBarangay || !houseUnit.trim() || !phone.trim()}
+                >
+                {payLoading ? (
+                  <>
+                    <div className="btn-spinner"></div>
+                    Processing Order...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-shopping-bag"></i>
+                    Place Order • ₱{selectedItemsPrice.toLocaleString()}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
   
       <style jsx>{`
         /* Modern Cart Container */
@@ -701,15 +1526,17 @@ const CartTable = () => {
         }
 
         .enhanced-cart-item {
-          display: grid;
-          grid-template-columns: 120px 1fr auto auto auto;
-          gap: 20px;
-          padding: 20px;
+          display: flex;
+          gap: 16px;
+          padding: 16px;
           align-items: center;
           transition: all 0.3s ease;
           border: 2px solid transparent;
           position: relative;
           overflow: hidden;
+          background: linear-gradient(135deg, #ffffff, #fafafa);
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(139, 94, 52, 0.06);
         }
 
         .enhanced-cart-item:hover {
@@ -743,14 +1570,18 @@ const CartTable = () => {
           border-radius: 12px;
           overflow: hidden;
           background: #fafafa;
-          border: 1px solid var(--wood-panel);
+          border: 2px solid var(--wood-panel);
+          flex-shrink: 0;
+          width: 120px;
+          height: 120px;
+          box-shadow: 0 2px 8px rgba(139, 94, 52, 0.1);
         }
 
         .item-image {
           width: 100%;
-          height: 100px;
+          height: 100%;
           object-fit: cover;
-          transition: transform 0.2s ease;
+          transition: transform 0.3s ease;
         }
 
         .enhanced-cart-item:hover .item-image {
@@ -762,10 +1593,12 @@ const CartTable = () => {
           display: flex;
           flex-direction: column;
           gap: 8px;
+          flex: 1;
+          padding: 4px 0;
         }
 
         .item-name {
-          font-size: 1.125rem;
+          font-size: 1.1rem;
           font-weight: 600;
           color: var(--ink);
           margin: 0;
@@ -776,20 +1609,9 @@ const CartTable = () => {
           font-size: 1.25rem;
           font-weight: 700;
           color: var(--accent);
+          margin: 4px 0;
         }
 
-        .item-meta {
-          display: flex;
-          gap: 12px;
-        }
-
-        .item-sku {
-          font-size: 0.875rem;
-          color: #666;
-          background: var(--wood-panel);
-          padding: 2px 8px;
-          border-radius: 4px;
-        }
 
         /* Quantity Controls */
         .quantity-controls {
@@ -797,6 +1619,7 @@ const CartTable = () => {
           flex-direction: column;
           align-items: center;
           gap: 8px;
+          min-width: 80px;
         }
 
         .quantity-label {
@@ -814,6 +1637,7 @@ const CartTable = () => {
           border: 2px solid var(--wood-panel);
           border-radius: 12px;
           overflow: hidden;
+          box-shadow: 0 2px 8px rgba(139, 94, 52, 0.1);
         }
 
         .qty-btn {
@@ -864,36 +1688,15 @@ const CartTable = () => {
           animation: spin 1s linear infinite;
         }
 
-        /* Subtotal */
-        .item-subtotal {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .subtotal-label {
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: var(--accent);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .subtotal-amount {
-          font-size: 1.125rem;
-          font-weight: 700;
-          color: var(--ink);
-        }
 
         /* Item Actions */
         .item-actions {
           display: flex;
-          flex-direction: column;
-          gap: 8px;
+          align-items: center;
+          justify-content: center;
+          min-width: 60px;
         }
 
-        .btn-wishlist,
         .btn-remove-enhanced {
           width: 40px;
           height: 40px;
@@ -903,21 +1706,11 @@ const CartTable = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: all 0.2s ease;
+          transition: all 0.3s ease;
           position: relative;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .btn-wishlist {
-          background: #f8f9fa;
-          color: #6c757d;
-          border: 2px solid #dee2e6;
-        }
-
-        .btn-wishlist:hover {
-          background: #e9ecef;
-          color: #495057;
-          transform: scale(1.05);
-        }
 
         .btn-remove-enhanced {
           background: #fff5f5;
@@ -1361,33 +2154,493 @@ const CartTable = () => {
           animation: spin 1s linear infinite;
         }
 
+        /* Cart Header Updates */
+        .cart-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+          padding: 0 4px;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+
+        .cart-header-left {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .cart-header-right {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .selection-controls {
+          display: flex;
+          gap: 8px;
+        }
+
+        .btn-select-all,
+        .btn-deselect-all {
+          padding: 6px 12px;
+          border: 1px solid var(--accent);
+          background: white;
+          color: var(--accent);
+          border-radius: 6px;
+          font-size: 0.875rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-select-all:hover:not(:disabled),
+        .btn-deselect-all:hover:not(:disabled) {
+          background: var(--accent);
+          color: white;
+        }
+
+        .btn-select-all:disabled,
+        .btn-deselect-all:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .selected-info {
+          background: var(--accent);
+          color: white;
+          padding: 6px 12px;
+          border-radius: 20px;
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+
+        /* Item Selection */
+        .item-selection {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 60px;
+          padding: 12px;
+        }
+
+        .selection-checkbox {
+          width: 20px;
+          height: 20px;
+          accent-color: var(--accent);
+          cursor: pointer;
+          transform: scale(1.1);
+        }
+
+        .enhanced-cart-item.selected {
+          border-color: var(--accent);
+          background: rgba(139, 94, 52, 0.05);
+          box-shadow: 0 0 0 2px rgba(139, 94, 52, 0.1);
+        }
+
+        .selected-row {
+          color: var(--accent);
+          font-weight: 600;
+        }
+
+        /* Order Summary Modal */
+        .order-summary-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.4);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 2000;
+          animation: fadeIn 0.3s ease-out;
+        }
+
+        .order-summary-modal-card {
+          width: 95vw;
+          max-width: 1000px;
+          max-height: 90vh;
+          background: linear-gradient(135deg, #ffffff, #fafafa);
+          border: 2px solid var(--accent);
+          border-radius: 20px;
+          box-shadow: 0 20px 60px rgba(139, 94, 52, 0.2);
+          animation: slideUp 0.3s ease-out;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .order-summary-header {
+          background: linear-gradient(135deg, var(--accent), #8B4513);
+          color: white;
+          padding: 20px 24px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .order-summary-header h3 {
+          margin: 0;
+          font-size: 1.5rem;
+          font-weight: 700;
+        }
+
+        .order-summary-close-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          border: none;
+          background: rgba(255, 255, 255, 0.2);
+          color: white;
+          font-size: 1.5rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+        }
+
+        .order-summary-close-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.3);
+          transform: scale(1.1);
+        }
+
+        .order-summary-content {
+          padding: 24px;
+          overflow-y: auto;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        /* Selected Items Section */
+        .selected-items-section h4 {
+          color: var(--accent-dark);
+          margin: 0 0 16px 0;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .selected-items-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .selected-item-card {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 16px;
+          background: white;
+          border: 2px solid var(--wood-panel);
+          border-radius: 12px;
+          transition: all 0.2s ease;
+        }
+
+        .selected-item-card:hover {
+          border-color: var(--accent);
+          box-shadow: 0 4px 12px rgba(139, 94, 52, 0.1);
+        }
+
+        .selected-item-image {
+          width: 80px;
+          height: 80px;
+          object-fit: cover;
+          border-radius: 8px;
+          border: 1px solid var(--wood-panel);
+        }
+
+        .selected-item-details {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .selected-item-name {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: var(--ink);
+          margin: 0;
+        }
+
+        .selected-item-meta {
+          display: flex;
+          gap: 16px;
+          font-size: 0.9rem;
+          color: #666;
+        }
+
+        .selected-item-subtotal {
+          font-size: 1rem;
+          font-weight: 600;
+          color: var(--accent);
+        }
+
+        /* Order Form Section */
+        .order-form-section h4 {
+          color: var(--accent-dark);
+          margin: 0 0 16px 0;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .form-group {
+          margin-bottom: 20px;
+        }
+
+        .form-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 600;
+          color: var(--accent-dark);
+          margin-bottom: 8px;
+          font-size: 0.95rem;
+        }
+
+        .form-label i {
+          color: var(--accent);
+        }
+
+        .form-control {
+          width: 100%;
+          padding: 12px 16px;
+          border: 2px solid var(--wood-panel);
+          border-radius: 10px;
+          font-size: 1rem;
+          transition: all 0.2s ease;
+          background: white;
+        }
+
+        .form-control:focus {
+          outline: none;
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px rgba(139, 94, 52, 0.1);
+        }
+
+        .form-control.error {
+          border-color: #dc3545;
+          box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+        }
+
+        .error-message {
+          color: #dc3545;
+          font-size: 0.875rem;
+          margin-top: 4px;
+          font-weight: 500;
+        }
+
+        /* Payment Methods Grid */
+        .payment-methods-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 12px;
+        }
+
+        .payment-option-card {
+          display: flex;
+          align-items: center;
+          padding: 16px;
+          border: 2px solid #e9ecef;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          background: white;
+        }
+
+        .payment-option-card:hover {
+          border-color: var(--accent);
+          background: #fafafa;
+        }
+
+        .payment-option-card.selected {
+          border-color: var(--accent);
+          background: rgba(139, 94, 52, 0.05);
+          box-shadow: 0 0 0 2px var(--accent);
+        }
+
+        .payment-option-card input[type="radio"] {
+          margin-right: 12px;
+          accent-color: var(--accent);
+        }
+
+        /* Order Total Section */
+        .order-total-section {
+          margin-top: auto;
+        }
+
+        .order-total-card {
+          background: linear-gradient(135deg, var(--accent), #8B4513);
+          color: white;
+          padding: 20px;
+          border-radius: 12px;
+        }
+
+        .order-total-card h4 {
+          margin: 0 0 16px 0;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .total-breakdown {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .total-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 8px 0;
+        }
+
+        .final-total {
+          border-top: 2px solid rgba(255, 255, 255, 0.3);
+          font-size: 1.1rem;
+          font-weight: 700;
+          margin-top: 8px;
+        }
+
+        .final-amount {
+          font-size: 1.25rem;
+          font-weight: 700;
+        }
+
+        /* Order Summary Footer */
+        .order-summary-footer {
+          padding: 20px 24px;
+          background: #f8f9fa;
+          border-top: 1px solid #dee2e6;
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+
+        .btn-cancel-order {
+          padding: 12px 24px;
+          background: #f8f9fa;
+          color: #6c757d;
+          border: 2px solid #dee2e6;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-weight: 500;
+        }
+
+        .btn-cancel-order:hover:not(:disabled) {
+          background: #e9ecef;
+          border-color: #adb5bd;
+        }
+
+        .btn-place-order {
+          padding: 12px 24px;
+          border-radius: 8px;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: all 0.2s ease;
+        }
+
+        .btn-place-order:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        /* Address Selection Styles */
+        .address-selection-section {
+          margin-bottom: 24px;
+        }
+
+        .section-title {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: var(--accent);
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .address-form-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+
+        .address-form-grid .form-group:last-child {
+          grid-column: 1 / -1;
+        }
+
+        .form-control:disabled {
+          background-color: #f8f9fa;
+          color: #6c757d;
+          cursor: not-allowed;
+          opacity: 0.7;
+        }
+
+        .form-control:disabled::placeholder {
+          color: #adb5bd;
+        }
+
+        select.form-control {
+          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+          background-position: right 12px center;
+          background-repeat: no-repeat;
+          background-size: 16px;
+          padding-right: 40px;
+          appearance: none;
+        }
+
+        select.form-control:disabled {
+          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23adb5bd' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
           .enhanced-cart-item {
-            grid-template-columns: 80px 1fr;
-            grid-template-rows: auto auto auto;
-            gap: 12px 16px;
+            flex-direction: column;
+            gap: 12px;
             padding: 16px;
+            text-align: center;
           }
 
-          .item-image {
-            height: 80px;
+          .item-image-container {
+            width: 100%;
+            height: 200px;
+            align-self: center;
+            max-width: 300px;
           }
 
           .item-details {
-            grid-column: 1 / -1;
+            order: 2;
           }
 
           .quantity-controls,
-          .item-subtotal,
           .item-actions {
-            grid-column: 1 / -1;
-            justify-self: stretch;
+            flex-direction: row;
+            justify-content: center;
+            gap: 12px;
+            min-width: auto;
           }
 
           .item-actions {
             flex-direction: row;
             justify-content: center;
+            gap: 12px;
+          }
+
+          .item-selection {
+            order: -1;
+            justify-content: center;
+            min-width: auto;
+            padding: 6px;
           }
 
           .modal-content {
@@ -1395,13 +2648,63 @@ const CartTable = () => {
             gap: 24px;
           }
 
+          .address-form-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+
           .enhanced-summary {
             margin-left: 0;
             margin-right: 0;
             max-width: none;
           }
+
+          .cart-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+
+          .cart-header-right {
+            width: 100%;
+            justify-content: space-between;
+          }
+
+          .order-summary-modal-card {
+            width: 98vw;
+            max-height: 95vh;
+          }
+
+          .order-summary-content {
+            padding: 16px;
+          }
+
+          .selected-item-card {
+            flex-direction: column;
+            text-align: center;
+          }
+
+          .selected-item-image {
+            width: 100px;
+            height: 100px;
+          }
+
+          .payment-methods-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .order-summary-footer {
+            flex-direction: column;
+          }
+
+          .btn-cancel-order,
+          .btn-place-order {
+            width: 100%;
+            justify-content: center;
+          }
         }
+
       `}</style>
+
     </div>
   );
 };

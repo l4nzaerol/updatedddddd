@@ -1,8 +1,10 @@
 // src/components/ProductCatalog.js
 import React, { useState, memo } from "react";
-import { Modal, Button, Form } from "react-bootstrap";
+import { Form } from "react-bootstrap";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
+import BuyNowModal from "./BuyNowModal";
 import "./product_catalog.css";
 
 const ProductCatalog = ({ products }) => {
@@ -13,35 +15,14 @@ const ProductCatalog = ({ products }) => {
   const [error, setError] = useState(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  
+  // Buy Now modal states
+  const [showBuyNowModal, setShowBuyNowModal] = useState(false);
+  const [buyNowProduct, setBuyNowProduct] = useState(null);
 
   // Debug logging
   console.log("ProductCatalog received products:", products);
   console.log("Products length:", products?.length || 0);
-
-  // Enhanced categorization for the 3 main products
-  const categorizeProducts = (products) => {
-    const chairs = products.filter(product => 
-      product.name.toLowerCase().includes('chair') ||
-      product.name.toLowerCase().includes('wooden chair')
-    );
-    const tables = products.filter(product => 
-      product.name.toLowerCase().includes('table') ||
-      product.name.toLowerCase().includes('dining table')
-    );
-    const alkansya = products.filter(product => 
-      product.name.toLowerCase().includes('alkansya')
-    );
-    const other = products.filter(product => 
-      !product.name.toLowerCase().includes('alkansya') &&
-      !product.name.toLowerCase().includes('table') &&
-      !product.name.toLowerCase().includes('chair') &&
-      !product.name.toLowerCase().includes('dining')
-    );
-    
-    return { chairs, tables, alkansya, other };
-  };
-
-  const { chairs, tables, alkansya, other } = categorizeProducts(products);
 
   const handleShowModal = (product) => {
     setSelectedProduct(product);
@@ -52,6 +33,24 @@ const ProductCatalog = ({ products }) => {
   const handleCloseModal = () => {
     setShowModal(false);
     setError(null);
+  };
+
+  // Buy Now handlers
+  const handleBuyNow = (product) => {
+    setBuyNowProduct(product);
+    setShowBuyNowModal(true);
+  };
+
+  const handleCloseBuyNowModal = () => {
+    setShowBuyNowModal(false);
+    setBuyNowProduct(null);
+  };
+
+  const handleOrderSuccess = (orderData) => {
+    toast.success("Order placed successfully!", {
+      description: `Your order has been placed and will appear in the admin dashboard.`,
+      duration: 5000
+    });
   };
 
   const handleAddToCart = async () => {
@@ -97,368 +96,306 @@ const ProductCatalog = ({ products }) => {
     }
   };
 
+  const handleAddToCartDirect = async (product) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setError("You need to be logged in to add to cart.");
+        setLoading(false);
+        return;
+      }
+
+      const response = await axios.post(
+        "http://localhost:8000/api/cart",
+        {
+          product_id: product.id,
+          quantity: 1,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      console.log("Added to cart:", response.data);
+      
+      // Show toast notification
+      setToastMessage(`${product.name} added to cart!`);
+      setShowToast(true);
+      
+      // Auto hide toast after 3 seconds
+      setTimeout(() => {
+        setShowToast(false);
+      }, 3000);
+      
+    } catch (err) {
+      setError(err.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const ProductCard = ({ product, index, category }) => (
     <motion.div
       key={product.id}
-      className={`product-card-modern ${category}`}
+      className={`product-card ${category}`}
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.1, duration: 0.6 }}
-      whileHover={{ scale: 1.02, y: -5 }}
+      whileHover={{ 
+        y: -10, 
+        scale: 1.02,
+        transition: { duration: 0.3 }
+      }}
     >
-      {/* Product Badge */}
-      {product.stock > 10 && (
-        <div className="product-badge popular">
-          <i className="fas fa-star me-1"></i>
-          Popular
-        </div>
-      )}
-      {product.stock <= 5 && product.stock > 0 && (
-        <div className="product-badge">
-          <i className="fas fa-fire me-1"></i>
-          Limited
-        </div>
-      )}
-      
       <div className="product-image-container">
+        {/* Wood Type Badge */}
+        <div className="wood-type-badge">
+          {product.name.toLowerCase().includes('mahogany') ? 'Mahogany Wood' : 
+           product.name.toLowerCase().includes('acacia') ? 'Mahogany/Acacia Wood' : 
+           'Premium Wood'}
+        </div>
+        
         <img
           src={`http://localhost:8000/${product.image}`}
           alt={product.name}
-          className="product-main-image"
-          onClick={() => handleShowModal(product)}
-          loading="lazy"
+          className="product-image"
           onError={(e) => {
             e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
           }}
         />
+        
         <div className="product-overlay">
-          <button 
-            className="btn btn-light btn-sm"
+          <motion.button
+            className="view-details-btn"
             onClick={() => handleShowModal(product)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
           >
-            <i className="fas fa-eye me-1"></i>
-            Quick View
-          </button>
+            <i className="fas fa-eye"></i>
+            View Details
+          </motion.button>
         </div>
+        
+        {/* Popular Badge */}
+        {product.stock > 10 && (
+          <div className="stock-badge popular">
+            <i className="fas fa-star"></i>
+            POPULAR
+          </div>
+        )}
+        
+        {product.stock <= 5 && product.stock > 0 && (
+          <div className="stock-badge limited">
+            <i className="fas fa-fire"></i>
+            LIMITED
+          </div>
+        )}
       </div>
+      
       <div className="product-info">
-        <h4 className="product-title">{product.name}</h4>
+        <h3 className="product-name">{product.name}</h3>
         <p className="product-price">₱{product.price.toLocaleString()}</p>
-        <div className="product-stock-info mb-3">
-          <small className={`stock-badge ${product.stock > 10 ? 'text-success' : product.stock > 0 ? 'text-warning' : 'text-danger'}`}>
-            <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'} me-1`}></i>
+        <div className="product-stock">
+          <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
+            <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
             {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
-          </small>
+          </span>
         </div>
-        <Button
-          variant="dark"
-          className="w-100 btn-enhanced"
-          onClick={() => handleShowModal(product)}
-          disabled={product.stock === 0}
-        >
-          <i className="fas fa-shopping-cart me-2"></i>
-          {product.stock === 0 ? 'Out of Stock' : 'View Details'}
-        </Button>
+        
+        {/* Action Buttons */}
+        <div className="product-actions">
+          <motion.button
+            className="add-to-cart-btn"
+            onClick={() => handleAddToCartDirect(product)}
+            disabled={loading || product.stock === 0}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <i className="fas fa-shopping-cart"></i>
+            {loading ? 'Adding...' : 'Add to Cart'}
+          </motion.button>
+          
+          <motion.button
+            className="buy-now-btn"
+            onClick={() => handleBuyNow(product)}
+            disabled={product.stock === 0}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <i className="fas fa-bolt"></i>
+            Buy Now
+          </motion.button>
+        </div>
       </div>
     </motion.div>
   );
 
   return (
-    <div className="woodcraft-catalog">
-      {!products || products.length === 0 ? (
-        <div className="text-center py-5">
-          <div className="empty-state">
-            <i className="fas fa-box-open fa-3x text-muted mb-3"></i>
-            <h4 className="text-muted">No products available</h4>
-            <p className="text-muted">
-              {!products ? 'Loading products...' : 'No products found. Please check back later.'}
-            </p>
-            {!products && (
+    <div className="products-section">
+      <div className="products-container">
+        {!products || products.length === 0 ? (
+          <div className="loading-state">
+            <div className="loading-spinner">
               <div className="spinner-border text-primary" role="status">
                 <span className="visually-hidden">Loading...</span>
               </div>
-            )}
+            </div>
+            <p className="loading-text">
+              {!products ? 'Loading our amazing products...' : 'No products found. Please check back later.'}
+            </p>
           </div>
-        </div>
-      ) : (
-        <div className="catalog-sections">
-          {/* Chairs Section */}
-          {chairs.length > 0 && (
-            <motion.section 
-              className="catalog-section chairs-section"
-              initial={{ opacity: 0, y: 50 }}
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              className="products-grid"
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}
             >
-              <div className="section-header">
-                <div className="section-icon">
-                  <i className="fas fa-chair"></i>
-                </div>
-                <div className="section-content">
-                  <h2 className="section-title">Premium Chairs</h2>
-                  <p className="section-subtitle">Handcrafted wooden chairs for comfort and style</p>
-                </div>
-                <div className="section-decoration">
-                  <div className="wood-grain"></div>
-                </div>
-              </div>
-              <div className="products-row">
-                {chairs.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} category="chairs" />
-                ))}
-              </div>
-            </motion.section>
-          )}
+              {products.map((product, index) => (
+                <ProductCard key={product.id} product={product} index={index} category="all" />
+              ))}
+            </motion.div>
+          </AnimatePresence>
+        )}
+      </div>
 
-          {/* Tables Section */}
-          {tables.length > 0 && (
-            <motion.section 
-              className="catalog-section tables-section"
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
+      {/* Landing Page Style Modal */}
+      <AnimatePresence>
+        {showModal && selectedProduct && (
+          <motion.div 
+            className="product-modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={handleCloseModal}
+          >
+            <motion.div 
+              className="product-modal-content"
+              initial={{ scale: 0.8, opacity: 0, y: 50 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 50 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className="section-header">
-                <div className="section-icon">
-                  <i className="fas fa-table"></i>
-                </div>
-                <div className="section-content">
-                  <h2 className="section-title">Dining Tables</h2>
-                  <p className="section-subtitle">Elegant dining tables for family gatherings</p>
-                </div>
-                <div className="section-decoration">
-                  <div className="wood-grain"></div>
-                </div>
-              </div>
-              <div className="products-row">
-                {tables.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} category="tables" />
-                ))}
-              </div>
-            </motion.section>
-          )}
-
-          {/* Alkansya Section */}
-          {alkansya.length > 0 && (
-            <motion.section 
-              className="catalog-section alkansya-section"
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3 }}
-            >
-              <div className="section-header">
-                <div className="section-icon">
-                  <i className="fas fa-piggy-bank"></i>
-                </div>
-                <div className="section-content">
-                  <h2 className="section-title">Alkansya Collection</h2>
-                  <p className="section-subtitle">Traditional Filipino savings banks with modern craftsmanship</p>
-                </div>
-                <div className="section-decoration">
-                  <div className="wood-grain"></div>
-                </div>
-              </div>
-              <div className="products-row">
-                {alkansya.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} category="alkansya" />
-                ))}
-              </div>
-            </motion.section>
-          )}
-
-          {/* Other Products Section */}
-          {other.length > 0 && (
-            <motion.section 
-              className="catalog-section other-section"
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-            >
-              <div className="section-header">
-                <div className="section-icon">
-                  <i className="fas fa-hammer"></i>
-                </div>
-                <div className="section-content">
-                  <h2 className="section-title">Specialty Items</h2>
-                  <p className="section-subtitle">Unique handcrafted pieces for your home</p>
-                </div>
-                <div className="section-decoration">
-                  <div className="wood-grain"></div>
-                </div>
-              </div>
-              <div className="products-row">
-                {other.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} category="other" />
-                ))}
-              </div>
-            </motion.section>
-          )}
-        </div>
-      )}
-
-      {/* Enhanced Modal for product details */}
-      {selectedProduct && (
-        <Modal
-          show={showModal}
-          onHide={handleCloseModal}
-          centered
-          size="lg"
-          dialogClassName="product-modal"
-        >
-          <Modal.Header closeButton className="border-0">
-            <Modal.Title className="fw-bold">
-              <i className="fas fa-box me-2 text-primary"></i>
-              Product Details
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body className="p-0">
-            <div className="modal-product-container">
-              {/* Left side - Product Image */}
-              <div className="modal-image-section">
-                <div className="image-wrapper">
+              <button className="close-modal-btn" onClick={handleCloseModal}>
+                <i className="fas fa-times"></i>
+              </button>
+              
+              <div className="product-modal-body">
+                <div className="product-modal-image">
                   <img
                     src={`http://localhost:8000/${selectedProduct.image}`}
                     alt={selectedProduct.name}
                     className="modal-product-image"
+                    onError={(e) => {
+                      e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
+                    }}
                   />
-                  {selectedProduct.stock > 10 && (
-                    <div className="product-badge popular">
-                      <i className="fas fa-star me-1"></i>
-                      Popular
+                </div>
+                
+                <div className="product-modal-info">
+                  <h2 className="modal-product-name">{selectedProduct.name}</h2>
+                  
+                  <div className="modal-product-price">
+                    ₱{selectedProduct.price.toLocaleString()}
+                  </div>
+                  
+                  <div className="modal-product-description">
+                    <h3>Product Description</h3>
+                    <p>
+                      {selectedProduct.description || 
+                      `Premium quality ${selectedProduct.name.toLowerCase()} made with traditional craftsmanship and modern design. Each piece is carefully crafted to bring warmth and elegance to your home.`}
+                    </p>
+                  </div>
+                  
+                  <div className="modal-product-stock">
+                    <span className={`stock-status ${selectedProduct.stock > 10 ? 'in-stock' : selectedProduct.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
+                      <i className={`fas ${selectedProduct.stock > 10 ? 'fa-check-circle' : selectedProduct.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
+                      {selectedProduct.stock > 10 ? 'In Stock' : selectedProduct.stock > 0 ? `Only ${selectedProduct.stock} left` : 'Out of Stock'}
+                    </span>
+                  </div>
+
+                  {error && (
+                    <div className="alert alert-danger" role="alert">
+                      <i className="fas fa-exclamation-triangle me-2"></i>
+                      {error}
                     </div>
                   )}
-                </div>
-              </div>
 
-              {/* Right side - Product Details */}
-              <div className="modal-details-section">
-                <div className="product-header">
-                  <h3 className="modal-product-title">{selectedProduct.name}</h3>
-                  <div className="product-rating mb-3">
-                    <div className="stars">
-                      {[...Array(5)].map((_, i) => (
-                        <i key={i} className="fas fa-star text-warning"></i>
-                      ))}
-                    </div>
-                    <span className="ms-2 text-muted">(4.8/5) 127 reviews</span>
-                  </div>
-                </div>
-
-                <p className="modal-product-desc">{selectedProduct.description}</p>
-                
-                <div className="price-section">
-                  <h4 className="modal-product-price">₱{selectedProduct.price.toLocaleString()}</h4>
-                  <div className="price-details">
-                    <small className="text-muted">Free shipping on orders over ₱5,000</small>
-                  </div>
-                </div>
-
-                <div className="stock-section">
-                  <div className={`modal-product-stock ${selectedProduct.stock > 10 ? 'in-stock' : selectedProduct.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
-                    <i className={`fas ${selectedProduct.stock > 10 ? 'fa-check-circle' : selectedProduct.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'} me-2`}></i>
-                    {selectedProduct.stock > 10 ? 'In Stock' : selectedProduct.stock > 0 ? `Only ${selectedProduct.stock} left` : 'Out of Stock'}
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="alert alert-danger" role="alert">
-                    <i className="fas fa-exclamation-triangle me-2"></i>
-                    {error}
-                  </div>
-                )}
-
-                <Form className="mt-4">
-                  <Form.Group>
-                    <Form.Label className="fw-bold">
-                      <i className="fas fa-calculator me-2"></i>
-                      Quantity
-                    </Form.Label>
-                    <div className="quantity-controls">
-                      <button 
-                        type="button" 
-                        className="btn btn-outline-secondary"
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        disabled={quantity <= 1}
-                      >
-                        <i className="fas fa-minus"></i>
-                      </button>
-                      <Form.Control
-                        type="number"
-                        min="1"
-                        max={selectedProduct.stock}
-                        value={quantity}
-                        onChange={(e) => setQuantity(Number(e.target.value))}
-                        className="text-center"
-                        style={{ width: '80px' }}
-                      />
-                      <button 
-                        type="button" 
-                        className="btn btn-outline-secondary"
-                        onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
-                        disabled={quantity >= selectedProduct.stock}
-                      >
-                        <i className="fas fa-plus"></i>
-                      </button>
-                    </div>
-                    <Form.Text className="text-muted">
-                      Total: ₱{(selectedProduct.price * quantity).toLocaleString()}
-                    </Form.Text>
-                  </Form.Group>
-                </Form>
-
-                <div className="action-buttons mt-4">
-                  <div className="d-grid gap-2">
-                    <Button
-                      variant="primary"
-                      size="lg"
+                  <Form className="mt-3">
+                    <Form.Group>
+                      <Form.Label className="fw-bold">
+                        <i className="fas fa-calculator me-2"></i>
+                        Quantity
+                      </Form.Label>
+                      <div className="quantity-controls">
+                        <button 
+                          type="button" 
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          disabled={quantity <= 1}
+                        >
+                          <i className="fas fa-minus"></i>
+                        </button>
+                        <Form.Control
+                          type="number"
+                          min="1"
+                          max={selectedProduct.stock}
+                          value={quantity}
+                          onChange={(e) => setQuantity(Number(e.target.value))}
+                          className="text-center"
+                          style={{ width: '60px' }}
+                          size="sm"
+                        />
+                        <button 
+                          type="button" 
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
+                          disabled={quantity >= selectedProduct.stock}
+                        >
+                          <i className="fas fa-plus"></i>
+                        </button>
+                      </div>
+                      <Form.Text className="text-muted">
+                        Total: ₱{(selectedProduct.price * quantity).toLocaleString()}
+                      </Form.Text>
+                    </Form.Group>
+                  </Form>
+                  
+                  <div className="modal-action-buttons">
+                    <motion.button 
+                      className="modal-add-to-cart-btn"
                       onClick={handleAddToCart}
                       disabled={loading || selectedProduct.stock === 0}
-                      className="btn-enhanced"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      {loading ? (
-                        <>
-                          <span className="spinner-border spinner-border-sm me-2"></span>
-                          Adding to Cart...
-                        </>
-                      ) : (
-                        <>
-                          <i className="fas fa-shopping-cart me-2"></i>
-                          {selectedProduct.stock === 0 ? 'Out of Stock' : 'Add to Cart'}
-                        </>
-                      )}
-                    </Button>
-                    <Button 
-                      variant="outline-secondary" 
-                      onClick={handleCloseModal}
-                      size="lg"
+                      <i className="fas fa-shopping-cart"></i>
+                      {loading ? 'Adding...' : 'Add to Cart'}
+                    </motion.button>
+                    
+                    <motion.button 
+                      className="modal-buy-now-btn"
+                      onClick={handleBuyNow}
+                      disabled={selectedProduct.stock === 0}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      <i className="fas fa-times me-2"></i>
-                      Continue Shopping
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="product-features mt-4">
-                  <div className="row text-center">
-                    <div className="col-4">
-                      <i className="fas fa-shipping-fast fa-2x text-primary mb-2"></i>
-                      <p className="small mb-0">Free Shipping</p>
-                    </div>
-                    <div className="col-4">
-                      <i className="fas fa-undo fa-2x text-success mb-2"></i>
-                      <p className="small mb-0">Easy Returns</p>
-                    </div>
-                    <div className="col-4">
-                      <i className="fas fa-shield-alt fa-2x text-warning mb-2"></i>
-                      <p className="small mb-0">Warranty</p>
-                    </div>
+                      <i className="fas fa-bolt"></i>
+                      Buy Now
+                    </motion.button>
                   </div>
                 </div>
               </div>
-            </div>
-          </Modal.Body>
-        </Modal>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Toast Notification */}
       <AnimatePresence>
@@ -489,6 +426,14 @@ const ProductCatalog = ({ products }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Buy Now Modal */}
+      <BuyNowModal
+        show={showBuyNowModal}
+        onClose={handleCloseBuyNowModal}
+        product={buyNowProduct}
+        onOrderSuccess={handleOrderSuccess}
+      />
     </div>
   );
 };

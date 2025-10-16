@@ -31,6 +31,7 @@ class DatabaseSeeder extends Seeder
             
           
             UpdateProductPricesFromBomSeeder::class, // Updates products with BOM-calculated prices
+           // ComprehensiveOrdersSeeder::class, 
             
         
         ]);

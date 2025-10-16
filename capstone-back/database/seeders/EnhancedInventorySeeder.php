@@ -74,7 +74,7 @@ class EnhancedInventorySeeder extends Seeder
                 'unit' => 'piece',
                 'unit_cost' => 100.00,
                 'description' => 'F30 pin nails (1000 pcs per box) (for Alkansya)',
-                'quantity_on_hand' => 100000, // Large quantity for small items
+                'quantity_on_hand' => 140000, // Large quantity for small items
                 'safety_stock' => 2000,
                 'reorder_point' => 10000,
                 'max_level' => 50000,

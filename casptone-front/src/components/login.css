@@ -2,8 +2,8 @@
 body, html {
     margin: 0;
     padding: 0;
-    font-family: "Merriweather", serif;
-    background: linear-gradient(to bottom right, #d7ccc8, #efebe9);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(to bottom right, #f8f9fa, #e9ecef);
 }
 
 /* Container */
@@ -13,33 +13,101 @@ body, html {
     align-items: center;
     min-height: 100vh;
     padding: 20px;
-    background: linear-gradient(145deg, #f3e5ab, #efebe9); /* Polished woodgrain tones */
+    background: linear-gradient(145deg, #f8f9fa, #e9ecef);
+}
+
+/* Modal Container - Smaller, more compact */
+.modal-login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
 }
 
 /* Login Card */
 .wood-login-card {
     display: flex;
     flex-direction: row;
-    background: #fef9f4;
-    border-radius: 18px;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
     overflow: hidden;
     max-width: 1000px;
     width: 100%;
-    border: 2px solid #a1887f;
+    border: 1px solid #e9ecef;
+}
+
+/* Modal-specific card styles */
+.modal-login-container .wood-login-card {
+    max-width: 500px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 /* Left Visual Area */
 .wood-login-visual {
-    background: url('https://scontent.fcrk3-1.fna.fbcdn.net/v/t39.30808-6/372696572_234256706277485_8687403302626271645_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeHXoUFlMZUfENAwy-ifeV7Xz4s7pRa9FPrPizulFr0U-lm92veLoF0XQ5Jrn3z6sFRAm-UUaBY6QE7weG0oE8Kw&_nc_ohc=2EmemOnrDDIQ7kNvwG5QZG0&_nc_oc=AdmTjoTdfhaYyuU4srOZedQPp07rtWGqnBDnL0nhz0YNoPD3MgrJ8jylfMICPdMriL0&_nc_zt=23&_nc_ht=scontent.fcrk3-1.fna&_nc_gid=yUTgSwAo6nk5n906GJgyGA&oh=00_AfFGxBqBBL0sfEedxuxXQ23L4XgO2ewybTj6YtjTtQF2GQ&oe=67FEC122') no-repeat center;
-    background-size: cover;
-    flex: 1.2;
+    background: linear-gradient(135deg, #8B4513 0%, #A0522D 50%, #CD853F 100%);
+    flex: 1;
     position: relative;
-    padding: 40px;
+    padding: 30px;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    align-items: center;
     color: white;
+    min-height: 300px;
+}
+
+/* Modal visual area - more compact */
+.modal-login-container .wood-login-visual {
+    flex: 0.6;
+    padding: 20px;
+    min-height: 250px;
+}
+
+/* Logo Container */
+.logo-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.unick-logo {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: #000000;
+    border: 4px solid #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease;
+}
+
+.unick-logo:hover {
+    transform: scale(1.05);
+}
+
+.logo-text {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 1px;
+    font-family: "Inter", sans-serif;
+}
+
+.modal-login-container .unick-logo {
+    width: 60px;
+    height: 60px;
+}
+
+.modal-login-container .logo-text {
+    font-size: 12px;
 }
 
 .wood-login-visual::before {
@@ -60,17 +128,27 @@ body, html {
 }
 
 .brand-name {
-    font-size: 36px;
-    font-weight: 800;
-    color: #f5deb3;
-    letter-spacing: 1px;
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.modal-login-container .brand-name {
+    font-size: 24px;
+    margin-bottom: 5px;
 }
 
 .brand-tagline {
-    font-size: 16px;
-    margin-top: 10px;
-    font-style: italic;
-    color: #e0c9a6;
+    font-size: 14px;
+    color: #6c757d;
+    font-weight: 400;
+    margin: 0;
+}
+
+.modal-login-container .brand-tagline {
+    font-size: 13px;
 }
 
 /* Form Area */
@@ -80,10 +158,24 @@ body, html {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    background-color: #fff8f0;
-    background-image: linear-gradient(120deg, #efebe9 25%, #d7ccc8 25%, #d7ccc8 50%, #efebe9 50%, #efebe9 75%, #d7ccc8 75%, #d7ccc8);
-    background-size: 50px 50px;
-    border-left: 1px solid #d7ccc8;
+    background: #ffffff;
+    border-left: 1px solid #e9ecef;
+}
+
+/* Modal form area - more compact */
+.modal-login-container .wood-login-form-area {
+    padding: 30px;
+    border-left: none;
+}
+
+/* Form Header */
+.form-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.modal-login-container .form-header {
+    margin-bottom: 20px;
 }
 
 /* Form Text */
@@ -104,82 +196,179 @@ body, html {
 .wood-form {
     display: flex;
     flex-direction: column;
+    gap: 16px;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
 }
 
 .wood-input {
-    padding: 14px;
-    border-radius: 6px;
-    border: 1px solid #bcaaa4;
-    background-color: #fffefb;
-    margin-bottom: 18px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    background-color: #ffffff;
     font-size: 14px;
-    color: #4e342e;
-    transition: box-shadow 0.2s ease;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+    color: #495057;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .wood-input:focus {
-    border-color: #8d6e63;
-    box-shadow: 0 0 5px rgba(141, 110, 99, 0.5);
+    border-color: #8B4513;
+    box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.1);
     outline: none;
+}
+
+.wood-input:disabled {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
+
+.modal-login-container .wood-input {
+    padding: 10px 14px;
+    font-size: 13px;
 }
 
 /* Button */
 .wood-button {
-    background-color: #6d4c41;
-    color: #fff8f0;
-    padding: 14px;
-    font-size: 16px;
-    font-weight: bold;
+    background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+    color: #ffffff;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background 0.3s ease;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(139, 69, 19, 0.3);
+    margin-top: 8px;
 }
 
 .wood-button:hover {
-    background-color: #4e342e;
+    background: linear-gradient(135deg, #A0522D 0%, #8B4513 100%);
+    box-shadow: 0 4px 12px rgba(139, 69, 19, 0.4);
+    transform: translateY(-1px);
+}
+
+.wood-button:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.modal-login-container .wood-button {
+    padding: 10px 20px;
+    font-size: 13px;
 }
 
 /* Sign Up Text */
 .signup-text {
-    font-size: 14px;
-    margin-top: 15px;
+    font-size: 13px;
+    margin-top: 20px;
     text-align: center;
-    color: #5d4037;
+    color: #6c757d;
 }
 
 .signup-link {
-    color: #8d6e63;
-    font-weight: bold;
+    color: #8B4513;
+    font-weight: 600;
     text-decoration: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: inherit;
+    padding: 0;
 }
 
 .signup-link:hover {
+    color: #A0522D;
     text-decoration: underline;
+}
+
+.modal-login-container .signup-text {
+    font-size: 12px;
+    margin-top: 15px;
 }
 
 /* Error Message */
 .error-message {
-    background: #fce4ec;
-    color: #c62828;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 15px;
+    background: #f8d7da;
+    color: #721c24;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid #f5c6cb;
+    font-size: 13px;
+}
+
+/* Success Message */
+.success-message {
+    background: #d4edda;
+    color: #155724;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid #c3e6cb;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.success-icon {
+    flex-shrink: 0;
 }
 
 /* Responsive */
 @media (max-width: 768px) {
     .wood-login-card {
         flex-direction: column;
+        max-width: 100%;
+        margin: 10px;
     }
 
     .wood-login-visual {
-        border-radius: 18px 18px 0 0;
-        min-height: 250px;
+        border-radius: 16px 16px 0 0;
+        min-height: 200px;
+        padding: 20px;
     }
 
     .wood-login-form-area {
         padding: 30px;
+    }
+
+    .modal-login-container .wood-login-card {
+        margin: 0;
+        border-radius: 12px;
+    }
+
+    .modal-login-container .wood-login-visual {
+        border-radius: 12px 12px 0 0;
+        min-height: 150px;
+        padding: 15px;
+    }
+
+    .modal-login-container .wood-login-form-area {
+        padding: 20px;
+    }
+
+    .unick-logo {
+        width: 50px;
+        height: 50px;
+    }
+
+    .logo-text {
+        font-size: 10px;
+    }
+
+    .brand-name {
+        font-size: 20px;
+    }
+
+    .brand-tagline {
+        font-size: 12px;
     }
 }
