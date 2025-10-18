@@ -17,60 +17,90 @@ class ProductsTableSeeder extends Seeder
         $diningTable = Product::updateOrCreate(
             ['name' => 'Dining Table'],
             [
+                'product_code' => 'DT001',
+                'product_name' => 'Dining Table',
                 'description' => 'High-quality mahogany dining table',
                 'price' => 12500.00, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/Table.jpg',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 12500.00,
+                'category_id' => 2, // made-to-order category
             ]
         );
 
         $woodenChair = Product::updateOrCreate(
             ['name' => 'Wooden Chair'],
             [
+                'product_code' => 'WC001',
+                'product_name' => 'Wooden Chair',
                 'description' => 'Comfortable mahogany wooden chair',
                 'price' => 7500.00, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/Chair.jpg',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 20000.00,
+                'category_id' => 2, // made-to-order category
             ]
         );
 
         $alkansya = Product::updateOrCreate(
             ['name' => 'Alkansya'],
             [
+                'product_code' => 'ALK001',
+                'product_name' => 'Alkansya',
                 'description' => 'Traditional Filipino wooden chest',
                 'price' => 159.00, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/Alkansya.jpg',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 159.00,
+                'category_id' => 1, // alkansya category
             ]
         );
 
         $alkansya = Product::updateOrCreate(
             ['name' => 'Alkansya (Forda Iphone)'],
             [
+                'product_code' => 'ALK002',
+                'product_name' => 'Alkansya (Forda Iphone)',
                 'description' => 'Traditional Filipino wooden chest',
                 'price' => 279, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/Forda.webp',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 159.00,
+                'category_id' => 1, // alkansya category
             ]
         );
 
         $alkansya = Product::updateOrCreate(
             ['name' => 'Alkansya (For Rhinoplasty)'],
             [
+                'product_code' => 'ALK003',
+                'product_name' => 'Alkansya (For Rhinoplasty)',
                 'description' => 'Traditional Filipino wooden chest',
                 'price' => 279.00, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/Rhino.webp',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 159.00,
+                'category_id' => 1, // alkansya category
             ]
         );
 
         $alkansya = Product::updateOrCreate(
             ['name' => 'Alkansya (100k Challenge)'],
             [
+                'product_code' => 'ALK004',
+                'product_name' => 'Alkansya (100k Challenge)',
                 'description' => 'Traditional Filipino wooden chest',
                 'price' => 279.00, // Will be updated after BOM calculation
                 'stock' => 50,
                 'image' => 'storage/products/100kyaw.webp',
+                'unit_of_measure' => 'pcs',
+                'standard_cost' => 159.00,
+                'category_id' => 1, // alkansya category
             ]
         );
 

@@ -4,31 +4,96 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Schema;
 
 class Product extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'description', 'price', 'stock', 'image'];
+    protected $table = 'products';
+    protected $primaryKey = 'id';
+    
+    protected $fillable = [
+        'name', // Original column
+        'product_name', // New column
+        'product_code',
+        'description',
+        'category_id',
+        'category_name', // New column
+        'raw_materials', // New JSON column
+        'total_bom_cost', // New column
+        'unit_of_measure',
+        'standard_cost',
+        'price',
+        'stock', // Original column
+        'image' // Keep existing column
+    ];
+
+    protected $casts = [
+        'standard_cost' => 'decimal:2',
+        'price' => 'decimal:2',
+        'total_bom_cost' => 'decimal:2',
+        'raw_materials' => 'array'
+    ];
+
+    // Accessor to handle both old and new column names for backward compatibility
+    public function getProductNameAttribute()
+    {
+        return $this->attributes['product_name'] ?? $this->attributes['name'] ?? '';
+    }
+
+    public function setProductNameAttribute($value)
+    {
+        $this->attributes['product_name'] = $value;
+        // Only set name if the column exists
+        if (Schema::hasColumn('products', 'name')) {
+            $this->attributes['name'] = $value;
+        }
+    }
 
     // A product can be in multiple cart items
-    public function cartItems() {
-        return $this->hasMany(Cart::class);
+    public function cartItems(): HasMany
+    {
+        return $this->hasMany(Cart::class, 'product_id', 'id');
     }
 
     // A product can be part of multiple orders
-    public function orderItems() {
-        return $this->hasMany(OrderItem::class);
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class, 'product_id', 'id');
     }
     
     // A product can have multiple production records
-    public function productions()
+    public function productions(): HasMany
     {
-        return $this->hasMany(Production::class);
+        return $this->hasMany(Production::class, 'product_id', 'id');
     }
 
-    public function materials()
+    // BOM relationships
+    public function bomMaterials(): HasMany
     {
-        return $this->hasMany(ProductMaterial::class);
+        return $this->hasMany(BOM::class, 'product_id', 'id');
+    }
+
+    // Many-to-many relationship with materials through BOM
+    public function materials(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Material::class,
+            'bom',
+            'product_id',
+            'material_id',
+            'id',
+            'material_id'
+        )->withPivot('quantity_per_product', 'unit_of_measure', 'material_name')
+         ->withTimestamps();
+    }
+
+    // Relationship with raw materials
+    public function rawMaterials(): HasMany
+    {
+        return $this->hasMany(RawMaterial::class, 'product_id', 'id');
     }
 }

@@ -15,17 +15,13 @@ class AlkansyaDailyOutput extends Model
     protected $fillable = [
         'date',
         'quantity_produced',
-        'notes',
         'produced_by',
         'materials_used',
-        'efficiency_percentage',
-        'defects',
     ];
 
     protected $casts = [
         'date' => 'date',
         'materials_used' => 'array',
-        'efficiency_percentage' => 'decimal:2',
     ];
 
     /**
@@ -55,57 +51,21 @@ class AlkansyaDailyOutput extends Model
     }
 
     /**
-     * Add daily output and automatically deduct materials
+     * Add daily output and automatically deduct materials using BOM
      */
-    public static function addDailyOutput($date, $quantity, $notes = null, $producedBy = null)
+    public static function addDailyOutput($date, $quantity, $producedBy = null)
     {
-        // Get Alkansya BOM materials
+        // Get Alkansya product
         $alkansyaProduct = Product::where('name', 'Alkansya')->first();
         if (!$alkansyaProduct) {
             throw new \Exception('Alkansya product not found');
         }
 
-        $bomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
-            ->with('inventoryItem')
-            ->get();
-
-        $materialsUsed = [];
-        $totalCost = 0;
-
-        // Calculate materials needed and deduct from inventory (1:1 BOM ratio)
-        foreach ($bomMaterials as $bomMaterial) {
-            $inventoryItem = $bomMaterial->inventoryItem;
-            $requiredQuantity = $bomMaterial->qty_per_unit * $quantity; // Now 1:1 ratio
-            
-            if ($requiredQuantity > 0) {
-                // Check if enough stock
-                if ($inventoryItem->quantity_on_hand < $requiredQuantity) {
-                    throw new \Exception("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}");
-                }
-
-                // Deduct from inventory
-                $inventoryItem->quantity_on_hand -= $requiredQuantity;
-                $inventoryItem->save();
-
-                // Record material usage
-                $materialsUsed[] = [
-                    'inventory_item_id' => $inventoryItem->id,
-                    'item_name' => $inventoryItem->name,
-                    'sku' => $inventoryItem->sku,
-                    'quantity_used' => $requiredQuantity,
-                    'unit_cost' => $inventoryItem->unit_cost,
-                    'total_cost' => $inventoryItem->unit_cost * $requiredQuantity,
-                ];
-
-                $totalCost += $inventoryItem->unit_cost * $requiredQuantity;
-
-                // Log usage in inventory_usages table
-                InventoryUsage::create([
-                    'inventory_item_id' => $inventoryItem->id,
-                    'qty_used' => $requiredQuantity,
-                    'date' => $date,
-                ]);
-            }
+        // Use the new inventory system to deduct materials and add finished goods
+        $result = Inventory::deductMaterialsForProduction($alkansyaProduct->id, $quantity, $date);
+        
+        if (!$result['success']) {
+            throw new \Exception($result['error']);
         }
 
         // Create or update daily output record
@@ -113,11 +73,8 @@ class AlkansyaDailyOutput extends Model
             ['date' => $date],
             [
                 'quantity_produced' => $quantity,
-                'notes' => $notes,
                 'produced_by' => $producedBy,
-                'materials_used' => $materialsUsed,
-                'efficiency_percentage' => 100.00, // Default efficiency
-                'defects' => 0,
+                'materials_used' => $result['deducted_materials'],
             ]
         );
 

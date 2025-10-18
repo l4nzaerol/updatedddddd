@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { Toaster } from "sonner";
 import "bootstrap/dist/css/bootstrap.min.css";
+import "@fortawesome/fontawesome-free/css/all.min.css";
 
 // Components
 import LandingPage from "./components/LandingPage";
@@ -12,6 +13,7 @@ import Cart from "./components/Customers/Cart";
 import ProductPage from "./components/Admin/ProductPage"; 
 import ProductionPage from "./components/Admin/ProductionPage"; 
 import InventoryPage from "./components/Admin/InventoryPage"; 
+import NormalizedInventoryPage from "./components/Admin/NormalizedInventoryPage";
 import OrderPage from "./components/Admin/OrderPage"; 
 import Report from "./components/Admin/Report"; 
 import AdvancedReportsPage from "./components/Admin/AdvancedReportsPage";
@@ -42,6 +44,7 @@ function App() {
                 <Route path="/profile" element={isAuthenticated() ? <UserProfile /> : <Navigate to="/" />} />
                 <Route path="/dashboard" element={isAuthenticated() ? <Dashboard /> : <Navigate to="/" />} />
                 <Route path="/inventory" element={isAuthenticated() ? <InventoryPage /> : <Navigate to="/" />} /> 
+                <Route path="/normalized-inventory" element={isAuthenticated() ? <NormalizedInventoryPage /> : <Navigate to="/" />} /> 
                 <Route path="/product" element={isAuthenticated() ? <ProductPage /> : <Navigate to="/" />} /> 
                 <Route path="/productions" element={isAuthenticated() ? <ProductionPage /> : <Navigate to="/" />} /> 
                 <Route path="/production-analytics" element={isAuthenticated() ? <EnhancedProductionDashboard /> : <Navigate to="/" />} /> 

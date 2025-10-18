@@ -5,7 +5,8 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use App\Models\AlkansyaDailyOutput;
 use App\Models\Product;
-use App\Models\ProductMaterial;
+use App\Models\BOM;
+use App\Models\Material;
 use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
 use App\Models\ProductionAnalytics;
@@ -28,13 +29,13 @@ class AlkansyaFactorySeeder extends Seeder
             return;
         }
 
-        // Get Alkansya BOM materials
-        $bomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
-            ->with('inventoryItem')
+        // Get Alkansya BOM materials from the new BOM table
+        $bomMaterials = BOM::where('product_id', $alkansyaProduct->id)
+            ->with('material')
             ->get();
 
         if ($bomMaterials->isEmpty()) {
-            $this->command->error('❌ No BOM materials found for Alkansya. Please run ProductMaterialSeeder first.');
+            $this->command->error('❌ No BOM materials found for Alkansya. Please run ComprehensiveInventorySeeder first.');
             return;
         }
 
@@ -47,8 +48,12 @@ class AlkansyaFactorySeeder extends Seeder
         // Track stock levels to prevent negative inventory
         $stockLevels = [];
         foreach ($bomMaterials as $bomMaterial) {
-            $inventoryItem = $bomMaterial->inventoryItem;
-            $stockLevels[$inventoryItem->id] = $inventoryItem->quantity_on_hand;
+            $material = $bomMaterial->material;
+            // Get inventory item by material code
+            $inventoryItem = InventoryItem::where('sku', $material->material_code)->first();
+            if ($inventoryItem) {
+                $stockLevels[$inventoryItem->id] = $inventoryItem->quantity_on_hand;
+            }
         }
 
         $totalCreated = 0;
@@ -114,8 +119,11 @@ class AlkansyaFactorySeeder extends Seeder
         $totalCost = 0;
 
         foreach ($bomMaterials as $bomMaterial) {
-            $inventoryItem = $bomMaterial->inventoryItem;
-            $requiredQuantity = $bomMaterial->qty_per_unit * $quantityProduced;
+            $material = $bomMaterial->material;
+            $inventoryItem = InventoryItem::where('sku', $material->material_code)->first();
+            if (!$inventoryItem) continue;
+            
+            $requiredQuantity = $bomMaterial->quantity_per_product * $quantityProduced;
             
             if ($requiredQuantity > 0) {
                 // Simulate material usage with some variation (95-105% of required)
@@ -153,20 +161,11 @@ class AlkansyaFactorySeeder extends Seeder
             }
         }
 
-        // Generate efficiency (90-110%)
-        $efficiency = 90 + rand(0, 20);
-        
-        // Generate defects (0-5% of production)
-        $defects = rand(0, max(0, floor($quantityProduced * 0.05)));
-
         // Create daily output record using factory
         $dailyOutput = AlkansyaDailyOutput::factory()->create([
             'date' => $date->format('Y-m-d'),
             'quantity_produced' => $quantityProduced,
             'materials_used' => $materialsUsed,
-            'efficiency_percentage' => $efficiency,
-            'defects' => $defects,
-            'notes' => $this->generateProductionNotes($date, $quantityProduced, $efficiency),
             'produced_by' => $this->getRandomProducer(),
         ]);
 
@@ -185,8 +184,11 @@ class AlkansyaFactorySeeder extends Seeder
     private function checkMaterialAvailability($bomMaterials, $quantityProduced, $stockLevels)
     {
         foreach ($bomMaterials as $bomMaterial) {
-            $inventoryItem = $bomMaterial->inventoryItem;
-            $requiredQuantity = $bomMaterial->qty_per_unit * $quantityProduced;
+            $material = $bomMaterial->material;
+            $inventoryItem = InventoryItem::where('sku', $material->material_code)->first();
+            if (!$inventoryItem) continue;
+            
+            $requiredQuantity = $bomMaterial->quantity_per_product * $quantityProduced;
             
             if ($stockLevels[$inventoryItem->id] < $requiredQuantity) {
                 return false;
@@ -203,8 +205,12 @@ class AlkansyaFactorySeeder extends Seeder
         $maxProduction = PHP_INT_MAX;
         
         foreach ($bomMaterials as $bomMaterial) {
-            if ($bomMaterial->qty_per_unit > 0) {
-                $availableForThisMaterial = floor($stockLevels[$bomMaterial->inventoryItem->id] / $bomMaterial->qty_per_unit);
+            $material = $bomMaterial->material;
+            $inventoryItem = InventoryItem::where('sku', $material->material_code)->first();
+            if (!$inventoryItem) continue;
+            
+            if ($bomMaterial->quantity_per_product > 0) {
+                $availableForThisMaterial = floor($stockLevels[$inventoryItem->id] / $bomMaterial->quantity_per_product);
                 $maxProduction = min($maxProduction, $availableForThisMaterial);
             }
         }
@@ -253,53 +259,6 @@ class AlkansyaFactorySeeder extends Seeder
         return rand(-30, 30);
     }
 
-    /**
-     * Generate realistic production notes
-     */
-    private function generateProductionNotes($date, $quantity, $efficiency)
-    {
-        $notes = [];
-        
-        if ($efficiency >= 105) {
-            $notes[] = "Excellent production day - above target";
-        } elseif ($efficiency >= 100) {
-            $notes[] = "Good production efficiency - on target";
-        } elseif ($efficiency >= 95) {
-            $notes[] = "Slightly below target efficiency";
-        } else {
-            $notes[] = "Below target efficiency - needs improvement";
-        }
-
-        if ($quantity >= 380) {
-            $notes[] = "High output achieved";
-        } elseif ($quantity >= 300) {
-            $notes[] = "Good production output";
-        } elseif ($quantity < 250) {
-            $notes[] = "Lower than expected output";
-        }
-
-        // Add random notes
-        $randomNotes = [
-            "All materials available",
-            "No equipment issues",
-            "Team performed well",
-            "Quality checks passed",
-            "On-time completion",
-            "Minor delays in morning setup",
-            "Extra quality control time",
-            "New team member training",
-            "Equipment maintenance completed",
-            "Material quality excellent",
-            "Smooth production flow",
-            "Team coordination excellent",
-        ];
-
-        if (rand(1, 3) === 1) {
-            $notes[] = $randomNotes[array_rand($randomNotes)];
-        }
-
-        return implode('. ', $notes);
-    }
 
     /**
      * Get random producer name
@@ -363,6 +322,9 @@ class AlkansyaFactorySeeder extends Seeder
         
         $alkansyaFinishedGoods->save();
 
+        // Sync product stock with finished goods inventory
+        $this->syncProductStock($alkansyaFinishedGoods->quantity_on_hand);
+
         $this->command->info("✅ Added {$quantityProduced} Alkansya finished goods to inventory (Total: {$alkansyaFinishedGoods->quantity_on_hand})");
     }
 
@@ -387,12 +349,29 @@ class AlkansyaFactorySeeder extends Seeder
             [
                 'actual_output' => $dailyOutput->quantity_produced,
                 'target_output' => $dailyOutput->quantity_produced, // Assuming target is actual for seeded data
-                'efficiency_percentage' => $dailyOutput->efficiency_percentage,
+                'efficiency_percentage' => 100.00, // Default efficiency since column was removed
                 'total_duration_minutes' => 0, // Not tracked in AlkansyaDailyOutput
                 'avg_process_duration_minutes' => 0, // Not tracked
             ]
         );
 
         $this->command->info("📊 Synced daily output to ProductionAnalytics for {$dailyOutput->date}");
+    }
+
+    /**
+     * Sync product stock with finished goods inventory
+     */
+    private function syncProductStock($quantityOnHand)
+    {
+        // Get Alkansya product
+        $alkansyaProduct = Product::where('name', 'Alkansya')->first();
+        
+        if ($alkansyaProduct) {
+            $alkansyaProduct->update([
+                'stock' => $quantityOnHand
+            ]);
+            
+            $this->command->info("📦 Updated Alkansya product stock: {$quantityOnHand} pieces");
+        }
     }
 }

@@ -7,10 +7,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InventoryItem extends Model
 {
+    protected $table = 'inventory_items';
+    protected $primaryKey = 'inventory_item_id';
+    
     protected $fillable = [
-        'sku','name','category','location','unit','unit_cost','supplier','description',
-        'quantity_on_hand','safety_stock',
-        'reorder_point','max_level','lead_time_days'
+        'name',
+        'sku',
+        'description',
+        'unit',
+        'current_stock',
+        'unit_cost',
+        'reorder_point',
+        'safety_stock',
+        'location',
+        'category',
+        'supplier',
+        'lead_time_days'
     ];
 
     public function usage(): HasMany {

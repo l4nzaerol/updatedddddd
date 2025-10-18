@@ -24,6 +24,8 @@ use App\Http\Controllers\AlkansyaDailyOutputController;
 use App\Http\Controllers\AutoDeductionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\NormalizedInventoryController;
+use App\Http\Controllers\InventoryTransactionController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -200,6 +202,33 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Usage
     Route::get('/usage', [UsageController::class, 'index']);
     Route::post('/usage', [UsageController::class, 'store']);
+
+    // Normalized Inventory Management
+    Route::group(['prefix' => 'normalized-inventory'], function () {
+        Route::get('/products', [NormalizedInventoryController::class, 'getProducts']);
+        Route::get('/materials', [NormalizedInventoryController::class, 'getMaterials']);
+        Route::get('/bom/{productId}', [NormalizedInventoryController::class, 'getBOM']);
+        Route::post('/bom', [NormalizedInventoryController::class, 'saveBOM']);
+        Route::post('/materials', [NormalizedInventoryController::class, 'addMaterial']);
+        Route::put('/materials/{materialId}', [NormalizedInventoryController::class, 'updateMaterial']);
+        Route::delete('/materials/{materialId}', [NormalizedInventoryController::class, 'deleteMaterial']);
+        Route::post('/alkansya-output', [NormalizedInventoryController::class, 'recordAlkansyaOutput']);
+        Route::get('/transactions', [NormalizedInventoryController::class, 'getTransactions']);
+        Route::get('/summary', [NormalizedInventoryController::class, 'getInventorySummary']);
+    });
+
+    // Enhanced Inventory Transactions Management
+    Route::group(['prefix' => 'inventory-transactions'], function () {
+        Route::get('/', [InventoryTransactionController::class, 'index']);
+        Route::get('/statistics', [InventoryTransactionController::class, 'getStatistics']);
+        Route::get('/material-summary', [InventoryTransactionController::class, 'getMaterialSummary']);
+        Route::get('/product-summary', [InventoryTransactionController::class, 'getProductSummary']);
+        Route::get('/order/{orderId}', [InventoryTransactionController::class, 'getOrderTransactions']);
+        Route::get('/production/{productionId}', [InventoryTransactionController::class, 'getProductionTransactions']);
+        Route::get('/alkansya-consumption', [InventoryTransactionController::class, 'getAlkansyaConsumption']);
+        Route::get('/cost-analysis', [InventoryTransactionController::class, 'getCostAnalysis']);
+        Route::get('/export', [InventoryTransactionController::class, 'export']);
+    });
 
     // Reports
     Route::get('/replenishment', [ReportController::class, 'replenishment']);

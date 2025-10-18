@@ -47,7 +47,6 @@ class AlkansyaDailyOutputController extends Controller
         $request->validate([
             'date' => 'required|date',
             'quantity' => 'required|integer|min:0',
-            'notes' => 'nullable|string',
             'produced_by' => 'nullable|string'
         ]);
 
@@ -154,11 +153,8 @@ class AlkansyaDailyOutputController extends Controller
                 ['date' => $request->date],
                 [
                     'quantity_produced' => $quantity,
-                    'notes' => $request->notes,
                     'produced_by' => $request->produced_by,
                     'materials_used' => $materialsUsed,
-                    'efficiency_percentage' => 100.00, // Default efficiency
-                    'defects' => 0,
                 ]
             );
 

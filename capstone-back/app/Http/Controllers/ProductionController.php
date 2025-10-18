@@ -300,6 +300,9 @@ class ProductionController extends Controller
                     $production->actual_completion_date = now();
                     $production->overall_progress = 100;
                     
+                    // Create inventory transaction for production completion
+                    $this->createProductionCompletionTransaction($production);
+                    
                     // Update order status to 'ready_for_delivery' when production is done
                     if ($production->order_id) {
                         $order = Order::find($production->order_id);
@@ -1801,6 +1804,62 @@ class ProductionController extends Controller
         ];
         
         return $stageOrder[$stageName] ?? 0;
+    }
+
+    /**
+     * Create inventory transaction for production completion
+     */
+    private function createProductionCompletionTransaction($production)
+    {
+        try {
+            // Get product details
+            $product = Product::find($production->product_id);
+            if (!$product) {
+                \Log::warning("Product not found for production completion: {$production->product_id}");
+                return;
+            }
+
+            // Create production completion transaction
+            \App\Models\InventoryTransaction::create([
+                'product_id' => $production->product_id,
+                'order_id' => $production->order_id,
+                'production_id' => $production->id,
+                'user_id' => auth()->id(),
+                'transaction_type' => 'PRODUCTION_COMPLETION',
+                'quantity' => $production->quantity,
+                'unit_cost' => $product->standard_cost ?? 0,
+                'total_cost' => ($product->standard_cost ?? 0) * $production->quantity,
+                'reference' => 'PRODUCTION_COMPLETION',
+                'timestamp' => now(),
+                'remarks' => "Production completed for {$product->name} (Qty: {$production->quantity})",
+                'status' => 'completed',
+                'priority' => 'normal',
+                'metadata' => [
+                    'production_id' => $production->id,
+                    'product_name' => $product->name,
+                    'product_id' => $product->id,
+                    'quantity_completed' => $production->quantity,
+                    'completion_date' => $production->actual_completion_date,
+                    'production_stage' => $production->current_stage,
+                    'production_type' => $production->product_type,
+                ],
+                'source_data' => [
+                    'production_id' => $production->id,
+                    'order_id' => $production->order_id,
+                    'product_id' => $production->product_id,
+                    'completion_date' => $production->actual_completion_date,
+                ],
+                'cost_breakdown' => [
+                    'product_cost' => ($product->standard_cost ?? 0) * $production->quantity,
+                    'unit_cost' => $product->standard_cost ?? 0,
+                    'quantity_completed' => $production->quantity,
+                ]
+            ]);
+
+            \Log::info("Created production completion transaction for production #{$production->id}");
+        } catch (\Exception $e) {
+            \Log::error("Failed to create production completion transaction: " . $e->getMessage());
+        }
     }
 
 }

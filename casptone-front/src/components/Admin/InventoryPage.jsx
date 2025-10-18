@@ -14,6 +14,38 @@ const customStyles = `
   .table tbody tr:hover {
     background-color: #f8f9fa;
   }
+  
+  /* Simple transparent button styles */
+  .btn-action {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #374151;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    margin: 0 2px;
+  }
+  
+  .btn-action:hover {
+    background: rgba(249, 250, 251, 0.9);
+    border-color: #9ca3af;
+    color: #111827;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .btn-action:active {
+    transform: translateY(0);
+  }
+  
+  .btn-action i {
+    font-size: 12px;
+    color: inherit;
+  }
 `;
 
 const DEFAULTS = {
@@ -1310,17 +1342,17 @@ const InventoryPage = () => {
                           )}
                         </td>
                         <td className="py-3 px-3">
-                          <div className="d-flex gap-1">
+                          <div className="d-flex gap-1 align-items-center">
                             <button 
-                              className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
+                              className="btn btn-sm btn-action"
                               onClick={() => handleEditMaterial(item)}
                               title="Edit Material"
-                              style={{ minWidth: '32px', height: '32px' }}
+                              style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                             >
                               <i className="fas fa-edit"></i>
                             </button>
                             <button 
-                              className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                              className="btn btn-sm btn-action"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -1328,7 +1360,7 @@ const InventoryPage = () => {
                               }}
                               onMouseDown={(e) => e.preventDefault()}
                               title="Delete Material"
-                              style={{ minWidth: '32px', height: '32px' }}
+                              style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                             >
                               <i className="fas fa-trash"></i>
                             </button>
@@ -1389,15 +1421,15 @@ const InventoryPage = () => {
                       <td>
                         <div className="d-flex gap-1">
                           <button 
-                            className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
+                            className="btn btn-sm btn-action"
                             onClick={() => handleEditMaterial(item)}
                             title="Edit Material"
-                            style={{ minWidth: '32px', height: '32px' }}
+                            style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                           >
                             <i className="fas fa-edit"></i>
                           </button>
                           <button 
-                            className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                            className="btn btn-sm btn-action"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -1405,7 +1437,7 @@ const InventoryPage = () => {
                             }}
                             onMouseDown={(e) => e.preventDefault()}
                             title="Delete Material"
-                            style={{ minWidth: '32px', height: '32px' }}
+                            style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                           >
                             <i className="fas fa-trash"></i>
                           </button>
@@ -1496,15 +1528,15 @@ const InventoryPage = () => {
                       <td>
                         <div className="d-flex gap-1">
                           <button 
-                            className="btn btn-sm btn-outline-primary d-flex align-items-center justify-content-center"
+                            className="btn btn-sm btn-action"
                             onClick={() => handleEditMaterial(item)}
                             title="Edit Material"
-                            style={{ minWidth: '32px', height: '32px' }}
+                            style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                           >
                             <i className="fas fa-edit"></i>
                           </button>
                           <button 
-                            className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                            className="btn btn-sm btn-action"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -1512,7 +1544,7 @@ const InventoryPage = () => {
                             }}
                             onMouseDown={(e) => e.preventDefault()}
                             title="Delete Material"
-                            style={{ minWidth: '32px', height: '32px' }}
+                            style={{ minWidth: '32px', height: '32px', padding: '6px' }}
                           >
                             <i className="fas fa-trash"></i>
                           </button>

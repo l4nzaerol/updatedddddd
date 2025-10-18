@@ -11,7 +11,7 @@ return new class extends Migration {
             $table->foreignId('order_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->foreignId('product_id')->constrained()->onDelete('cascade');
-            $table->string('product_name'); // optional, can duplicate from product for quick display
+            $table->string('product_name'); 
             $table->date('date')->nullable();
             $table->enum('stage', [
                 'Design', 'Preparation', 'Cutting', 'Assembly', 'Finishing', 'Quality Control'

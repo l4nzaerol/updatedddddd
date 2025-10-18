@@ -141,7 +141,7 @@ class OrderAcceptanceController extends Controller
                 \Log::info("Creating production for product: {$product->name}, isAlkansya: " . ($isAlkansya ? 'yes' : 'no'));
 
                 // Deduct materials from inventory when order is accepted
-                $this->deductMaterialsFromInventory($product, $item->quantity);
+                $this->deductMaterialsFromInventory($product, $item->quantity, $order->id);
 
                 // Determine product type and tracking requirements
                 $productType = $isAlkansya ? 'alkansya' : 
@@ -377,7 +377,7 @@ class OrderAcceptanceController extends Controller
     /**
      * Deduct materials from inventory when order is accepted
      */
-    private function deductMaterialsFromInventory($product, $quantity)
+    private function deductMaterialsFromInventory($product, $quantity, $orderId = null)
     {
         // Get BOM (Bill of Materials) for the product
         $materials = \App\Models\ProductMaterial::where('product_id', $product->id)
@@ -413,6 +413,44 @@ class OrderAcceptanceController extends Controller
                 'inventory_item_id' => $inventoryItem->id,
                 'date' => now()->format('Y-m-d'),
                 'qty_used' => $requiredQty,
+            ]);
+
+            // Create comprehensive inventory transaction
+            \App\Models\InventoryTransaction::create([
+                'material_id' => $inventoryItem->id, // Using inventory item as material reference
+                'product_id' => $product->id,
+                'order_id' => $orderId,
+                'user_id' => auth()->id(),
+                'transaction_type' => 'ORDER_ACCEPTANCE',
+                'quantity' => -$requiredQty, // Negative for consumption
+                'unit_cost' => $inventoryItem->unit_cost,
+                'total_cost' => $inventoryItem->unit_cost * $requiredQty,
+                'reference' => 'ORDER_ACCEPTANCE',
+                'timestamp' => now(),
+                'remarks' => "Material consumption for order acceptance - {$product->name} (Qty: {$quantity})",
+                'status' => 'completed',
+                'priority' => 'normal',
+                'metadata' => [
+                    'product_name' => $product->name,
+                    'product_id' => $product->id,
+                    'order_quantity' => $quantity,
+                    'material_consumed' => $requiredQty,
+                    'material_name' => $inventoryItem->name,
+                    'material_sku' => $inventoryItem->sku,
+                    'unit_cost' => $inventoryItem->unit_cost,
+                    'total_cost' => $inventoryItem->unit_cost * $requiredQty,
+                ],
+                'source_data' => [
+                    'order_id' => $orderId,
+                    'product_id' => $product->id,
+                    'material_id' => $inventoryItem->id,
+                    'bom_ratio' => $material->qty_per_unit,
+                ],
+                'cost_breakdown' => [
+                    'material_cost' => $inventoryItem->unit_cost * $requiredQty,
+                    'unit_cost' => $inventoryItem->unit_cost,
+                    'quantity_used' => $requiredQty,
+                ]
             ]);
 
             \Log::info("Deducted {$requiredQty} {$inventoryItem->unit} of {$inventoryItem->name} (Remaining: {$inventoryItem->fresh()->quantity_on_hand})");

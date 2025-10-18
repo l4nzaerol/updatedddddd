@@ -123,6 +123,7 @@ const Sidebar = ({ isMinimized, toggleSidebar }) => {
         { path: "/product", icon: Package, label: "Products", roles: ["employee"] },
         { path: "/orders", icon: ClipboardList, label: "Orders", roles: ["employee"] },
         { path: "/inventory", icon: Boxes, label: "Inventory", roles: ["employee"] },
+        { path: "/normalized-inventory", icon: Boxes, label: "Normalized Inventory", roles: ["employee"] },
         { path: "/productions", icon: Factory, label: "Productions", roles: ["employee", "admin"] },
         { path: "/reports", icon: BarChart, label: "Reports", roles: ["employee"] },
     ];

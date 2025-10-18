@@ -33,19 +33,12 @@ class AlkansyaDailyOutputFactory extends Factory
         $variation = $this->faker->numberBetween(-50, 50);
         $quantityProduced = max(300, min(500, $baseProduction + $variation));
 
-        // Generate efficiency percentage (90-110%)
-        $efficiency = $this->faker->numberBetween(90, 110);
-
-        // Generate defects (0-5% of production)
-        $defects = $this->faker->numberBetween(0, max(0, floor($quantityProduced * 0.05)));
-
         // Generate materials used data
         $materialsUsed = $this->generateMaterialsUsed($quantityProduced);
 
         return [
             'date' => $this->faker->dateTimeBetween('-3 months', 'now')->format('Y-m-d'),
             'quantity_produced' => $quantityProduced,
-            'notes' => $this->generateProductionNotes($quantityProduced, $efficiency),
             'produced_by' => $this->faker->randomElement([
                 'Production Team A',
                 'Production Team B', 
@@ -58,8 +51,6 @@ class AlkansyaDailyOutputFactory extends Factory
                 'Production Manager',
             ]),
             'materials_used' => $materialsUsed,
-            'efficiency_percentage' => $efficiency,
-            'defects' => $defects,
         ];
     }
 
@@ -102,53 +93,6 @@ class AlkansyaDailyOutputFactory extends Factory
         return $materialsUsed;
     }
 
-    /**
-     * Generate realistic production notes
-     */
-    private function generateProductionNotes($quantity, $efficiency): string
-    {
-        $notes = [];
-        
-        if ($efficiency >= 105) {
-            $notes[] = "Excellent production day - above target";
-        } elseif ($efficiency >= 100) {
-            $notes[] = "Good production efficiency - on target";
-        } elseif ($efficiency >= 95) {
-            $notes[] = "Slightly below target efficiency";
-        } else {
-            $notes[] = "Below target efficiency - needs improvement";
-        }
-
-        if ($quantity >= 450) {
-            $notes[] = "High output achieved";
-        } elseif ($quantity >= 400) {
-            $notes[] = "Good production output";
-        } elseif ($quantity < 350) {
-            $notes[] = "Lower than expected output";
-        }
-
-        // Add random notes
-        $randomNotes = [
-            "All materials available",
-            "No equipment issues",
-            "Team performed well",
-            "Quality checks passed",
-            "On-time completion",
-            "Minor delays in morning setup",
-            "Extra quality control time",
-            "New team member training",
-            "Equipment maintenance completed",
-            "Material quality excellent",
-            "Smooth production flow",
-            "Team coordination excellent",
-        ];
-
-        if ($this->faker->boolean(30)) { // 30% chance
-            $notes[] = $this->faker->randomElement($randomNotes);
-        }
-
-        return implode('. ', $notes);
-    }
 
     /**
      * Create data for a specific date range
@@ -189,8 +133,6 @@ class AlkansyaDailyOutputFactory extends Factory
         return $this->state(function (array $attributes) {
             return [
                 'quantity_produced' => $this->faker->numberBetween(450, 500),
-                'efficiency_percentage' => $this->faker->numberBetween(105, 110),
-                'defects' => $this->faker->numberBetween(0, 5),
             ];
         });
     }
@@ -203,8 +145,6 @@ class AlkansyaDailyOutputFactory extends Factory
         return $this->state(function (array $attributes) {
             return [
                 'quantity_produced' => $this->faker->numberBetween(300, 350),
-                'efficiency_percentage' => $this->faker->numberBetween(90, 95),
-                'defects' => $this->faker->numberBetween(5, 15),
             ];
         });
     }
