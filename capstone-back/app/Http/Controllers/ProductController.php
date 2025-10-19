@@ -4,21 +4,59 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Product;
-use App\Models\ProductMaterial;
+use App\Models\BOM;
+use App\Models\Material;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name' => 'required',
-            'description' => 'nullable',
-            'price' => 'required|numeric',
-            'stock' => 'required|integer',
+            'name' => 'sometimes|required|string|max:255',
+            'product_name' => 'sometimes|required|string|max:255',
+            'product_code' => 'required|string|unique:products,product_code',
+            'description' => 'nullable|string',
+            'category_name' => 'nullable|string',
+            'unit_of_measure' => 'nullable|string',
+            'standard_cost' => 'required|numeric|min:0',
+            'price' => 'required|numeric|min:0',
+            'stock' => 'required|integer|min:0',
             'image' => 'nullable|string',
+            'bom' => 'nullable|array',
+            'bom.*.material_id' => 'required|exists:materials,material_id',
+            'bom.*.quantity_per_product' => 'required|numeric|min:0',
+            'bom.*.unit_of_measure' => 'required|string',
+            'is_available_for_order' => 'nullable|boolean',
         ]);
-        $product = Product::create($data);
-        return response()->json($product, 201);
+
+        // Ensure product_name is set (handle both old and new column names)
+        if (!isset($data['product_name']) && isset($data['name'])) {
+            $data['product_name'] = $data['name'];
+        }
+
+        DB::beginTransaction();
+        try {
+            $product = Product::create($data);
+            
+            // Handle BOM if provided
+            if (isset($data['bom']) && is_array($data['bom'])) {
+                foreach ($data['bom'] as $bomItem) {
+                    BOM::create([
+                        'product_id' => $product->id,
+                        'material_id' => $bomItem['material_id'],
+                        'quantity_per_product' => $bomItem['quantity_per_product'],
+                        'unit_of_measure' => $bomItem['unit_of_measure']
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            return response()->json($product, 201);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['error' => 'Failed to create product: ' . $e->getMessage()], 500);
+        }
     }
 
     public function update(Request $request, $id)
@@ -27,14 +65,53 @@ class ProductController extends Controller
         
         $data = $request->validate([
             'name' => 'sometimes|required|string|max:255',
+            'product_name' => 'sometimes|required|string|max:255',
+            'product_code' => 'sometimes|required|string|unique:products,product_code,' . $id,
             'description' => 'nullable|string',
+            'category_name' => 'nullable|string',
+            'unit_of_measure' => 'nullable|string',
+            'standard_cost' => 'sometimes|required|numeric|min:0',
             'price' => 'sometimes|required|numeric|min:0',
             'stock' => 'sometimes|required|integer|min:0',
             'image' => 'nullable|string',
+            'bom' => 'nullable|array',
+            'bom.*.material_id' => 'required|exists:materials,material_id',
+            'bom.*.quantity_per_product' => 'required|numeric|min:0',
+            'bom.*.unit_of_measure' => 'required|string',
+            'is_available_for_order' => 'nullable|boolean',
         ]);
-        
-        $product->update($data);
-        return response()->json($product);
+
+        // Ensure product_name is set (handle both old and new column names)
+        if (!isset($data['product_name']) && isset($data['name'])) {
+            $data['product_name'] = $data['name'];
+        }
+
+        DB::beginTransaction();
+        try {
+            $product->update($data);
+            
+            // Handle BOM if provided
+            if (isset($data['bom']) && is_array($data['bom'])) {
+                // Delete existing BOM
+                BOM::where('product_id', $product->id)->delete();
+                
+                // Create new BOM entries
+                foreach ($data['bom'] as $bomItem) {
+                    BOM::create([
+                        'product_id' => $product->id,
+                        'material_id' => $bomItem['material_id'],
+                        'quantity_per_product' => $bomItem['quantity_per_product'],
+                        'unit_of_measure' => $bomItem['unit_of_measure']
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            return response()->json($product);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['error' => 'Failed to update product: ' . $e->getMessage()], 500);
+        }
     }
 
     public function destroy($id)
@@ -46,40 +123,74 @@ class ProductController extends Controller
 
     public function index()
     {
-        // Optimized: Get all products and inventory items in 2 queries instead of N+1
-        $products = Product::all();
-        
-        // Get all finished goods inventory items in one query
-        $inventoryItems = \App\Models\InventoryItem::where('category', 'like', '%finished%')
-            ->get()
-            ->keyBy(function($item) {
-                // Create a key for matching
-                return strtolower($item->name);
-            });
-        
-        // Enrich products with inventory data and BOM-based pricing
-        $products = $products->map(function($product) use ($inventoryItems) {
-            // Try to find matching inventory item by name (case-insensitive)
-            $productName = strtolower($product->name);
-            $inventoryItem = $inventoryItems->get($productName);
-            
-            if ($inventoryItem) {
-                $product->inventory_stock = $inventoryItem->quantity_on_hand;
-                $product->inventory_location = $inventoryItem->location;
-                $product->inventory_sku = $inventoryItem->sku;
-            } else {
-                $product->inventory_stock = null;
-                $product->inventory_location = null;
-                $product->inventory_sku = null;
+        // Get all products with enhanced fields and BOM data
+        $products = Product::with('bomMaterials.material')->get()->map(function($product) {
+            // Ensure product_name is available (handle both old and new column names)
+            if (!isset($product->product_name) && isset($product->name)) {
+                $product->product_name = $product->name;
             }
             
-            // Add BOM indicator for admin display
-            $hasBom = ProductMaterial::where('product_id', $product->id)->exists();
-            $product->has_bom = $hasBom;
+            // Generate product_code if not exists
+            if (!isset($product->product_code) || empty($product->product_code)) {
+                $product->product_code = 'PROD-' . str_pad($product->id, 3, '0', STR_PAD_LEFT);
+            }
             
-            // Alkansya uses fixed pricing, others use BOM calculation
-            $isAlkansya = strtolower($product->name) === 'alkansya';
-            $product->is_bom_priced = $hasBom && !$isAlkansya;
+            // Set default values for new columns if they don't exist
+            if (!isset($product->unit_of_measure)) {
+                $product->unit_of_measure = 'pcs';
+            }
+            if (!isset($product->standard_cost)) {
+                $product->standard_cost = 0;
+            }
+            if (!isset($product->category_name)) {
+                $product->category_name = 'Stocked Products';
+            }
+            
+            // Calculate availability based on category and stock
+            if ($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') {
+                $isAvailableForOrder = $product->is_available_for_order ?? true; // Default to true if not set
+                $product->is_available = $isAvailableForOrder;
+                $product->availability_text = $isAvailableForOrder ? 'Available for Order' : 'Not Available';
+                $product->availability_variant = $isAvailableForOrder ? 'success' : 'danger';
+            } else {
+                $stock = $product->stock || 0;
+                if ($stock > 10) {
+                    $product->is_available = true;
+                    $product->availability_text = 'In Stock';
+                    $product->availability_variant = 'success';
+                } else if ($stock > 0) {
+                    $product->is_available = true;
+                    $product->availability_text = 'Low Stock';
+                    $product->availability_variant = 'warning';
+                } else {
+                    $product->is_available = false;
+                    $product->availability_text = 'Out of Stock';
+                    $product->availability_variant = 'danger';
+                }
+            }
+            
+            // Calculate profit margin
+            if ($product->standard_cost > 0 && $product->price > 0) {
+                $product->profit_margin = round((($product->price - $product->standard_cost) / $product->price) * 100, 1);
+                $product->profit_amount = $product->price - $product->standard_cost;
+            } else {
+                $product->profit_margin = 0;
+                $product->profit_amount = 0;
+            }
+            
+            // Add BOM data
+            $product->bom = $product->bomMaterials->map(function($bomItem) {
+                return [
+                    'id' => $bomItem->id,
+                    'material_id' => $bomItem->material_id,
+                    'material_name' => $bomItem->material->material_name ?? 'Unknown Material',
+                    'material_code' => $bomItem->material->material_code ?? '',
+                    'quantity_per_product' => $bomItem->quantity_per_product,
+                    'unit_of_measure' => $bomItem->unit_of_measure,
+                    'standard_cost' => $bomItem->material->standard_cost ?? 0,
+                    'total_cost' => $bomItem->quantity_per_product * ($bomItem->material->standard_cost ?? 0)
+                ];
+            });
             
             return $product;
         });
@@ -93,66 +204,116 @@ class ProductController extends Controller
     }
 
     // BOM endpoints
-    public function getMaterials($id)
+    public function getBOM($id)
     {
         $product = Product::findOrFail($id);
-        $rows = ProductMaterial::where('product_id', $product->id)->get();
-        return response()->json($rows);
+        $bom = BOM::with('material')->where('product_id', $product->id)->get()->map(function($bomItem) {
+            return [
+                'id' => $bomItem->id,
+                'material_id' => $bomItem->material_id,
+                'material_name' => $bomItem->material->material_name ?? 'Unknown Material',
+                'material_code' => $bomItem->material->material_code ?? '',
+                'quantity_per_product' => $bomItem->quantity_per_product,
+                'unit_of_measure' => $bomItem->unit_of_measure,
+                'standard_cost' => $bomItem->material->standard_cost ?? 0,
+                'total_cost' => $bomItem->quantity_per_product * ($bomItem->material->standard_cost ?? 0)
+            ];
+        });
+        return response()->json($bom);
     }
 
-    public function setMaterials(Request $request, $id)
+    public function setBOM(Request $request, $id)
     {
         $product = Product::findOrFail($id);
-        $items = $request->validate([
-            'items' => 'required|array',
-            'items.*.inventory_item_id' => 'required|exists:inventory_items,id',
-            'items.*.qty_per_unit' => 'required|integer|min:1',
-        ])['items'];
+        $data = $request->validate([
+            'materials' => 'required|array',
+            'materials.*.material_id' => 'required|exists:materials,material_id',
+            'materials.*.quantity_per_product' => 'required|numeric|min:0',
+            'materials.*.unit_of_measure' => 'required|string',
+        ]);
 
-        ProductMaterial::where('product_id', $product->id)->delete();
-        foreach ($items as $it) {
-            ProductMaterial::create([
-                'product_id' => $product->id,
-                'inventory_item_id' => $it['inventory_item_id'],
-                'qty_per_unit' => $it['qty_per_unit'],
-            ]);
+        DB::beginTransaction();
+        try {
+            // Delete existing BOM
+            BOM::where('product_id', $product->id)->delete();
+
+            // Create new BOM entries
+            foreach ($data['materials'] as $material) {
+                BOM::create([
+                    'product_id' => $product->id,
+                    'material_id' => $material['material_id'],
+                    'quantity_per_product' => $material['quantity_per_product'],
+                    'unit_of_measure' => $material['unit_of_measure']
+                ]);
+            }
+
+            DB::commit();
+            return response()->json(['message' => 'BOM saved successfully']);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['error' => 'Failed to save BOM: ' . $e->getMessage()], 500);
         }
-
-        return response()->json(['message' => 'BOM saved']);
     }
 
-    public function exportMaterialsCsv($id)
+    public function exportBOMCsv($id)
     {
         $product = Product::findOrFail($id);
-        $rows = ProductMaterial::where('product_id', $product->id)->get(['inventory_item_id','qty_per_unit']);
-        $csv = "inventory_item_id,qty_per_unit\n";
+        $rows = BOM::with('material')->where('product_id', $product->id)->get();
+        $csv = "material_id,material_name,quantity_per_product,unit_of_measure\n";
         foreach ($rows as $r) {
-            $csv .= $r->inventory_item_id . "," . $r->qty_per_unit . "\n";
+            $csv .= $r->material_id . "," . $r->material->material_name . "," . $r->quantity_per_product . "," . $r->unit_of_measure . "\n";
         }
         return response($csv, 200, [
             'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="product_'.$product->id.'_materials.csv"'
+            'Content-Disposition' => 'attachment; filename="product_'.$product->id.'_bom.csv"'
         ]);
     }
 
-    public function importMaterialsCsv(Request $request, $id)
+    public function importBOMCsv(Request $request, $id)
     {
         $product = Product::findOrFail($id);
         $request->validate(['file' => 'required|file|mimes:csv,txt']);
         $text = $request->file('file')->get();
         $lines = preg_split("/\r?\n/", trim($text));
         array_shift($lines); // header
-        ProductMaterial::where('product_id', $product->id)->delete();
-        foreach ($lines as $line) {
-            if (!strlen(trim($line))) continue;
-            [$invId, $qty] = array_map('trim', explode(',', $line));
-            ProductMaterial::create([
-                'product_id' => $product->id,
-                'inventory_item_id' => (int)$invId,
-                'qty_per_unit' => (int)$qty,
-            ]);
+        
+        DB::beginTransaction();
+        try {
+            BOM::where('product_id', $product->id)->delete();
+            foreach ($lines as $line) {
+                if (!strlen(trim($line))) continue;
+                [$materialId, $materialName, $qty, $unit] = array_map('trim', explode(',', $line));
+                BOM::create([
+                    'product_id' => $product->id,
+                    'material_id' => (int)$materialId,
+                    'quantity_per_product' => (float)$qty,
+                    'unit_of_measure' => $unit,
+                ]);
+            }
+            DB::commit();
+            return response()->json(['message' => 'BOM imported successfully']);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['error' => 'Failed to import BOM: ' . $e->getMessage()], 500);
         }
-        return response()->json(['message' => 'BOM imported']);
+    }
+
+    public function toggleAvailability($id)
+    {
+        $product = Product::findOrFail($id);
+        
+        // Only allow toggling for made-to-order products
+        if ($product->category_name !== 'Made to Order' && $product->category_name !== 'made_to_order') {
+            return response()->json(['error' => 'Only made-to-order products can have their availability toggled'], 400);
+        }
+        
+        $product->is_available_for_order = !$product->is_available_for_order;
+        $product->save();
+        
+        return response()->json([
+            'message' => 'Product availability updated successfully',
+            'is_available_for_order' => $product->is_available_for_order
+        ]);
     }
 
 }

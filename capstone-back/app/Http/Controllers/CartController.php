@@ -18,9 +18,14 @@ class CartController extends Controller
 
         $product = Product::findOrFail($request->product_id);
 
-        // Check stock availability before adding
-        if ($product->stock < $request->quantity) {
+        // Check stock availability before adding (only for stocked products)
+        if (($product->category_name !== 'Made to Order' && $product->category_name !== 'made_to_order') && $product->stock < $request->quantity) {
             return response()->json(['message' => 'Insufficient stock'], 400);
+        }
+
+        // For Made to Order products, check availability status
+        if (($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') && $product->is_available === false) {
+            return response()->json(['message' => 'This product is currently not available for order'], 400);
         }
 
         // Check if the product is already in the cart
@@ -29,8 +34,8 @@ class CartController extends Controller
             ->first();
 
         if ($cartItem) {
-            // Ensure the total quantity does not exceed stock
-            if (($cartItem->quantity + $request->quantity) > $product->stock) {
+            // Ensure the total quantity does not exceed stock (only for stocked products)
+            if (($product->category_name !== 'Made to Order' && $product->category_name !== 'made_to_order') && (($cartItem->quantity + $request->quantity) > $product->stock)) {
                 return response()->json(['message' => 'Not enough stock available'], 400);
             }
 
@@ -85,6 +90,12 @@ class CartController extends Controller
     // Optional: Add check to ensure the authenticated user owns this cart item
     if ($cartItem->user_id !== auth()->id()) {
         return response()->json(['message' => 'Unauthorized'], 403);
+    }
+
+    // Get the product to check stock availability (only for stocked products)
+    $product = $cartItem->product;
+    if (($product->category_name !== 'Made to Order' && $product->category_name !== 'made_to_order') && $product->stock < $request->quantity) {
+        return response()->json(['message' => 'Insufficient stock'], 400);
     }
 
     $cartItem->quantity = $request->quantity;

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { authUtils } from "../../utils/auth";
+import { formatPrice } from "../../utils/currency";
 import "./BuyNowModal.css";
 
 const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
@@ -300,7 +301,7 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
     }
   };
 
-  const totalPrice = product ? (product.price * quantity).toFixed(2) : 0;
+  const totalPrice = product ? (product.price * quantity) : 0;
 
   if (!show || !product) {
     console.log("BuyNowModal not showing - show:", show, "product:", product);
@@ -351,10 +352,10 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                     <h5 className="selected-item-name">{product.name}</h5>
                     <div className="selected-item-meta">
                       <span className="selected-item-quantity">Qty: {quantity}</span>
-                      <span className="selected-item-price">₱{product.price.toLocaleString()} each</span>
+                      <span className="selected-item-price">{formatPrice(product.price)} each</span>
                     </div>
                     <div className="selected-item-subtotal">
-                      Subtotal: ₱{(product.price * quantity).toLocaleString()}
+                      Subtotal: {formatPrice(product.price * quantity)}
                     </div>
                   </div>
                 </div>
@@ -514,11 +515,11 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                   </div>
                   <div className="total-row">
                     <span>Unit Price:</span>
-                    <span>₱{product.price.toLocaleString()}</span>
+                    <span>{formatPrice(product.price)}</span>
                   </div>
                   <div className="total-row final-total">
                     <span>Total:</span>
-                    <span className="final-amount">₱{totalPrice}</span>
+                    <span className="final-amount">{formatPrice(totalPrice)}</span>
                   </div>
                 </div>
               </div>
@@ -541,7 +542,7 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess }) => {
                 </>
               ) : (
                 <>
-                  Place Order • ₱{totalPrice}
+                  Place Order • {formatPrice(totalPrice)}
                 </>
               )}
             </button>

@@ -1,9 +1,8 @@
- import React, { useState, useEffect, memo } from "react";
+ import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Spinner } from "react-bootstrap";
 import ProductCatalog from "./ProductCatalog";
-import OrderTracking from "./OrderTracking";
 import "./CustomerDashboard.css";
 import bannerImage from "../../assets/images/unick_banner.png";
 
@@ -11,13 +10,8 @@ const CustomerDashboard = () => {
     const [products, setProducts] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(false);
-    const [selectedOrderId, setSelectedOrderId] = useState("");
 
-    useEffect(() => {
-        fetchProducts();
-    }, []);
-
-    const fetchProducts = async () => {
+    const fetchProducts = useCallback(async () => {
         setLoading(true);
         try {
             // Check if we have cached products (valid for 5 minutes)
@@ -75,11 +69,20 @@ const CustomerDashboard = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    const filteredProducts = products.filter((product) =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    useEffect(() => {
+        fetchProducts();
+    }, [fetchProducts]);
+
+    const filteredProducts = products.filter((product) => {
+        const productName = product.product_name || product.name || '';
+        const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        // Show all products regardless of availability status
+        // Availability will be handled in the UI (disabled buttons, etc.)
+        return matchesSearch;
+    });
 
     return (
       <div className="enhanced-customer-dashboard">
@@ -169,18 +172,6 @@ const CustomerDashboard = () => {
           )}
         </div>
 
-        {/* Order Tracking Section */}
-        {selectedOrderId && (
-          <div className="container mt-5">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <OrderTracking orderId={selectedOrderId} />
-            </motion.div>
-          </div>
-        )}
 
       </div>
     );

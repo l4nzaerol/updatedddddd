@@ -22,6 +22,7 @@ class Product extends Model
         'description',
         'category_id',
         'category_name', // New column
+        'is_available_for_order', // New column for availability toggle
         'raw_materials', // New JSON column
         'total_bom_cost', // New column
         'unit_of_measure',
@@ -35,7 +36,8 @@ class Product extends Model
         'standard_cost' => 'decimal:2',
         'price' => 'decimal:2',
         'total_bom_cost' => 'decimal:2',
-        'raw_materials' => 'array'
+        'raw_materials' => 'array',
+        'is_available_for_order' => 'boolean'
     ];
 
     // Accessor to handle both old and new column names for backward compatibility

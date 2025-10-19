@@ -14,11 +14,6 @@ class DatabaseSeeder extends Seeder
             // Use AccurateMaterialsSeeder for products with accurate material data
             AccurateMaterialsSeeder::class, // Creates products with accurate material data and BOM
             
-            // Use ComprehensiveInventorySeeder for complete inventory system with BOM
-            //ComprehensiveInventorySeeder::class, // Creates materials, BOM, inventory tracking, and daily output
-            
-            // Enhanced Alkansya seeder with normalized inventory integration
-            EnhancedAlkansyaFactorySeeder::class, // Creates 3 months of Alkansya production with inventory tracking
         ]);
     }
 }

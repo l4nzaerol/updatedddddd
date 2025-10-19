@@ -571,7 +571,7 @@ const ProductionOrderManagement = () => {
                         <option value="">Select Product</option>
                         {products.map(product => (
                           <option key={product.id} value={product.id}>
-                            {product.name} - ${product.price}
+                            {product.name} - ₱{product.price?.toLocaleString()}
                           </option>
                         ))}
                       </select>

@@ -122,6 +122,7 @@ Route::get('/inventory/alkansya-daily-output/materials-analysis', [AlkansyaDaily
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
 
+
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -130,10 +131,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/products/{id}', [ProductController::class, 'update']);
     Route::delete('/products/{id}', [ProductController::class, 'destroy']);
     Route::get('/products/{id}', [ProductController::class, 'show']);
-    Route::get('/products/{id}/materials', [ProductController::class, 'getMaterials']);
-    Route::post('/products/{id}/materials', [ProductController::class, 'setMaterials']);
-    Route::get('/products/{id}/materials/export', [ProductController::class, 'exportMaterialsCsv']);
-    Route::post('/products/{id}/materials/import', [ProductController::class, 'importMaterialsCsv']);
+    Route::get('/products/{id}/bom', [ProductController::class, 'getBOM']);
+    Route::post('/products/{id}/bom', [ProductController::class, 'setBOM']);
+    Route::get('/products/{id}/bom/export', [ProductController::class, 'exportBOMCsv']);
+    Route::post('/products/{id}/bom/import', [ProductController::class, 'importBOMCsv']);
+    Route::post('/products/{id}/toggle-availability', [ProductController::class, 'toggleAvailability']);
 
     // Cart Routes
     Route::post('/cart', [CartController::class, 'addToCart']);
@@ -213,6 +215,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/materials/{materialId}', [NormalizedInventoryController::class, 'updateMaterial']);
         Route::delete('/materials/{materialId}', [NormalizedInventoryController::class, 'deleteMaterial']);
         Route::post('/alkansya-output', [NormalizedInventoryController::class, 'recordAlkansyaOutput']);
+        Route::post('/stock-adjustment', [NormalizedInventoryController::class, 'adjustStock']);
         Route::get('/transactions', [NormalizedInventoryController::class, 'getTransactions']);
         Route::get('/summary', [NormalizedInventoryController::class, 'getInventorySummary']);
     });

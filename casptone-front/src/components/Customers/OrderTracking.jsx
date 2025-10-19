@@ -67,7 +67,7 @@ const OrderTracking = ({ orderId }) => {
                 <strong>{product.name}</strong>
                 <span className="text-muted ms-2">x{product.quantity}</span>
               </div>
-              <span className="fw-bold">₱{product.price}</span>
+              <span className="fw-bold">₱{product.price?.toLocaleString()}</span>
             </div>
           ))}
         </div>

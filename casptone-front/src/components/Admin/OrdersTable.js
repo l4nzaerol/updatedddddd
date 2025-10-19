@@ -138,7 +138,7 @@ const OrdersTable = () => {
             <div key={order.id} className="order-card wood-card wood-parallax" role="row">
               <h5>Order #{order.id}</h5>
               <p>
-                <strong>Total:</strong> ₱{parseFloat(order.total_price).toFixed(2)}
+                <strong>Total:</strong> ₱{parseFloat(order.total_price).toLocaleString()}
               </p>
               <p>
                 <strong>Date:</strong>{" "}
@@ -180,7 +180,7 @@ const OrdersTable = () => {
             <ul>
               {orderItems.map((item) => (
                 <li key={item.id}>
-                  {item.product?.name} - {item.quantity}x ₱{item.product?.price}
+                  {item.product?.name} - {item.quantity}x ₱{item.product?.price?.toLocaleString()}
                 </li>
               ))}
             </ul>
@@ -203,7 +203,7 @@ const OrdersTable = () => {
             <ul>
               {orderItems.map((item) => (
                 <li key={item.id}>
-                  {item.product?.name} - {item.quantity}x ₱{item.product?.price}
+                  {item.product?.name} - {item.quantity}x ₱{item.product?.price?.toLocaleString()}
                 </li>
               ))}
             </ul>

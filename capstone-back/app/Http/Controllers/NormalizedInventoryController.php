@@ -357,6 +357,96 @@ class NormalizedInventoryController extends Controller
     }
 
     /**
+     * Adjust material stock
+     */
+    public function adjustStock(Request $request)
+    {
+        $request->validate([
+            'material_id' => 'required|exists:materials,material_id',
+            'adjustment_type' => 'required|in:add,subtract,set',
+            'quantity' => 'required|numeric|min:0',
+            'reason' => 'required|string',
+            'reference' => 'nullable|string'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $material = Material::findOrFail($request->material_id);
+            
+            // Get or create inventory record
+            $inventory = Inventory::firstOrCreate(
+                [
+                    'material_id' => $request->material_id,
+                    'location_id' => 1, // Default location
+                ],
+                [
+                    'current_stock' => 0,
+                    'quantity_reserved' => 0,
+                    'last_updated' => now(),
+                ]
+            );
+
+            $oldStock = $inventory->current_stock;
+            $adjustmentQuantity = $request->quantity;
+
+            // Calculate new stock based on adjustment type
+            switch ($request->adjustment_type) {
+                case 'add':
+                    $newStock = $oldStock + $adjustmentQuantity;
+                    $transactionQuantity = $adjustmentQuantity;
+                    break;
+                case 'subtract':
+                    $newStock = max(0, $oldStock - $adjustmentQuantity);
+                    $transactionQuantity = -$adjustmentQuantity;
+                    break;
+                case 'set':
+                    $newStock = $adjustmentQuantity;
+                    $transactionQuantity = $adjustmentQuantity - $oldStock;
+                    break;
+            }
+
+            // Update inventory
+            $inventory->current_stock = $newStock;
+            $inventory->last_updated = now();
+            $inventory->save();
+
+            // Create transaction record
+            InventoryTransaction::create([
+                'material_id' => $request->material_id,
+                'user_id' => auth()->id(),
+                'transaction_type' => 'STOCK_ADJUSTMENT',
+                'quantity' => $transactionQuantity,
+                'unit_cost' => $material->standard_cost,
+                'total_cost' => $material->standard_cost * abs($transactionQuantity),
+                'reference' => $request->reference ?: 'MANUAL_ADJUSTMENT',
+                'timestamp' => now(),
+                'remarks' => $request->reason,
+                'status' => 'completed',
+                'priority' => 'normal',
+                'metadata' => [
+                    'adjustment_type' => $request->adjustment_type,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'adjustment_quantity' => $adjustmentQuantity,
+                    'reason' => $request->reason,
+                    'reference' => $request->reference,
+                ]
+            ]);
+
+            DB::commit();
+            return response()->json([
+                'message' => 'Stock adjusted successfully',
+                'old_stock' => $oldStock,
+                'new_stock' => $newStock,
+                'adjustment' => $transactionQuantity
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json(['error' => 'Failed to adjust stock: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Get inventory summary
      */
     public function getInventorySummary()

@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
-import Pusher from "pusher-js";
 import { toast } from "sonner";
 
 // Custom styles for simple, clean design
@@ -100,9 +99,6 @@ const customStyles = `
   }
 `;
 
-const DEFAULTS = {
-  pollIntervalMs: 15000,
-};
 
 // BOM Management Modal Component
 const BOMModal = ({ show, onHide, product, onSave }) => {
@@ -136,16 +132,7 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
     return response.json();
   }, [apiBase]);
 
-  useEffect(() => {
-    if (show) {
-      fetchAvailableMaterials();
-      if (product) {
-        fetchBOM();
-      }
-    }
-  }, [show, product]);
-
-  const fetchAvailableMaterials = async () => {
+  const fetchAvailableMaterials = useCallback(async () => {
     try {
       const materials = await apiCall('/normalized-inventory/materials');
       setAvailableMaterials(materials);
@@ -153,9 +140,9 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
       console.error('Failed to fetch materials:', error);
       toast.error("Failed to fetch materials");
     }
-  };
+  }, [apiCall]);
 
-  const fetchBOM = async () => {
+  const fetchBOM = useCallback(async () => {
     if (!product) return;
     
     setLoading(true);
@@ -168,7 +155,16 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [product, apiCall]);
+
+  useEffect(() => {
+    if (show) {
+      fetchAvailableMaterials();
+      if (product) {
+        fetchBOM();
+      }
+    }
+  }, [show, product, fetchAvailableMaterials, fetchBOM]);
 
   const handleAddMaterial = () => {
     setFormData(prev => ({
@@ -789,6 +785,184 @@ const AlkansyaOutputModal = ({ show, onHide, onSuccess }) => {
   );
 };
 
+// Stock Adjustment Modal Component
+const StockAdjustmentModal = ({ show, onHide, material, onSuccess }) => {
+  const [formData, setFormData] = useState({
+    adjustment_type: 'add',
+    quantity: 0,
+    reason: '',
+    reference: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
+  const apiCall = useCallback(async (path, options = {}) => {
+    const token = localStorage.getItem("token");
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers
+    };
+
+    const url = path.startsWith('http') ? path : `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
+
+    const response = await fetch(url, {
+      ...options,
+      headers
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (show && material) {
+      setFormData({
+        adjustment_type: 'add',
+        quantity: 0,
+        reason: '',
+        reference: ''
+      });
+    }
+  }, [show, material]);
+
+  const handleSave = async () => {
+    if (formData.quantity <= 0) {
+      toast.error("Quantity must be greater than 0");
+      return;
+    }
+
+    if (!formData.reason.trim()) {
+      toast.error("Please provide a reason for this adjustment");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await apiCall('/normalized-inventory/stock-adjustment', {
+        method: 'POST',
+        body: JSON.stringify({
+          material_id: material.material_id,
+          adjustment_type: formData.adjustment_type,
+          quantity: formData.quantity,
+          reason: formData.reason,
+          reference: formData.reference
+        })
+      });
+
+      toast.success("📦 Stock Adjusted Successfully!", {
+        description: `${formData.adjustment_type === 'add' ? 'Added' : formData.adjustment_type === 'subtract' ? 'Subtracted' : 'Set'} ${formData.quantity} units`,
+        duration: 4000,
+        style: {
+          background: '#f0fdf4',
+          border: '1px solid #86efac',
+          color: '#166534'
+        }
+      });
+
+      onSuccess();
+      onHide();
+    } catch (error) {
+      console.error('Failed to adjust stock:', error);
+      toast.error("❌ Stock Adjustment Failed", {
+        description: "Unable to adjust stock. Please try again.",
+        duration: 5000,
+        style: {
+          background: '#fee2e2',
+          border: '1px solid #fca5a5',
+          color: '#dc2626'
+        }
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!show || !material) return null;
+
+  return (
+    <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+      <div className="modal-dialog">
+        <div className="modal-content">
+          <div className="modal-header">
+            <h5 className="modal-title">Adjust Stock - {material.material_name}</h5>
+            <button type="button" className="btn-close" onClick={onHide}></button>
+          </div>
+          <div className="modal-body">
+            <div className="row g-3">
+              <div className="col-12">
+                <div className="alert alert-info">
+                  <strong>Current Stock:</strong> {material.available_quantity || 0} {material.unit_of_measure}
+                </div>
+              </div>
+              <div className="col-md-6">
+                <label className="form-label">Adjustment Type *</label>
+                <select
+                  className="form-select"
+                  value={formData.adjustment_type}
+                  onChange={(e) => setFormData(prev => ({ ...prev, adjustment_type: e.target.value }))}
+                >
+                  <option value="add">Add Stock</option>
+                  <option value="subtract">Subtract Stock</option>
+                  <option value="set">Set Stock</option>
+                </select>
+              </div>
+              <div className="col-md-6">
+                <label className="form-label">Quantity *</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={formData.quantity}
+                  onChange={(e) => setFormData(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
+                  min="0"
+                  step="0.01"
+                />
+                <small className="text-muted">Unit: {material.unit_of_measure}</small>
+              </div>
+              <div className="col-12">
+                <label className="form-label">Reason *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={formData.reason}
+                  onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g., Purchase, Return, Correction, etc."
+                />
+              </div>
+              <div className="col-12">
+                <label className="form-label">Reference</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={formData.reference}
+                  onChange={(e) => setFormData(prev => ({ ...prev, reference: e.target.value }))}
+                  placeholder="e.g., PO-12345, Invoice-67890, etc."
+                />
+              </div>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-secondary" onClick={onHide}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Adjusting..." : "Adjust Stock"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Material Details Modal Component
 const MaterialDetailsModal = ({ show, onHide, material }) => {
   if (!show || !material) return null;
@@ -1012,14 +1186,12 @@ const NormalizedInventoryPage = () => {
   const [showBOMModal, setShowBOMModal] = useState(false);
   const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
   const [showMaterialDetailsModal, setShowMaterialDetailsModal] = useState(false);
+  const [showStockAdjustmentModal, setShowStockAdjustmentModal] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState(null);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productFilter, setProductFilter] = useState("all"); // "all", "made_to_order", "stocked"
   const [materialFilter, setMaterialFilter] = useState("all"); // "all", "raw", "packaging"
-
-  const wsRef = useRef(null);
-  const pollRef = useRef(null);
 
   // Filter products based on category
   const filteredProducts = useMemo(() => {
@@ -1180,6 +1352,11 @@ const NormalizedInventoryPage = () => {
   const handleViewMaterialDetails = (material) => {
     setSelectedMaterial(material);
     setShowMaterialDetailsModal(true);
+  };
+
+  const handleAdjustStock = (material) => {
+    setSelectedMaterial(material);
+    setShowStockAdjustmentModal(true);
   };
 
   const handleViewProductDetails = (product) => {
@@ -1453,6 +1630,14 @@ const NormalizedInventoryPage = () => {
                                 </button>
                                 <button 
                                   className="btn btn-sm btn-action"
+                                  onClick={() => handleAdjustStock(material)}
+                                  title="Adjust Stock"
+                                  style={{ minWidth: '32px', height: '32px', padding: '6px' }}
+                                >
+                                  <i className="fas fa-warehouse"></i>
+                                </button>
+                                <button 
+                                  className="btn btn-sm btn-action"
                                   onClick={() => handleEditMaterial(material)}
                                   title="Edit Material"
                                   style={{ minWidth: '32px', height: '32px', padding: '6px' }}
@@ -1709,6 +1894,13 @@ const NormalizedInventoryPage = () => {
             show={showMaterialDetailsModal}
             onHide={() => setShowMaterialDetailsModal(false)}
             material={selectedMaterial}
+          />
+
+          <StockAdjustmentModal
+            show={showStockAdjustmentModal}
+            onHide={() => setShowStockAdjustmentModal(false)}
+            material={selectedMaterial}
+            onSuccess={fetchData}
           />
         </div>
       </div>

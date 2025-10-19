@@ -344,7 +344,7 @@ const AdminProductsTable = () => {
                     {product.description}
                   </p>
                   <div className="mb-1">
-                    <p className="fw-bold mb-0">₱{product.price}</p>
+                    <p className="fw-bold mb-0">₱{product.price?.toLocaleString()}</p>
                     {product.is_bom_priced && (
                       <small className="text-success">
                         <i className="fas fa-calculator me-1"></i>BOM-calculated price
@@ -773,7 +773,7 @@ const AdminProductsTable = () => {
                                 <td><strong>Suggested Selling Price:</strong></td>
                                 <td className="text-end">
                                   <strong className="fs-5 text-success">
-                                    ₱{Math.round(priceCalculation.suggested_price)}
+                                    ₱{Math.round(priceCalculation.suggested_price).toLocaleString()}
                                   </strong>
                                 </td>
                               </tr>
@@ -793,7 +793,7 @@ const AdminProductsTable = () => {
                                 </>
                               ) : (
                                 <>
-                                  ✓ Update Product Price to ₱{Math.round(priceCalculation.suggested_price)}
+                                  ✓ Update Product Price to ₱{Math.round(priceCalculation.suggested_price).toLocaleString()}
                                 </>
                               )}
                             </button>

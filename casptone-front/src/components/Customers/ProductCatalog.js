@@ -5,6 +5,7 @@ import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import BuyNowModal from "./BuyNowModal";
+import { formatPrice } from "../../utils/currency";
 import "./product_catalog.css";
 
 const ProductCatalog = ({ products }) => {
@@ -20,9 +21,6 @@ const ProductCatalog = ({ products }) => {
   const [showBuyNowModal, setShowBuyNowModal] = useState(false);
   const [buyNowProduct, setBuyNowProduct] = useState(null);
 
-  // Debug logging
-  console.log("ProductCatalog received products:", products);
-  console.log("Products length:", products?.length || 0);
 
   const handleShowModal = (product) => {
     setSelectedProduct(product);
@@ -37,7 +35,6 @@ const ProductCatalog = ({ products }) => {
 
   // Buy Now handlers
   const handleBuyNow = (product) => {
-    console.log("Buy Now clicked for product:", product);
     setBuyNowProduct(product);
     setShowBuyNowModal(true);
     // Close the view details modal if it's open
@@ -47,7 +44,6 @@ const ProductCatalog = ({ products }) => {
   };
 
   const handleCloseBuyNowModal = () => {
-    console.log("Closing BuyNowModal");
     setShowBuyNowModal(false);
     setBuyNowProduct(null);
   };
@@ -77,7 +73,7 @@ const ProductCatalog = ({ products }) => {
         return;
       }
 
-      const response = await axios.post(
+      await axios.post(
         "http://localhost:8000/api/cart",
         {
           product_id: selectedProduct.id,
@@ -88,7 +84,6 @@ const ProductCatalog = ({ products }) => {
         }
       );
 
-      console.log("Added to cart:", response.data);
       
       // Show toast notification
       setToastMessage(`${selectedProduct.name} added to cart!`);
@@ -129,7 +124,7 @@ const ProductCatalog = ({ products }) => {
         return;
       }
 
-      const response = await axios.post(
+      await axios.post(
         "http://localhost:8000/api/cart",
         {
           product_id: product.id,
@@ -140,7 +135,6 @@ const ProductCatalog = ({ products }) => {
         }
       );
 
-      console.log("Added to cart:", response.data);
       
       // Show toast notification
       setToastMessage(`${product.name} added to cart!`);
@@ -216,13 +210,20 @@ const ProductCatalog = ({ products }) => {
       </div>
       
       <div className="product-info">
-        <h3 className="product-name">{product.name}</h3>
-        <p className="product-price">₱{product.price.toLocaleString()}</p>
+        <h3 className="product-name">{product.product_name || product.name}</h3>
+        <p className="product-price">{formatPrice(product.price)}</p>
         <div className="product-stock">
-          <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
-            <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
-            {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
-          </span>
+          {product.category_name === 'Made to Order' || product.category_name === 'made_to_order' ? (
+            <span className={`stock-status ${product.is_available !== false ? 'in-stock' : 'out-of-stock'}`}>
+              <i className={`fas ${product.is_available !== false ? 'fa-tools' : 'fa-times-circle'}`}></i>
+              {product.is_available !== false ? 'Available for Made to Order' : 'Currently Not Available'}
+            </span>
+          ) : (
+            <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
+              <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
+              {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
+            </span>
+          )}
         </div>
         
         {/* Action Buttons */}
@@ -230,7 +231,7 @@ const ProductCatalog = ({ products }) => {
           <motion.button
             className="add-to-cart-btn"
             onClick={() => handleAddToCartDirect(product)}
-            disabled={loadingProducts.has(product.id) || product.stock === 0}
+            disabled={loadingProducts.has(product.id) || (product.category_name === 'Made to Order' || product.category_name === 'made_to_order') ? (product.is_available === false) : (product.stock === 0)}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -241,7 +242,7 @@ const ProductCatalog = ({ products }) => {
           <motion.button
             className="buy-now-btn"
             onClick={() => handleBuyNow(product)}
-            disabled={product.stock === 0}
+            disabled={(product.category_name === 'Made to Order' || product.category_name === 'made_to_order') ? (product.is_available === false) : (product.stock === 0)}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -322,7 +323,7 @@ const ProductCatalog = ({ products }) => {
                   <h2 className="modal-product-name">{selectedProduct.name}</h2>
                   
                   <div className="modal-product-price">
-                    ₱{selectedProduct.price.toLocaleString()}
+                    {formatPrice(selectedProduct.price)}
                   </div>
                   
                   <div className="modal-product-description">
@@ -334,10 +335,17 @@ const ProductCatalog = ({ products }) => {
                   </div>
                   
                   <div className="modal-product-stock">
-                    <span className={`stock-status ${selectedProduct.stock > 10 ? 'in-stock' : selectedProduct.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
-                      <i className={`fas ${selectedProduct.stock > 10 ? 'fa-check-circle' : selectedProduct.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
-                      {selectedProduct.stock > 10 ? 'In Stock' : selectedProduct.stock > 0 ? `Only ${selectedProduct.stock} left` : 'Out of Stock'}
-                    </span>
+                    {selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order' ? (
+                      <span className={`stock-status ${selectedProduct.is_available !== false ? 'in-stock' : 'out-of-stock'}`}>
+                        <i className={`fas ${selectedProduct.is_available !== false ? 'fa-tools' : 'fa-times-circle'}`}></i>
+                        {selectedProduct.is_available !== false ? 'Available for Made to Order' : 'Currently Not Available'}
+                      </span>
+                    ) : (
+                      <span className={`stock-status ${selectedProduct.stock > 10 ? 'in-stock' : selectedProduct.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
+                        <i className={`fas ${selectedProduct.stock > 10 ? 'fa-check-circle' : selectedProduct.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
+                        {selectedProduct.stock > 10 ? 'In Stock' : selectedProduct.stock > 0 ? `Only ${selectedProduct.stock} left` : 'Out of Stock'}
+                      </span>
+                    )}
                   </div>
 
                   {error && (
@@ -382,7 +390,7 @@ const ProductCatalog = ({ products }) => {
                         </button>
                       </div>
                       <Form.Text className="text-muted">
-                        Total: ₱{(selectedProduct.price * quantity).toLocaleString()}
+                        Total: {formatPrice((selectedProduct.price || 0) * quantity)}
                       </Form.Text>
                     </Form.Group>
                   </Form>
@@ -391,7 +399,9 @@ const ProductCatalog = ({ products }) => {
                     <motion.button 
                       className="modal-add-to-cart-btn"
                       onClick={handleAddToCart}
-                      disabled={loadingProducts.has(selectedProduct.id) || selectedProduct.stock === 0}
+                      disabled={loadingProducts.has(selectedProduct.id) || 
+                        ((selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order') ? 
+                          (selectedProduct.is_available === false) : (selectedProduct.stock === 0))}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >
@@ -402,7 +412,8 @@ const ProductCatalog = ({ products }) => {
                     <motion.button 
                       className="modal-buy-now-btn"
                       onClick={() => handleBuyNow(selectedProduct)}
-                      disabled={selectedProduct.stock === 0}
+                      disabled={(selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order') ? 
+                        (selectedProduct.is_available === false) : (selectedProduct.stock === 0)}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >

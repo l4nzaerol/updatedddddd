@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Spinner } from "react-bootstrap";
-import { useNavigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import axios from "axios";
 import { authUtils } from "../utils/auth";
 import Login from "./Login";
 import RegisterModal from "./RegisterModal";
+import { formatPrice } from "../utils/currency";
 import "./LandingPage.css";
 
 const LandingPage = () => {
-    const navigate = useNavigate();
     const [products, setProducts] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [showRegisterModal, setShowRegisterModal] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [selectedCategory] = useState('all');
     const [isHeaderVisible, setIsHeaderVisible] = useState(true);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [showProductModal, setShowProductModal] = useState(false);
@@ -95,13 +94,18 @@ const LandingPage = () => {
 
     // Enhanced product filtering
     const getFilteredProducts = () => {
-        let filtered = products.filter((product) =>
-            product.name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
+        let filtered = products.filter((product) => {
+            const productName = product.product_name || product.name || '';
+            const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
+            
+            // Show all products regardless of availability status
+            // Availability will be handled in the UI (disabled buttons, etc.)
+            return matchesSearch;
+        });
 
         if (selectedCategory !== 'all') {
             filtered = filtered.filter(product => {
-                const name = product.name.toLowerCase();
+                const name = (product.product_name || product.name || '').toLowerCase();
                 switch (selectedCategory) {
                     case 'chairs':
                         return name.includes('chair') || name.includes('wooden chair');
@@ -180,13 +184,6 @@ const LandingPage = () => {
         window.open('https://www.tiktok.com/@unick_woodenalkansya?_r=1&_d=secCgYIASAHKAESPgo8Qbb1vMQ0yijdYoBZM40bzN0HWfPG%2F7OwN6Y7Ocjt%2BWH%2FmVrLdul6mQdaIxs5e1EF4bx1M2%2FEUXo7kC%2FMGgA%3D&_svg=1&checksum=ea80af720995a6f7e327bfe48e56d6df4620fbe7474f35cc17964b3ed0b7ee11&item_author_type=2&sec_uid=MS4wLjABAAAA0LtQ-Jz6f3xXo3M4-F25oBMVn3hRXU3h-4yB9SZQBUYEqNOnYCCkFle4J6CVXMk9&sec_user_id=MS4wLjABAAAAvUNsW0lNYhQh4GOzrIuKaB5mu2UIA0u4ZxNYDCsBYwdEJU5mdlmG-W6x8Fe31Rbq&share_app_id=1180&share_author_id=7190151741848618010&share_link_id=6C827862-82D2-4684-91A3-450DA05E67CB&share_scene=1&sharer_language=en&social_share_type=5&source=h5_t&timestamp=1760535502&tt_from=copy&u_code=df02gl186593ee&ug_btm=b2878%2Cb5836&user_id=6881305392279323649&utm_campaign=client_share&utm_medium=ios&utm_source=copy', '_blank');
     };
 
-    // Product categories for filtering
-    const categories = [
-        { id: 'all', name: 'All Products', icon: 'fas fa-th' },
-        { id: 'chairs', name: 'Chairs', icon: 'fas fa-chair' },
-        { id: 'tables', name: 'Tables', icon: 'fas fa-table' },
-        { id: 'alkansya', name: 'Alkansya', icon: 'fas fa-piggy-bank' }
-    ];
 
     return (
         <div className="landing-page-container">
@@ -374,7 +371,7 @@ const LandingPage = () => {
                                                 
                                                 <img
                                                     src={`http://localhost:8000/${product.image}`}
-                                                    alt={product.name}
+                                                    alt={product.product_name || product.name}
                                                     className="product-image"
                                                     onError={(e) => {
                                                         e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIEltYWdlPC90ZXh0Pjwvc3ZnPg==';
@@ -410,13 +407,20 @@ const LandingPage = () => {
                                             </div>
                                             
                                             <div className="product-info">
-                                                <h3 className="product-name">{product.name}</h3>
-                                                <p className="product-price">₱{product.price.toLocaleString()}</p>
+                                                <h3 className="product-name">{product.product_name || product.name}</h3>
+                                                <p className="product-price">{formatPrice(product.price)}</p>
                                                 <div className="product-stock">
-                                                    <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
-                                                        <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
-                                                        {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
-                                                    </span>
+                                                    {product.category_name === 'Made to Order' || product.category_name === 'made_to_order' ? (
+                                                        <span className="stock-status in-stock">
+                                                            <i className="fas fa-tools"></i>
+                                                            Available for Order
+                                                        </span>
+                                                    ) : (
+                                                        <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
+                                                            <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
+                                                            {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </motion.div>
