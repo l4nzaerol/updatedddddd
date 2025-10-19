@@ -34,9 +34,20 @@ class OrderController extends Controller
 
         $totalPrice = 0;
         foreach ($cartItems as $item) {
-            if (!$item->product || $item->product->stock < $item->quantity) {
+            if (!$item->product) {
+                return response()->json(['message' => 'Product not found'], 400);
+            }
+            
+            // Only check stock for non-made-to-order products
+            if (($item->product->category_name !== 'Made to Order' && $item->product->category_name !== 'made_to_order') && $item->product->stock < $item->quantity) {
                 return response()->json(['message' => 'Stock unavailable for ' . $item->product->name], 400);
             }
+            
+            // For made-to-order products, check if they're available for order
+            if (($item->product->category_name === 'Made to Order' || $item->product->category_name === 'made_to_order') && !$item->product->is_available_for_order) {
+                return response()->json(['message' => 'Product not available for order: ' . $item->product->name], 400);
+            }
+            
             $totalPrice += $item->product->price * $item->quantity;
         }
 
@@ -99,17 +110,20 @@ class OrderController extends Controller
                     'price' => $item->product->price
                 ]);
 
-                // Only reduce finished product stock for Alkansya (pre-made items)
-                // For custom furniture (tables/chairs), stock will be deducted when production is completed
-                if (str_contains(strtolower($item->product->name), 'alkansya')) {
+                // Handle different product types during checkout
+                $isMadeToOrder = $item->product->category_name === 'Made to Order' || $item->product->category_name === 'made_to_order';
+                
+                if ($isMadeToOrder) {
+                    // For made-to-order products: don't deduct anything during checkout
+                    // Materials will be deducted when order is accepted and production starts
+                    \Log::info("Made-to-order product {$item->product->name}: materials will be deducted when order is accepted");
+                } else {
+                    // For stocked products (like Alkansya): only deduct finished product stock during checkout
+                    // Raw materials will NOT be deducted - only the finished product stock
                     $item->product->decrement('stock', $item->quantity);
+                    
+                    \Log::info("Stocked product {$item->product->name}: deducted finished product stock only, raw materials will not be deducted");
                 }
-
-                // NOTE: Raw materials are NOT deducted during checkout
-                // Materials will only be deducted when:
-                // 1. Order is accepted by admin
-                // 2. Production begins for custom furniture
-                // 3. This ensures materials are only consumed for confirmed orders
             }
 
             // Clear cart
@@ -696,6 +710,185 @@ class OrderController extends Controller
         return response()->json(['message' => 'Order marked as complete', 'order' => $order->load(['user', 'items.product'])]);
     }
 
+    public function cancelOrder(Request $request, $id)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $order = Order::with(['items.product', 'user'])->find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        // Check if user owns this order
+        if ($order->user_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized to cancel this order'], 403);
+        }
+
+        // Check if order can be cancelled
+        if ($order->status === 'cancelled') {
+            return response()->json(['message' => 'Order is already cancelled'], 400);
+        }
+
+        if ($order->status === 'delivered') {
+            return response()->json(['message' => 'Cannot cancel delivered order'], 400);
+        }
+
+        // Check cancellation rules
+        $canCancel = $this->canCancelOrder($order);
+        if (!$canCancel['allowed']) {
+            return response()->json(['message' => $canCancel['reason']], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update order status
+            $order->status = 'cancelled';
+            $order->cancellation_reason = 'Cancelled by customer';
+            $order->cancelled_at = now();
+            $order->save();
+
+            // Restore materials and stock
+            $this->restoreOrderMaterials($order);
+
+            // Create notification for customer
+            \App\Models\Notification::create([
+                'user_id' => $order->user_id,
+                'order_id' => $order->id,
+                'type' => 'cancelled',
+                'title' => '❌ Order Cancelled',
+                'message' => "Your order #{$order->id} has been cancelled. Materials have been restored to inventory.",
+            ]);
+
+            DB::commit();
+
+            \Log::info("Order #{$order->id} cancelled by customer #{$user->id}");
+
+            return response()->json([
+                'message' => 'Order cancelled successfully',
+                'order' => $order->load(['items.product', 'user'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error("Failed to cancel order #{$order->id}: " . $e->getMessage());
+            return response()->json(['message' => 'Failed to cancel order'], 500);
+        }
+    }
+
+    private function canCancelOrder($order)
+    {
+        // For Alkansya (stocked products) - can cancel anytime EXCEPT when ready for delivery
+        $hasAlkansya = $order->items->some(function($item) {
+            return $item->product->category_name === 'Alkansya' || 
+                   $item->product->category_name === 'Stocked Products';
+        });
+
+        if ($hasAlkansya) {
+            // Alkansya cannot be cancelled if ready for delivery
+            if ($order->status === 'ready_for_delivery') {
+                return ['allowed' => false, 'reason' => 'Cannot cancel Alkansya orders that are ready for delivery'];
+            }
+            return ['allowed' => true, 'reason' => ''];
+        }
+
+        // For made-to-order products - only within 3 days and not accepted
+        $hasMadeToOrder = $order->items->some(function($item) {
+            return $item->product->category_name === 'Made to Order' || 
+                   $item->product->category_name === 'made_to_order';
+        });
+
+        if ($hasMadeToOrder) {
+            // Check if order is accepted
+            if ($order->acceptance_status === 'accepted') {
+                return ['allowed' => false, 'reason' => 'Cannot cancel accepted made-to-order products'];
+            }
+
+            // Check if within 3 days
+            $orderDate = \Carbon\Carbon::parse($order->checkout_date);
+            $now = \Carbon\Carbon::now();
+            $daysDiff = $now->diffInDays($orderDate);
+
+            if ($daysDiff > 3) {
+                return ['allowed' => false, 'reason' => 'Made-to-order products can only be cancelled within 3 days of order placement'];
+            }
+
+            return ['allowed' => true, 'reason' => ''];
+        }
+
+        return ['allowed' => false, 'reason' => 'Order cannot be cancelled'];
+    }
+
+    private function restoreOrderMaterials($order)
+    {
+        foreach ($order->items as $item) {
+            $product = $item->product;
+            
+            // Restore product stock for stocked products
+            if ($product->category_name !== 'Made to Order' && $product->category_name !== 'made_to_order') {
+                $product->increment('stock', $item->quantity);
+                \Log::info("Restored {$item->quantity} {$product->name} to stock");
+            }
+
+            // Restore materials using the normalized inventory system
+            $this->restoreMaterialsFromInventory($product, $item->quantity, $order->id);
+        }
+    }
+
+    private function restoreMaterialsFromInventory($product, $quantity, $orderId)
+    {
+        try {
+            $bomItems = \App\Models\BOM::where('product_id', $product->id)
+                ->with(['material.inventory'])
+                ->get();
+
+            if ($bomItems->isEmpty()) {
+                \Log::info("No BOM found for product {$product->name}, skipping material restoration");
+                return;
+            }
+
+            foreach ($bomItems as $bomItem) {
+                $material = $bomItem->material;
+                $requiredQuantity = $bomItem->quantity_per_product * $quantity;
+
+                \Log::info("Restoring {$requiredQuantity} {$material->material_name} for {$quantity} {$product->name}");
+
+                // Add materials back to inventory
+                foreach ($material->inventory as $inventoryRecord) {
+                    $inventoryRecord->increment('current_stock', $requiredQuantity);
+                }
+
+                // Sync materials table
+                $material->load('inventory');
+                $material->syncCurrentStock();
+
+                // Create inventory transaction for restoration
+                \App\Models\InventoryTransaction::create([
+                    'material_id' => $material->material_id,
+                    'order_id' => $orderId,
+                    'transaction_type' => 'RESTORATION',
+                    'quantity' => $requiredQuantity,
+                    'unit_cost' => $material->unit_cost,
+                    'total_cost' => $material->unit_cost * $requiredQuantity,
+                    'status' => 'completed',
+                    'timestamp' => now(),
+                    'remarks' => "Order #{$orderId} cancelled - materials restored",
+                    'metadata' => [
+                        'restoration_type' => 'order_cancellation',
+                        'product_name' => $product->name,
+                        'product_quantity' => $quantity
+                    ]
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("Failed to restore materials for product {$product->name}: " . $e->getMessage());
+        }
+    }
+
     public function updateStatus(Request $request, $id)
     {
         $user = Auth::user();
@@ -1044,6 +1237,103 @@ class OrderController extends Controller
                 'isCompleted' => false,
                 'message' => 'Unable to check production status: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Deduct materials from inventory using normalized inventory system
+     */
+    private function deductMaterialsFromInventory($product, $quantity, $orderId = null)
+    {
+        // Get BOM (Bill of Materials) for the product using new normalized inventory system
+        $bomItems = \App\Models\BOM::where('product_id', $product->id)
+            ->with(['material.inventory'])
+            ->get();
+
+        if ($bomItems->isEmpty()) {
+            \Log::warning("No BOM found for {$product->name}");
+            return;
+        }
+
+        \Log::info("Deducting materials for {$product->name} (Qty: {$quantity}) during checkout");
+
+        foreach ($bomItems as $bomItem) {
+            $material = $bomItem->material;
+            if (!$material) {
+                \Log::warning("Material not found for BOM item");
+                continue;
+            }
+
+            $requiredQty = $bomItem->quantity_per_product * $quantity;
+            
+            // Get total available stock across all inventory locations
+            $totalAvailableStock = $material->inventory->sum('current_stock');
+            
+            // Check if sufficient stock
+            if ($totalAvailableStock < $requiredQty) {
+                \Log::warning("Insufficient stock for {$material->material_name}. Required: {$requiredQty}, Available: {$totalAvailableStock}");
+                throw new \Exception("Insufficient stock for {$material->material_name}. Required: {$requiredQty}, Available: {$totalAvailableStock}");
+            }
+
+            // Deduct from inventory (distribute across locations)
+            $remainingToDeduct = $requiredQty;
+            foreach ($material->inventory as $inventoryRecord) {
+                if ($remainingToDeduct <= 0) break;
+                
+                $deductFromThisLocation = min($remainingToDeduct, $inventoryRecord->current_stock);
+                if ($deductFromThisLocation > 0) {
+                    $inventoryRecord->decrement('current_stock', $deductFromThisLocation);
+                    $remainingToDeduct -= $deductFromThisLocation;
+                    
+                    \Log::info("Deducted {$deductFromThisLocation} from location {$inventoryRecord->location_id} for {$material->material_name}");
+                }
+            }
+            
+            // Refresh the material relationship to get updated inventory levels
+            $material->load('inventory');
+            
+            // Sync the material's current_stock field
+            $material->syncCurrentStock();
+
+            // Create inventory transaction
+            \App\Models\InventoryTransaction::create([
+                'material_id' => $material->material_id,
+                'product_id' => $product->id,
+                'order_id' => $orderId,
+                'user_id' => auth()->id(),
+                'transaction_type' => 'ORDER_FULFILLMENT',
+                'quantity' => -$requiredQty, // Negative for consumption
+                'unit_cost' => $material->standard_cost,
+                'total_cost' => $material->standard_cost * $requiredQty,
+                'reference' => 'ORDER_FULFILLMENT',
+                'timestamp' => now(),
+                'remarks' => "Material consumption for order fulfillment - {$product->name} (Qty: {$quantity})",
+                'status' => 'completed',
+                'priority' => 'normal',
+                'metadata' => [
+                    'product_name' => $product->name,
+                    'product_id' => $product->id,
+                    'order_quantity' => $quantity,
+                    'material_consumed' => $requiredQty,
+                    'material_name' => $material->material_name,
+                    'material_code' => $material->material_code,
+                    'unit_cost' => $material->standard_cost,
+                    'total_cost' => $material->standard_cost * $requiredQty,
+                ],
+                'source_data' => [
+                    'order_id' => $orderId,
+                    'product_id' => $product->id,
+                    'material_id' => $material->material_id,
+                    'bom_ratio' => $bomItem->quantity_per_product,
+                ],
+                'cost_breakdown' => [
+                    'material_cost' => $material->standard_cost * $requiredQty,
+                    'unit_cost' => $material->standard_cost,
+                    'quantity_used' => $requiredQty,
+                ]
+            ]);
+
+            \Log::info("Deducted {$requiredQty} {$material->unit_of_measure} of {$material->material_name} (Remaining: {$material->fresh()->inventory->sum('current_stock')})");
         }
     }
 

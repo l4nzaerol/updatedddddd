@@ -138,7 +138,7 @@ class SetupNormalizedInventory extends Command
                 $table->id('inventory_id');
                 $table->unsignedBigInteger('material_id');
                 $table->unsignedBigInteger('location_id')->nullable();
-                $table->decimal('quantity_on_hand', 10, 2)->default(0);
+                $table->decimal('current_stock', 10, 2)->default(0);
                 $table->decimal('quantity_reserved', 10, 2)->default(0);
                 $table->timestamp('last_updated')->useCurrent();
                 $table->timestamps();
@@ -249,17 +249,36 @@ class SetupNormalizedInventory extends Command
             );
         }
 
-        // Create inventory records
+        // Create inventory records and transactions
         $materials = Material::all();
         foreach ($materials as $material) {
-            Inventory::firstOrCreate(
+            $inventory = Inventory::firstOrCreate(
                 ['material_id' => $material->material_id],
                 [
                     'material_id' => $material->material_id,
                     'location_id' => 1,
-                    'quantity_on_hand' => $material->current_stock,
+                    'current_stock' => $material->current_stock,
                     'quantity_reserved' => 0,
                     'last_updated' => now()
+                ]
+            );
+
+            // Create initial stock transaction
+            InventoryTransaction::firstOrCreate(
+                [
+                    'material_id' => $material->material_id,
+                    'transaction_type' => 'PURCHASE',
+                    'reference' => 'Initial Stock'
+                ],
+                [
+                    'material_id' => $material->material_id,
+                    'transaction_type' => 'PURCHASE',
+                    'quantity' => $material->current_stock,
+                    'reference' => 'Initial Stock',
+                    'remarks' => 'Initial material stock from seeder',
+                    'timestamp' => now(),
+                    'unit_cost' => $material->standard_cost,
+                    'total_cost' => $material->standard_cost * $material->current_stock
                 ]
             );
         }

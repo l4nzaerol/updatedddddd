@@ -365,7 +365,7 @@ const AdminProductsTable = () => {
                       </>
                     ) : (
                       <p className="text-secondary small mb-0">
-                        Product Stock: {product.stock}
+                        {product.stock > 0 ? `${product.stock} in stock` : 'Out of Stock'}
                       </p>
                     )}
                   </div>

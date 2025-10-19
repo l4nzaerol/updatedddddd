@@ -65,7 +65,7 @@ return new class extends Migration
             $table->timestamps();
             
             // Foreign key constraints
-            $table->foreign('material_id')->references('material_id')->on('raw_materials')->onDelete('cascade');
+            $table->foreign('material_id')->references('material_id')->on('materials')->onDelete('cascade');
             $table->foreign('product_id')->references('id')->on('products')->onDelete('cascade');
             $table->foreign('order_id')->references('id')->on('orders')->onDelete('cascade');
             $table->foreign('production_id')->references('id')->on('productions')->onDelete('cascade');

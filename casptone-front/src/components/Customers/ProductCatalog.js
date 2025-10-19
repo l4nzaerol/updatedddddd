@@ -221,7 +221,7 @@ const ProductCatalog = ({ products }) => {
           ) : (
             <span className={`stock-status ${product.stock > 10 ? 'in-stock' : product.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
               <i className={`fas ${product.stock > 10 ? 'fa-check-circle' : product.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
-              {product.stock > 10 ? 'In Stock' : product.stock > 0 ? `Only ${product.stock} left` : 'Out of Stock'}
+              {product.stock > 0 ? `${product.stock} in stock` : 'Out of Stock'}
             </span>
           )}
         </div>

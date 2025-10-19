@@ -85,4 +85,25 @@ class Material extends Model
     {
         return $this->total_quantity_on_hand - $this->total_quantity_reserved;
     }
+
+    /**
+     * Sync the current_stock field with the sum of inventory records
+     */
+    public function syncCurrentStock()
+    {
+        $totalStock = $this->inventory()->sum('current_stock');
+        $this->update(['current_stock' => $totalStock]);
+        return $totalStock;
+    }
+
+    /**
+     * Sync current stock for all materials
+     */
+    public static function syncAllCurrentStock()
+    {
+        $materials = self::with('inventory')->get();
+        foreach ($materials as $material) {
+            $material->syncCurrentStock();
+        }
+    }
 }

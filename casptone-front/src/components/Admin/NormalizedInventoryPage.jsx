@@ -1178,6 +1178,7 @@ const NormalizedInventoryPage = () => {
   const [products, setProducts] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [dailyOutputs, setDailyOutputs] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1255,17 +1256,19 @@ const NormalizedInventoryPage = () => {
     setLoading(true);
     setError("");
     try {
-      const [materialsRes, productsRes, summaryRes, transactionsRes] = await Promise.allSettled([
+      const [materialsRes, productsRes, summaryRes, transactionsRes, dailyOutputsRes] = await Promise.allSettled([
         apiCall("/normalized-inventory/materials"),
         apiCall("/normalized-inventory/products"),
         apiCall("/normalized-inventory/summary"),
-        apiCall("/normalized-inventory/transactions")
+        apiCall("/normalized-inventory/transactions"),
+        apiCall("/normalized-inventory/daily-output")
       ]);
 
       if (materialsRes.status === "fulfilled") setMaterials(materialsRes.value || []);
       if (productsRes.status === "fulfilled") setProducts(productsRes.value || []);
       if (summaryRes.status === "fulfilled") setSummary(summaryRes.value || {});
       if (transactionsRes.status === "fulfilled") setTransactions(transactionsRes.value?.data || []);
+      if (dailyOutputsRes.status === "fulfilled") setDailyOutputs(dailyOutputsRes.value?.data || []);
     } catch (err) {
       console.error(err);
       setError("Failed to fetch data. Check API settings.");
@@ -1504,6 +1507,21 @@ const NormalizedInventoryPage = () => {
                 <i className="fas fa-history me-2"></i>
                 Transactions
               </button>
+              <button 
+                className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
+                  activeTab === 'daily-output' 
+                    ? 'text-primary border-bottom border-primary border-2 bg-light' 
+                    : 'text-muted'
+                }`}
+                onClick={() => setActiveTab('daily-output')}
+                style={{
+                  fontWeight: activeTab === 'daily-output' ? '600' : '400'
+                }}
+              >
+                <i className="fas fa-chart-line me-2"></i>
+                Daily Output
+                <span className="badge bg-info ms-2">{dailyOutputs.length}</span>
+              </button>
             </div>
           </div>
 
@@ -1711,6 +1729,7 @@ const NormalizedInventoryPage = () => {
                         <th className="py-3 px-3 fw-semibold">Name</th>
                         <th className="py-3 px-3 fw-semibold text-end">Standard Cost</th>
                         <th className="py-3 px-3 fw-semibold text-end">Selling Price</th>
+                        <th className="py-3 px-3 fw-semibold text-end">Stock</th>
                         <th className="py-3 px-3 fw-semibold text-end">Materials Count</th>
                         <th className="py-3 px-3 fw-semibold text-end">BOM Cost</th>
                         <th className="py-3 px-3 fw-semibold">Actions</th>
@@ -1719,7 +1738,7 @@ const NormalizedInventoryPage = () => {
                     <tbody>
                       {filteredProducts.length === 0 ? (
                         <tr>
-                          <td colSpan="7" className="text-center py-5">
+                          <td colSpan="8" className="text-center py-5">
                             <div className="text-muted">
                               <i className="fas fa-search fa-2x mb-3 d-block"></i>
                               <h6>No products found</h6>
@@ -1744,6 +1763,22 @@ const NormalizedInventoryPage = () => {
                             </td>
                             <td className="py-3 px-3 text-end">
                               <div className="fw-bold text-success">₱{product.price.toLocaleString()}</div>
+                            </td>
+                            <td className="py-3 px-3 text-end">
+                              <div className="d-flex flex-column align-items-end">
+                                <div className="fw-bold text-dark">{product.current_stock || 0}</div>
+                                <small className={`badge badge-sm ${
+                                  product.stock_status?.status === 'out_of_stock' ? 'bg-danger' :
+                                  product.stock_status?.status === 'low_stock' ? 'bg-warning' :
+                                  product.stock_status?.status === 'in_stock' ? 'bg-success' :
+                                  product.stock_status?.status === 'no_production' ? 'bg-secondary' :
+                                  product.stock_status?.status === 'in_production' ? 'bg-warning' :
+                                  product.stock_status?.status === 'ready_for_delivery' ? 'bg-info' :
+                                  'bg-secondary'
+                                }`}>
+                                  {product.stock_status?.label || 'Unknown'}
+                                </small>
+                              </div>
                             </td>
                             <td className="py-3 px-3 text-end">
                               <div className="fw-semibold">{product.materials_count}</div>
@@ -1858,6 +1893,104 @@ const NormalizedInventoryPage = () => {
                             </td>
                             <td className="py-3 px-3">
                               <small className="text-muted">{transaction.remarks}</small>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Daily Output Tab */}
+          {activeTab === 'daily-output' && (
+            <div className="mb-4">
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                  <h5 className="mb-1 text-dark fw-semibold">
+                    <i className="fas fa-chart-line me-2 text-info"></i>
+                    Daily Alkansya Output
+                  </h5>
+                  <small className="text-muted">
+                    Production output records and statistics
+                  </small>
+                </div>
+                <button 
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setShowAlkansyaModal(true)}
+                >
+                  <i className="fas fa-plus me-2"></i>
+                  Record Daily Output
+                </button>
+              </div>
+              
+              <div className="card border-0 shadow-sm">
+                <div className="card-body p-0">
+                  <table className="table table-hover mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th className="py-3 px-3 fw-semibold">Date</th>
+                        <th className="py-3 px-3 fw-semibold text-end">Quantity Produced</th>
+                        <th className="py-3 px-3 fw-semibold">Produced By</th>
+                        <th className="py-3 px-3 fw-semibold">Materials Used</th>
+                        <th className="py-3 px-3 fw-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailyOutputs.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="text-center py-5">
+                            <div className="text-muted">
+                              <i className="fas fa-chart-line fa-2x mb-3 d-block"></i>
+                              <h6>No daily output records found</h6>
+                              <small>Start recording daily production to see data here</small>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        dailyOutputs.map((output) => (
+                          <tr key={output.id}>
+                            <td className="py-3 px-3">
+                              <div className="fw-semibold text-dark">
+                                {new Date(output.date).toLocaleDateString()}
+                              </div>
+                              <small className="text-muted">
+                                {new Date(output.date).toLocaleTimeString()}
+                              </small>
+                            </td>
+                            <td className="py-3 px-3 text-end">
+                              <div className="fw-bold text-success">
+                                {output.quantity_produced} units
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="fw-semibold text-dark">
+                                {output.produced_by || 'System'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="small text-muted">
+                                {output.materials_used && Array.isArray(output.materials_used) 
+                                  ? `${output.materials_used.length} materials consumed`
+                                  : 'Materials data not available'
+                                }
+                              </div>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="d-flex gap-1">
+                                <button 
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() => {
+                                    // View details functionality
+                                    console.log('View output details:', output);
+                                  }}
+                                  title="View Details"
+                                >
+                                  <i className="fas fa-eye"></i>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))

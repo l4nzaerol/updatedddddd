@@ -430,10 +430,13 @@ class ProductionController extends Controller
             }
             
             if ($newStatus === 'completed') {
-                $updateData['completed_at'] = $data['actual_completion_date'] ?? now();
+                // Ensure started_at is set if not already set
                 if (!$process->started_at) {
                     $updateData['started_at'] = now();
                 }
+                
+                // Set completion time
+                $updateData['completed_at'] = $data['actual_completion_date'] ?? now();
                 
                 // Add delay tracking data if provided
                 if (isset($data['delay_reason'])) {
@@ -450,6 +453,15 @@ class ProductionController extends Controller
                 if ($request->user()) {
                     $updateData['completed_by_name'] = $request->user()->name;
                 }
+                
+                // Log the completion for debugging
+                \Log::info("Process {$process->id} ({$process->process_name}) completed successfully", [
+                    'production_id' => $productionId,
+                    'process_id' => $processId,
+                    'started_at' => $updateData['started_at'],
+                    'completed_at' => $updateData['completed_at'],
+                    'completed_by' => $updateData['completed_by_name'] ?? 'Unknown'
+                ]);
             }
 
             $process->update($updateData);
@@ -518,6 +530,8 @@ class ProductionController extends Controller
             // If there's a process in progress, that's the current stage
             $production->current_stage = $currentProcess->process_name;
             $production->status = 'In Progress';
+            
+            \Log::info("Production {$production->id} stage updated to: {$currentProcess->process_name}");
         } else {
             // Check if all completed
             $completedCount = $processes->where('status', 'completed')->count();
@@ -528,6 +542,8 @@ class ProductionController extends Controller
                 $production->status = 'Completed';
                 $production->overall_progress = 100;
                 $production->actual_completion_date = now();
+                
+                \Log::info("Production {$production->id} completed - all processes finished");
                 
                 // DO NOT auto-update order status to ready_for_delivery
                 // Admin must manually mark as ready for delivery from the "Ready (Furniture)" tab
@@ -1817,6 +1833,12 @@ class ProductionController extends Controller
             if (!$product) {
                 \Log::warning("Product not found for production completion: {$production->product_id}");
                 return;
+            }
+
+            // For made-to-order products, add completed items to stock
+            if ($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') {
+                $product->increment('stock', $production->quantity);
+                \Log::info("Added {$production->quantity} {$product->name} to stock after production completion");
             }
 
             // Create production completion transaction

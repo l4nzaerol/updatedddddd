@@ -1022,7 +1022,7 @@ const ProductPage = () => {
                                 <div className="text-end">
                                   <div className="product-margin">{margin}% margin</div>
                                   <div className="small text-muted">
-                                    {product.category_name === "Made to Order" ? "On Demand" : `${product.stock || 0} in stock`}
+                                    {product.category_name === "Made to Order" ? "On Demand" : (product.stock > 0 ? `${product.stock} in stock` : 'Out of Stock')}
                                   </div>
                                 </div>
                               </div>

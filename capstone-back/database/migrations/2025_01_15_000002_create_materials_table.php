@@ -14,9 +14,9 @@ return new class extends Migration
             $table->string('material_code')->unique();
             $table->text('description')->nullable();
             $table->string('unit_of_measure');
-            $table->decimal('reorder_level', 10, 2)->default(0);
-            $table->decimal('standard_cost', 10, 2)->default(0);
-            $table->decimal('current_stock', 10, 2)->default(0);
+            $table->decimal('reorder_level', 10, 6)->default(0);
+            $table->decimal('standard_cost', 10, 6)->default(0);
+            $table->decimal('current_stock', 10, 6)->default(0);
             $table->timestamps();
             
             $table->index(['material_code']);

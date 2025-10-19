@@ -548,33 +548,23 @@ export default function ProductionTrackingSystem() {
       
       console.log('Process update response:', res.data);
       
+      // Show success toast notification immediately
+      if (newStatus === 'completed') {
+        toast.success(`✅ "${processName}" completed successfully!`, {
+          duration: 3000,
+          position: 'top-right'
+        });
+      } else {
+        toast.info(`🔄 "${processName}" marked as pending`, {
+          duration: 3000,
+          position: 'top-right'
+        });
+      }
+      
       // Refresh productions to get updated data
       await fetchProductions();
       await fetchAnalytics();
-      
-      // Show success toast notification
       setError('');
-      if (newStatus === 'completed') {
-        toast.success("✅ Process Completed!", {
-          description: `${processName} has been marked as completed.${delayInfo ? ' Delay reason recorded.' : ''}`,
-          duration: 4000,
-          style: {
-            background: '#f0fdf4',
-            border: '1px solid #86efac',
-            color: '#166534'
-          }
-        });
-      } else {
-        toast.info("↩️ Process Reverted", {
-          description: `${processName} has been marked as pending.`,
-          duration: 4000,
-          style: {
-            background: '#eff6ff',
-            border: '1px solid #93c5fd',
-            color: '#1e40af'
-          }
-        });
-      }
       
     } catch (err) {
       console.error("Update process error:", err);
@@ -1067,11 +1057,44 @@ export default function ProductionTrackingSystem() {
                     <div className="card-body p-0">
                       {Array.isArray(prod.processes) && prod.processes.length > 0 && (
                         <div className="list-group list-group-flush">
-                          {prod.processes.map((pr, index) => {
+                          {prod.processes
+                            .sort((a, b) => {
+                              // Sort by status: in_progress first, then pending, then completed
+                              const statusOrder = { 'in_progress': 0, 'pending': 1, 'completed': 2 };
+                              const aOrder = statusOrder[a.status] ?? 3;
+                              const bOrder = statusOrder[b.status] ?? 3;
+                              
+                              if (aOrder !== bOrder) {
+                                return aOrder - bOrder;
+                              }
+                              
+                              // If same status, sort by process_order
+                              return (a.process_order || 0) - (b.process_order || 0);
+                            })
+                            .map((pr, index) => {
                             const estimatedDays = Math.floor(pr.estimated_duration_minutes / (60 * 24));
                             const estimatedHours = Math.floor((pr.estimated_duration_minutes % (60 * 24)) / 60);
                             const isCompleted = pr.status === 'completed';
                             const isInProgress = pr.status === 'in_progress';
+                            
+                            // Calculate actual duration for completed processes
+                            let actualDuration = null;
+                            if (isCompleted && pr.started_at && pr.completed_at) {
+                              const startTime = new Date(pr.started_at);
+                              const endTime = new Date(pr.completed_at);
+                              const durationMs = endTime.getTime() - startTime.getTime();
+                              const durationMinutes = Math.floor(durationMs / (1000 * 60));
+                              const actualDays = Math.floor(durationMinutes / (60 * 24));
+                              const actualHours = Math.floor((durationMinutes % (60 * 24)) / 60);
+                              const actualMins = durationMinutes % 60;
+                              
+                              actualDuration = {
+                                days: actualDays,
+                                hours: actualHours,
+                                minutes: actualMins,
+                                totalMinutes: durationMinutes
+                              };
+                            }
                             
                             const dates = estimatedDates[index] || {};
                             const startDate = dates.start ? new Date(dates.start) : null;
@@ -1116,9 +1139,20 @@ export default function ProductionTrackingSystem() {
                                           <div className="mb-1">
                                             <i className="fas fa-clock me-1"></i>
                                             <strong>Duration:</strong> 
-                                            {estimatedDays > 0 && ` ${estimatedDays}d`}
-                                            {estimatedHours > 0 && ` ${estimatedHours}h`}
-                                            {estimatedDays === 0 && estimatedHours === 0 && ` ${pr.estimated_duration_minutes}m`}
+                                            {actualDuration ? (
+                                              <span className="text-success">
+                                                {actualDuration.days > 0 && ` ${actualDuration.days}d`}
+                                                {actualDuration.hours > 0 && ` ${actualDuration.hours}h`}
+                                                {actualDuration.minutes > 0 && ` ${actualDuration.minutes}m`}
+                                                {actualDuration.days === 0 && actualDuration.hours === 0 && actualDuration.minutes === 0 && ' < 1m'}
+                                              </span>
+                                            ) : (
+                                              <>
+                                                {estimatedDays > 0 && ` ${estimatedDays}d`}
+                                                {estimatedHours > 0 && ` ${estimatedHours}h`}
+                                                {estimatedDays === 0 && estimatedHours === 0 && ` ${pr.estimated_duration_minutes}m`}
+                                              </>
+                                            )}
                                           </div>
                                           
                                           {startDate && (
@@ -1132,6 +1166,14 @@ export default function ProductionTrackingSystem() {
                                             <div className={isCompleted ? 'text-success' : ''}>
                                               <i className={`fas ${isCompleted ? 'fa-check-circle' : 'fa-calendar-check'} me-1`}></i>
                                               <strong>{isCompleted ? 'Completed:' : 'Est. Complete:'}</strong> {endDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                              {actualDuration && (
+                                                <span className="ms-2 text-success fw-bold">
+                                                  (Actual: {actualDuration.days > 0 && `${actualDuration.days}d `}
+                                                  {actualDuration.hours > 0 && `${actualDuration.hours}h `}
+                                                  {actualDuration.minutes > 0 && `${actualDuration.minutes}m`}
+                                                  {actualDuration.days === 0 && actualDuration.hours === 0 && actualDuration.minutes === 0 && '< 1m'})
+                                                </span>
+                                              )}
                                             </div>
                                           )}
                                           

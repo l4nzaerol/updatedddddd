@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import AppLayout from "../Header";
 import { useParams } from "react-router-dom";
-import { FaCheckCircle, FaClock, FaHammer, FaTools, FaPaintBrush, FaBox, FaTruck } from "react-icons/fa";
+import { FaCheckCircle, FaClock, FaHammer, FaTools, FaPaintBrush, FaBox, FaTruck, FaTimes } from "react-icons/fa";
+import { toast } from "sonner";
 
 const SimpleOrderTracking = ({ orderId: propOrderId }) => {
   const { orderId: paramOrderId } = useParams();
@@ -51,6 +52,83 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const cancelOrder = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("User not authenticated.");
+
+      const confirmed = window.confirm(
+        "Are you sure you want to cancel this order?\n\n" +
+        "This action cannot be undone and any materials already deducted will be restored to inventory."
+      );
+
+      if (!confirmed) return;
+
+      const response = await axios.patch(`http://localhost:8000/api/orders/${orderId}/cancel`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      toast.success("Order cancelled successfully!", {
+        description: "Your order has been cancelled and materials have been restored.",
+        duration: 4000,
+      });
+
+      // Refresh tracking data to show updated status
+      await fetchTrackingData();
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || "Failed to cancel order. Please try again.";
+      toast.error("Cancellation failed", {
+        description: errorMessage,
+        duration: 4000,
+      });
+    }
+  };
+
+  const canCancelOrder = (order) => {
+    if (!order) return false;
+    
+    // Check if order is already cancelled or completed
+    if (order.status === 'cancelled' || order.status === 'delivered' || order.status === 'completed') {
+      return false;
+    }
+
+    // For Alkansya (stocked products) - can cancel anytime EXCEPT when ready for delivery
+    const hasAlkansya = order.items?.some(item => 
+      item.product?.category_name === 'Alkansya' || 
+      item.product?.category_name === 'Stocked Products'
+    );
+
+    if (hasAlkansya) {
+      // Alkansya cannot be cancelled if ready for delivery
+      if (order.status === 'ready_for_delivery') {
+        return false;
+      }
+      return true;
+    }
+
+    // For made-to-order products - only within 3 days and not accepted
+    const hasMadeToOrder = order.items?.some(item => 
+      item.product?.category_name === 'Made to Order' || 
+      item.product?.category_name === 'made_to_order'
+    );
+
+    if (hasMadeToOrder) {
+      // Check if order is not accepted
+      if (order.acceptance_status === 'accepted') {
+        return false;
+      }
+
+      // Check if within 3 days
+      const orderDate = new Date(order.checkout_date);
+      const now = new Date();
+      const daysDiff = (now - orderDate) / (1000 * 60 * 60 * 24);
+
+      return daysDiff <= 3;
+    }
+
+    return false;
   };
 
   const getStageIcon = (stage) => {
@@ -670,7 +748,19 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
           <div className="col-12">
             <div className="card border-0 shadow-sm">
               <div className="card-body">
-                <h5 className="text-primary mb-3">Order Information</h5>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="text-primary mb-0">Order Information</h5>
+                  {canCancelOrder(order) && (
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={cancelOrder}
+                      title="Cancel this order"
+                    >
+                      <FaTimes className="me-1" />
+                      Cancel Order
+                    </button>
+                  )}
+                </div>
                 <div className="row">
                   <div className="col-md-6">
                     <p><strong>Order Date:</strong> {new Date(order.created_at).toLocaleDateString()}</p>

@@ -141,7 +141,16 @@ class OrderAcceptanceController extends Controller
                 \Log::info("Creating production for product: {$product->name}, isAlkansya: " . ($isAlkansya ? 'yes' : 'no'));
 
                 // Deduct materials from inventory when order is accepted
-                $this->deductMaterialsFromInventory($product, $item->quantity, $order->id);
+                // For made-to-order products: deduct raw materials when order is accepted (production starts)
+                // For stocked products (like Alkansya): finished product stock was deducted during checkout, no raw materials deducted
+                $isMadeToOrder = $product->category_name === 'Made to Order' || $product->category_name === 'made_to_order';
+                
+                if ($isMadeToOrder) {
+                    \Log::info("Deducting materials for made-to-order product: {$product->name}");
+                    $this->deductMaterialsFromInventory($product, $item->quantity, $order->id);
+                } else {
+                    \Log::info("Skipping raw material deduction for stocked product: {$product->name} (finished product stock was deducted during checkout, no raw materials needed)");
+                }
 
                 // Determine product type and tracking requirements
                 $productType = $isAlkansya ? 'alkansya' : 
@@ -379,52 +388,66 @@ class OrderAcceptanceController extends Controller
      */
     private function deductMaterialsFromInventory($product, $quantity, $orderId = null)
     {
-        // Get BOM (Bill of Materials) for the product
-        $materials = \App\Models\ProductMaterial::where('product_id', $product->id)
-            ->with('inventoryItem')
+        // Get BOM (Bill of Materials) for the product using new normalized inventory system
+        $bomItems = \App\Models\BOM::where('product_id', $product->id)
+            ->with(['material.inventory'])
             ->get();
 
-        if ($materials->isEmpty()) {
+        if ($bomItems->isEmpty()) {
             \Log::warning("No BOM found for {$product->name}");
             return;
         }
 
-        \Log::info("Deducting materials for {$product->name} (Qty: {$quantity})");
+        \Log::info("Deducting materials for {$product->name} (Qty: {$quantity}) using normalized inventory system");
 
-        foreach ($materials as $material) {
-            if (!$material->inventoryItem) {
+        foreach ($bomItems as $bomItem) {
+            $material = $bomItem->material;
+            if (!$material) {
+                \Log::warning("Material not found for BOM item");
                 continue;
             }
 
-            $requiredQty = $material->qty_per_unit * $quantity;
-            $inventoryItem = $material->inventoryItem;
+            $requiredQty = $bomItem->quantity_per_product * $quantity;
+            
+            // Get total available stock across all inventory locations
+            $totalAvailableStock = $material->inventory->sum('current_stock');
             
             // Check if sufficient stock
-            if ($inventoryItem->quantity_on_hand < $requiredQty) {
-                \Log::warning("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQty}, Available: {$inventoryItem->quantity_on_hand}");
-                throw new \Exception("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQty}, Available: {$inventoryItem->quantity_on_hand}");
+            if ($totalAvailableStock < $requiredQty) {
+                \Log::warning("Insufficient stock for {$material->material_name}. Required: {$requiredQty}, Available: {$totalAvailableStock}");
+                throw new \Exception("Insufficient stock for {$material->material_name}. Required: {$requiredQty}, Available: {$totalAvailableStock}");
             }
 
-            // Deduct from inventory
-            $inventoryItem->decrement('quantity_on_hand', $requiredQty);
+            // Deduct from inventory (distribute across locations)
+            $remainingToDeduct = $requiredQty;
+            foreach ($material->inventory as $inventoryRecord) {
+                if ($remainingToDeduct <= 0) break;
+                
+                $deductFromThisLocation = min($remainingToDeduct, $inventoryRecord->current_stock);
+                if ($deductFromThisLocation > 0) {
+                    $inventoryRecord->decrement('current_stock', $deductFromThisLocation);
+                    $remainingToDeduct -= $deductFromThisLocation;
+                    
+                    \Log::info("Deducted {$deductFromThisLocation} from location {$inventoryRecord->location_id} for {$material->material_name}");
+                }
+            }
+            
+            // Refresh the material relationship to get updated inventory levels
+            $material->load('inventory');
+            
+            // Sync the material's current_stock field
+            $material->syncCurrentStock();
 
-            // Create inventory usage record
-            \App\Models\InventoryUsage::create([
-                'inventory_item_id' => $inventoryItem->id,
-                'date' => now()->format('Y-m-d'),
-                'qty_used' => $requiredQty,
-            ]);
-
-            // Create comprehensive inventory transaction
+            // Create inventory transaction
             \App\Models\InventoryTransaction::create([
-                'material_id' => $inventoryItem->id, // Using inventory item as material reference
+                'material_id' => $material->material_id,
                 'product_id' => $product->id,
                 'order_id' => $orderId,
                 'user_id' => auth()->id(),
                 'transaction_type' => 'ORDER_ACCEPTANCE',
                 'quantity' => -$requiredQty, // Negative for consumption
-                'unit_cost' => $inventoryItem->unit_cost,
-                'total_cost' => $inventoryItem->unit_cost * $requiredQty,
+                'unit_cost' => $material->standard_cost,
+                'total_cost' => $material->standard_cost * $requiredQty,
                 'reference' => 'ORDER_ACCEPTANCE',
                 'timestamp' => now(),
                 'remarks' => "Material consumption for order acceptance - {$product->name} (Qty: {$quantity})",
@@ -435,25 +458,25 @@ class OrderAcceptanceController extends Controller
                     'product_id' => $product->id,
                     'order_quantity' => $quantity,
                     'material_consumed' => $requiredQty,
-                    'material_name' => $inventoryItem->name,
-                    'material_sku' => $inventoryItem->sku,
-                    'unit_cost' => $inventoryItem->unit_cost,
-                    'total_cost' => $inventoryItem->unit_cost * $requiredQty,
+                    'material_name' => $material->material_name,
+                    'material_code' => $material->material_code,
+                    'unit_cost' => $material->standard_cost,
+                    'total_cost' => $material->standard_cost * $requiredQty,
                 ],
                 'source_data' => [
                     'order_id' => $orderId,
                     'product_id' => $product->id,
-                    'material_id' => $inventoryItem->id,
-                    'bom_ratio' => $material->qty_per_unit,
+                    'material_id' => $material->material_id,
+                    'bom_ratio' => $bomItem->quantity_per_product,
                 ],
                 'cost_breakdown' => [
-                    'material_cost' => $inventoryItem->unit_cost * $requiredQty,
-                    'unit_cost' => $inventoryItem->unit_cost,
+                    'material_cost' => $material->standard_cost * $requiredQty,
+                    'unit_cost' => $material->standard_cost,
                     'quantity_used' => $requiredQty,
                 ]
             ]);
 
-            \Log::info("Deducted {$requiredQty} {$inventoryItem->unit} of {$inventoryItem->name} (Remaining: {$inventoryItem->fresh()->quantity_on_hand})");
+            \Log::info("Deducted {$requiredQty} {$material->unit_of_measure} of {$material->material_name} (Remaining: {$material->fresh()->inventory->sum('current_stock')})");
         }
     }
 

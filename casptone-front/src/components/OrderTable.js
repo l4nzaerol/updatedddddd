@@ -1,8 +1,9 @@
 // src/components/OrderTable.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { Spinner, Badge, Collapse, Card, ProgressBar } from "react-bootstrap";
-import { FaBox, FaClock, FaTruck, FaCheckCircle, FaHammer, FaTools, FaPaintBrush, FaCut } from "react-icons/fa";
+import { Spinner, Badge, Collapse, Card, ProgressBar, Button } from "react-bootstrap";
+import { FaBox, FaClock, FaTruck, FaCheckCircle, FaHammer, FaTools, FaPaintBrush, FaCut, FaTimes } from "react-icons/fa";
+import { toast } from "sonner";
 
 const API = "http://localhost:8000/api";
 
@@ -117,6 +118,81 @@ const OrderTable = () => {
     }
   };
 
+  const cancelOrder = async (orderId) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("User not authenticated.");
+
+      const confirmed = window.confirm(
+        "Are you sure you want to cancel this order?\n\n" +
+        "This action cannot be undone and any materials already deducted will be restored to inventory."
+      );
+
+      if (!confirmed) return;
+
+      const response = await axios.patch(`${API}/orders/${orderId}/cancel`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      toast.success("Order cancelled successfully!", {
+        description: "Your order has been cancelled and materials have been restored.",
+        duration: 4000,
+      });
+
+      // Refresh orders to show updated status
+      await fetchOrders();
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || "Failed to cancel order. Please try again.";
+      toast.error("Cancellation failed", {
+        description: errorMessage,
+        duration: 4000,
+      });
+    }
+  };
+
+  const canCancelOrder = (order) => {
+    // Check if order is already cancelled or completed
+    if (order.status === 'cancelled' || order.status === 'delivered' || order.status === 'completed') {
+      return false;
+    }
+
+    // For Alkansya (stocked products) - can cancel anytime EXCEPT when ready for delivery
+    const hasAlkansya = order.items?.some(item => 
+      item.product?.category_name === 'Alkansya' || 
+      item.product?.category_name === 'Stocked Products'
+    );
+
+    if (hasAlkansya) {
+      // Alkansya cannot be cancelled if ready for delivery
+      if (order.status === 'ready_for_delivery') {
+        return false;
+      }
+      return true;
+    }
+
+    // For made-to-order products - only within 3 days and not accepted
+    const hasMadeToOrder = order.items?.some(item => 
+      item.product?.category_name === 'Made to Order' || 
+      item.product?.category_name === 'made_to_order'
+    );
+
+    if (hasMadeToOrder) {
+      // Check if order is not accepted
+      if (order.acceptance_status === 'accepted') {
+        return false;
+      }
+
+      // Check if within 3 days
+      const orderDate = new Date(order.checkout_date);
+      const now = new Date();
+      const daysDiff = (now - orderDate) / (1000 * 60 * 60 * 24);
+
+      return daysDiff <= 3;
+    }
+
+    return false;
+  };
+
   if (loading)
     return (
       <div className="d-flex justify-content-center mt-4">
@@ -143,12 +219,26 @@ const OrderTable = () => {
                   <FaBox className="me-2 text-primary" />
                   <span className="fw-bold">Order #{order.id}</span>
                 </div>
-                <div>
+                <div className="d-flex align-items-center gap-2">
                   <Badge bg={getStatusVariant(order.status)} className="me-2">{order.status}</Badge>
                   {order.payment_status && (
                     <Badge bg={order.payment_status==='paid' ? 'success' : (order.payment_status==='cod_pending' ? 'warning' : 'secondary')}>
                       {order.payment_status}
                     </Badge>
+                  )}
+                  {canCancelOrder(order) && (
+                    <Button 
+                      variant="outline-danger" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cancelOrder(order.id);
+                      }}
+                      title="Cancel this order"
+                    >
+                      <FaTimes className="me-1" />
+                      Cancel Order
+                    </Button>
                   )}
                 </div>
               </Card.Header>

@@ -150,6 +150,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/payments/confirm', [OrderController::class, 'confirmPayment']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/my-orders', [OrderController::class, 'myOrders']);
+    Route::patch('/orders/{id}/cancel', [OrderController::class, 'cancelOrder']);
     
     // Order Acceptance Routes (Admin only) - MUST be before /orders/{id}
     Route::get('/orders/pending-acceptance', [OrderAcceptanceController::class, 'getPendingOrders']);
@@ -217,6 +218,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/alkansya-output', [NormalizedInventoryController::class, 'recordAlkansyaOutput']);
         Route::post('/stock-adjustment', [NormalizedInventoryController::class, 'adjustStock']);
         Route::get('/transactions', [NormalizedInventoryController::class, 'getTransactions']);
+        Route::get('/daily-output', [NormalizedInventoryController::class, 'getDailyOutput']);
         Route::get('/summary', [NormalizedInventoryController::class, 'getInventorySummary']);
     });
 

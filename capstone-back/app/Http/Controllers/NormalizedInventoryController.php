@@ -26,6 +26,18 @@ class NormalizedInventoryController extends Controller
                     return $bom->quantity_per_product * $bom->material->standard_cost;
                 });
                 
+                // Add current stock information
+                $product->current_stock = $product->stock ?? 0;
+                $product->stock_status = $this->getStockStatus($product->current_stock);
+                
+                // For made-to-order products, show production status instead of stock
+                if ($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') {
+                    $productionStatus = $this->getProductionStatus($product->id);
+                    $product->production_status = $productionStatus;
+                    $product->current_stock = $productionStatus['count'];
+                    $product->stock_status = $productionStatus['status_info'];
+                }
+                
                 // Ensure product_name is available (handle both old and new column names)
                 if (!isset($product->product_name) && isset($product->name)) {
                     $product->product_name = $product->name;
@@ -48,6 +60,183 @@ class NormalizedInventoryController extends Controller
             });
 
         return response()->json($products);
+    }
+
+    /**
+     * Get stock status based on current stock level
+     */
+    private function getStockStatus($stock)
+    {
+        if ($stock <= 0) {
+            return [
+                'status' => 'out_of_stock',
+                'label' => 'Out of Stock',
+                'variant' => 'danger'
+            ];
+        } elseif ($stock <= 10) {
+            return [
+                'status' => 'low_stock',
+                'label' => 'Low Stock',
+                'variant' => 'warning'
+            ];
+        } else {
+            return [
+                'status' => 'in_stock',
+                'label' => 'In Stock',
+                'variant' => 'success'
+            ];
+        }
+    }
+
+    /**
+     * Get production status for made-to-order products
+     */
+    private function getProductionStatus($productId)
+    {
+        // Count quantities in different production stages
+        $inProductionCount = \App\Models\OrderItem::where('product_id', $productId)
+            ->whereHas('order', function($query) {
+                $query->where('acceptance_status', 'accepted')
+                      ->whereIn('status', ['processing', 'pending']);
+            })
+            ->sum('quantity');
+
+        $readyForDeliveryCount = \App\Models\OrderItem::where('product_id', $productId)
+            ->whereHas('order', function($query) {
+                $query->where('acceptance_status', 'accepted')
+                      ->where('status', 'ready_for_delivery');
+            })
+            ->sum('quantity');
+
+        $totalInProduction = $inProductionCount + $readyForDeliveryCount;
+
+        if ($totalInProduction > 0) {
+            if ($readyForDeliveryCount > 0) {
+                return [
+                    'count' => $totalInProduction,
+                    'status_info' => [
+                        'status' => 'ready_for_delivery',
+                        'label' => "Ready for Delivery ({$readyForDeliveryCount})",
+                        'variant' => 'info'
+                    ],
+                    'in_production' => $inProductionCount,
+                    'ready_for_delivery' => $readyForDeliveryCount
+                ];
+            } else {
+                return [
+                    'count' => $totalInProduction,
+                    'status_info' => [
+                        'status' => 'in_production',
+                        'label' => "In Production ({$totalInProduction})",
+                        'variant' => 'warning'
+                    ],
+                    'in_production' => $inProductionCount,
+                    'ready_for_delivery' => 0
+                ];
+            }
+        } else {
+            return [
+                'count' => 0,
+                'status_info' => [
+                    'status' => 'no_production',
+                    'label' => 'No Production',
+                    'variant' => 'secondary'
+                ],
+                'in_production' => 0,
+                'ready_for_delivery' => 0
+            ];
+        }
+    }
+
+    /**
+     * Handle production completion for made-to-order products
+     * This should be called when production reaches 100%
+     */
+    public function handleProductionCompletion($orderId, $productId, $quantity)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Find the product
+            $product = Product::find($productId);
+            if (!$product) {
+                throw new \Exception("Product not found");
+            }
+
+            // Add completed products to stock
+            $product->increment('stock', $quantity);
+
+            // Create inventory transaction for production output
+            \App\Models\InventoryTransaction::create([
+                'product_id' => $productId,
+                'order_id' => $orderId,
+                'transaction_type' => 'PRODUCTION_OUTPUT',
+                'quantity' => $quantity,
+                'unit_cost' => $product->standard_cost,
+                'total_cost' => $product->standard_cost * $quantity,
+                'status' => 'completed',
+                'timestamp' => now(),
+                'remarks' => "Production completed for Order #{$orderId}",
+                'metadata' => [
+                    'production_type' => 'made_to_order',
+                    'completion_date' => now()->toDateString()
+                ]
+            ]);
+
+            DB::commit();
+            \Log::info("Production completion handled for Order #{$orderId}, Product #{$productId}, Quantity: {$quantity}");
+
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error("Failed to handle production completion: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Handle order delivery - remove from stock when delivered
+     */
+    public function handleOrderDelivery($orderId, $productId, $quantity)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Find the product
+            $product = Product::find($productId);
+            if (!$product) {
+                throw new \Exception("Product not found");
+            }
+
+            // Remove delivered products from stock
+            $product->decrement('stock', $quantity);
+
+            // Create inventory transaction for delivery
+            \App\Models\InventoryTransaction::create([
+                'product_id' => $productId,
+                'order_id' => $orderId,
+                'transaction_type' => 'DELIVERY',
+                'quantity' => -$quantity, // Negative quantity for delivery
+                'unit_cost' => $product->standard_cost,
+                'total_cost' => -($product->standard_cost * $quantity),
+                'status' => 'completed',
+                'timestamp' => now(),
+                'remarks' => "Order #{$orderId} delivered to customer",
+                'metadata' => [
+                    'delivery_type' => 'customer_delivery',
+                    'delivery_date' => now()->toDateString()
+                ]
+            ]);
+
+            DB::commit();
+            \Log::info("Order delivery handled for Order #{$orderId}, Product #{$productId}, Quantity: {$quantity}");
+
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error("Failed to handle order delivery: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -95,7 +284,7 @@ class NormalizedInventoryController extends Controller
             ->get()
             ->map(function ($item) {
                 $item->total_cost = $item->quantity_per_product * $item->material->standard_cost;
-                $item->material->available_quantity = $item->material->inventory->sum('quantity_on_hand') - $item->material->inventory->sum('quantity_reserved');
+                $item->material->available_quantity = $item->material->inventory->sum('current_stock') - $item->material->inventory->sum('quantity_reserved');
                 return $item;
             });
 
@@ -256,6 +445,12 @@ class NormalizedInventoryController extends Controller
 
         DB::beginTransaction();
         try {
+            // Check if daily output already exists for this date
+            $existingOutput = \App\Models\AlkansyaDailyOutput::where('date', $request->output_date)->first();
+            if ($existingOutput) {
+                throw new \Exception('Daily output already exists for ' . $request->output_date . '. Please edit the existing record instead.');
+            }
+
             // Find Alkansya product
             $alkansyaProduct = Product::where('product_code', 'like', '%alkansya%')
                 ->orWhere('product_name', 'like', '%alkansya%')
@@ -267,7 +462,7 @@ class NormalizedInventoryController extends Controller
             }
 
             // Get BOM for Alkansya
-            $bomItems = BOM::with('material')->where('product_id', $alkansyaProduct->product_id)->get();
+            $bomItems = BOM::with('material')->where('product_id', $alkansyaProduct->id)->get();
 
             foreach ($bomItems as $bomItem) {
                 $consumedQuantity = $bomItem->quantity_per_product * $request->quantity_produced;
@@ -278,12 +473,15 @@ class NormalizedInventoryController extends Controller
                     $inventory->current_stock -= $consumedQuantity;
                     $inventory->last_updated = now();
                     $inventory->save();
+                    
+                    // Sync the material's current_stock field
+                    $bomItem->material->syncCurrentStock();
                 }
 
                 // Create comprehensive transaction record
                 InventoryTransaction::create([
                     'material_id' => $bomItem->material_id,
-                    'product_id' => $alkansyaProduct->product_id,
+                    'product_id' => $alkansyaProduct->id,
                     'user_id' => auth()->id(),
                     'transaction_type' => 'ALKANSYA_CONSUMPTION',
                     'quantity' => -$consumedQuantity, // Negative for consumption
@@ -295,7 +493,7 @@ class NormalizedInventoryController extends Controller
                     'status' => 'completed',
                     'priority' => 'normal',
                     'metadata' => [
-                        'product_id' => $alkansyaProduct->product_id,
+                        'product_id' => $alkansyaProduct->id,
                         'product_name' => $alkansyaProduct->product_name,
                         'output_date' => $request->output_date,
                         'quantity_produced' => $request->quantity_produced,
@@ -306,7 +504,7 @@ class NormalizedInventoryController extends Controller
                     ],
                     'source_data' => [
                         'alkansya_output_id' => null, // Will be set after alkansya record creation
-                        'product_id' => $alkansyaProduct->product_id,
+                        'product_id' => $alkansyaProduct->id,
                         'material_id' => $bomItem->material_id,
                         'output_date' => $request->output_date,
                         'quantity_produced' => $request->quantity_produced,
@@ -320,12 +518,77 @@ class NormalizedInventoryController extends Controller
                 ]);
             }
 
+            // Update Alkansya product stock
+            $alkansyaProduct->stock += $request->quantity_produced;
+            $alkansyaProduct->save();
+
+            // Create daily output record
+            $dailyOutput = \App\Models\AlkansyaDailyOutput::create([
+                'date' => $request->output_date,
+                'quantity_produced' => $request->quantity_produced,
+                'produced_by' => auth()->user()->name ?? 'System',
+                'materials_used' => $bomItems->map(function($item) use ($request) {
+                    return [
+                        'material_name' => $item->material->material_name,
+                        'material_code' => $item->material->material_code,
+                        'quantity_used' => $item->quantity_per_product * $request->quantity_produced,
+                        'unit_of_measure' => $item->unit_of_measure
+                    ];
+                })->toArray()
+            ]);
+
+            // Create production output transaction
+            InventoryTransaction::create([
+                'product_id' => $alkansyaProduct->id,
+                'user_id' => auth()->id(),
+                'transaction_type' => 'PRODUCTION_OUTPUT',
+                'quantity' => $request->quantity_produced,
+                'unit_cost' => $alkansyaProduct->standard_cost ?? 0,
+                'total_cost' => ($alkansyaProduct->standard_cost ?? 0) * $request->quantity_produced,
+                'reference' => 'ALKANSYA_DAILY_OUTPUT',
+                'timestamp' => $request->output_date,
+                'remarks' => "Daily Alkansya production output - {$request->quantity_produced} units produced",
+                'status' => 'completed',
+                'priority' => 'normal',
+                'metadata' => [
+                    'output_date' => $request->output_date,
+                    'quantity_produced' => $request->quantity_produced,
+                    'daily_output_id' => $dailyOutput->id,
+                    'produced_by' => auth()->user()->name ?? 'System'
+                ]
+            ]);
+
             DB::commit();
-            return response()->json(['message' => 'Alkansya output recorded successfully']);
+            return response()->json([
+                'message' => 'Alkansya output recorded successfully',
+                'daily_output_id' => $dailyOutput->id,
+                'quantity_produced' => $request->quantity_produced,
+                'new_stock' => $alkansyaProduct->stock
+            ]);
         } catch (\Exception $e) {
             DB::rollback();
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Get daily output records
+     */
+    public function getDailyOutput(Request $request)
+    {
+        $query = \App\Models\AlkansyaDailyOutput::query()
+            ->orderBy('date', 'desc');
+
+        if ($request->date_from) {
+            $query->where('date', '>=', $request->date_from);
+        }
+
+        if ($request->date_to) {
+            $query->where('date', '<=', $request->date_to);
+        }
+
+        $dailyOutputs = $query->paginate(50);
+        return response()->json($dailyOutputs);
     }
 
     /**

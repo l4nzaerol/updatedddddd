@@ -7,6 +7,8 @@ use App\Models\Product;
 use App\Models\RawMaterial;
 use App\Models\Bom;
 use App\Models\Material;
+use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 
 class AccurateMaterialsSeeder extends Seeder
 {
@@ -114,6 +116,9 @@ class AccurateMaterialsSeeder extends Seeder
         // Create materials in the materials table
         $this->createMaterials();
 
+        // Create inventory records and transactions for materials
+        $this->createInventoryRecords();
+
         // Create raw materials entries for each product
         $this->createRawMaterials($alkansya, $diningTable, $woodenChair);
 
@@ -195,6 +200,47 @@ class AccurateMaterialsSeeder extends Seeder
                 ]
             );
         }
+    }
+
+    private function createInventoryRecords()
+    {
+        $this->command->info('Creating inventory records and transactions...');
+        
+        $materials = Material::all();
+        foreach ($materials as $material) {
+            // Create inventory record
+            $inventory = Inventory::firstOrCreate(
+                ['material_id' => $material->material_id],
+                [
+                    'material_id' => $material->material_id,
+                    'location_id' => 1,
+                    'current_stock' => $material->current_stock,
+                    'quantity_reserved' => 0,
+                    'last_updated' => now()
+                ]
+            );
+
+            // Create initial stock transaction
+            InventoryTransaction::firstOrCreate(
+                [
+                    'material_id' => $material->material_id,
+                    'transaction_type' => 'PURCHASE',
+                    'reference' => 'Initial Stock - Accurate Materials'
+                ],
+                [
+                    'material_id' => $material->material_id,
+                    'transaction_type' => 'PURCHASE',
+                    'quantity' => $material->current_stock,
+                    'reference' => 'Initial Stock - Accurate Materials',
+                    'remarks' => 'Initial material stock from AccurateMaterialsSeeder',
+                    'timestamp' => now(),
+                    'unit_cost' => $material->standard_cost,
+                    'total_cost' => $material->standard_cost * $material->current_stock
+                ]
+            );
+        }
+        
+        $this->command->info('Inventory records and transactions created successfully!');
     }
 
     private function getSupplierForMaterial($materialCode)

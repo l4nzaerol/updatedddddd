@@ -25,11 +25,13 @@ class Order extends Model
         'shipping_address',
         'contact_phone',
         'cancellation_reason',
+        'cancelled_at',
     ];
 
     protected $casts = [
         'accepted_at' => 'datetime',
         'checkout_date' => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
     // An order belongs to a user

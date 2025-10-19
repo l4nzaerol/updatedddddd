@@ -123,6 +123,15 @@ class OrderDeliveryController extends Controller
                 ]);
             }
 
+            // Handle inventory for made-to-order products
+            $inventoryController = new \App\Http\Controllers\NormalizedInventoryController();
+            foreach ($order->items as $item) {
+                $product = $item->product;
+                if ($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') {
+                    $inventoryController->handleOrderDelivery($order->id, $product->id, $item->quantity);
+                }
+            }
+
             DB::commit();
 
             Log::info("Order #{$orderId} marked as delivered by admin #{$admin->id}");
