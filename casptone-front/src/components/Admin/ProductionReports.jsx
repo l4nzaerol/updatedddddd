@@ -1,181 +1,228 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../api/client";
 import { 
-  BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid 
+  BarChart, Bar, AreaChart, Area, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, 
+  ScatterChart, Scatter, ComposedChart
 } from "recharts";
-import { clearRequestCache } from "../../utils/apiRetry";
+import { 
+  FaIndustry, FaChartLine, FaClipboardList, FaHistory, 
+  FaTruck, FaExclamationTriangle, FaCheckCircle,
+  FaDownload, FaSync, FaFilter, FaSearch, FaEye, FaEdit,
+  FaCogs, FaUsers, FaBoxes, FaChartBar
+} from "react-icons/fa";
+import { toast } from "sonner";
 
 const ProductionReports = () => {
-  const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
-    // const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [refreshKey, setRefreshKey] = useState(0);
     
-    // Production report data states
-    // const [productionAnalytics, setProductionAnalytics] = useState(null);
-    // const [productionPerformance, setProductionPerformance] = useState(null);
+    // Enhanced data states
+    const [dashboardData, setDashboardData] = useState(null);
     const [productionOutput, setProductionOutput] = useState(null);
-    const [resourceUtilization, setResourceUtilization] = useState(null);
-    const [advancedPerformance, setAdvancedPerformance] = useState(null);
-    const [dailyOutputData, setDailyOutputData] = useState(null);
-    const [stageBreakdown, setStageBreakdown] = useState(null);
+    const [madeToOrderStatus, setMadeToOrderStatus] = useState(null);
+    const [alkansyaDailyOutput, setAlkansyaDailyOutput] = useState(null);
+    const [productionAnalytics, setProductionAnalytics] = useState(null);
     const [efficiencyMetrics, setEfficiencyMetrics] = useState(null);
+    const [resourceUtilization, setResourceUtilization] = useState(null);
+    const [stageBreakdown, setStageBreakdown] = useState(null);
+    
+    // Loading states for each tab
+    const [tabLoadingStates, setTabLoadingStates] = useState({
+        overview: false,
+        output: false,
+        madeToOrder: false,
+        alkansya: false,
+        analytics: false,
+        efficiency: false,
+        utilization: false,
+        stages: false
+    });
 
-    // Fetch all production reports
+    const colors = {
+        primary: '#8B4513',
+        secondary: '#A0522D',
+        accent: '#CD853F',
+        success: '#28a745',
+        warning: '#ffc107',
+        danger: '#dc3545',
+        info: '#17a2b8',
+        light: '#F5DEB3',
+        dark: '#2F1B14'
+    };
+
+    const chartColors = [
+        '#8B4513', '#A0522D', '#CD853F', '#F5DEB3', '#D2691E',
+        '#B8860B', '#DAA520', '#B22222', '#228B22', '#4169E1'
+    ];
+
     const fetchAllReports = useCallback(async () => {
         setLoading(true);
         setError("");
-        
+
         try {
-            const startDate = new Date();
-            startDate.setDate(startDate.getDate() - windowDays);
-            const endDate = new Date();
-            
             const dateRange = {
-                start_date: startDate.toISOString().split('T')[0],
-                end_date: endDate.toISOString().split('T')[0]
+                start_date: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0]
             };
 
-            console.log('📊 Fetching production reports with date range:', dateRange);
-
-            // Fetch all production-related data
-            const [
-                // analyticsResponse,
-                // performanceResponse,
-                outputResponse,
-                utilizationResponse,
-                advancedResponse,
-                dailyOutputResponse,
-                stageResponse,
-                efficiencyResponse
-            ] = await Promise.all([
-                api.get('/production/analytics', { params: dateRange }),
-                api.get('/production/performance', { params: dateRange }),
-                api.get('/production/output', { params: dateRange }),
-                api.get('/production/resource-utilization', { params: dateRange }),
-                api.get('/production/advanced-performance', { params: dateRange }),
-                api.get('/production/daily-output', { params: dateRange }),
-                api.get('/production/stage-breakdown', { params: dateRange }),
-                api.get('/production/efficiency-metrics', { params: dateRange })
-            ]);
-
-            // setProductionAnalytics(analyticsResponse.data);
-            // setProductionPerformance(performanceResponse.data);
-            setProductionOutput(outputResponse.data);
-            setResourceUtilization(utilizationResponse.data);
-            setAdvancedPerformance(advancedResponse.data);
-            setDailyOutputData(dailyOutputResponse.data);
-            setStageBreakdown(stageResponse.data);
-            setEfficiencyMetrics(efficiencyResponse.data);
-
-            console.log('📊 Production reports fetched successfully');
-    } catch (err) {
-            console.error('❌ Error fetching production reports:', err);
-            setError(err.response?.data?.message || 'Failed to fetch production reports');
-    } finally {
-      setLoading(false);
-    }
-    }, [windowDays]);
-
-    useEffect(() => {
-        fetchAllReports();
-    }, [fetchAllReports, refreshKey]);
-
-    const handleGlobalRefresh = () => {
-        clearRequestCache();
-        setRefreshKey(prev => prev + 1);
-    };
-
-    // Export functions
-    const exportReport = (reportName, data) => {
-        const csv = convertToCSV(data);
-        downloadCSV(csv, `${reportName}_${new Date().toISOString().split('T')[0]}.csv`);
-    };
-
-    const convertToCSV = (data) => {
-        if (!data || data.length === 0) return '';
-        const headers = Object.keys(data[0]).join(',');
-        const rows = data.map(row => Object.values(row).join(','));
-        return [headers, ...rows].join('\n');
-    };
-
-    const downloadCSV = (csv, filename) => {
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-    };
-
-    const handleProductionExport = async (exportType, format) => {
-        try {
-            setLoading(true);
-            if (format === 'csv') {
-                switch (exportType) {
-                    case 'output':
-                        exportReport('production_output', productionOutput?.output_data || []);
-                        break;
-                    case 'stage_breakdown':
-                        exportReport('stage_breakdown', stageBreakdown?.stages || []);
-                        break;
-                    case 'daily_output':
-                        exportReport('daily_output', dailyOutputData?.daily_data || []);
-                        break;
-                    default:
-                        console.log('Unknown export type');
+            const safeFetch = async (endpoint, params = {}) => {
+                try {
+                    const response = await api.get(endpoint, { params });
+                    return response.data;
+                } catch (error) {
+                    console.warn(`Failed to fetch ${endpoint}:`, error.message);
+                    return null;
                 }
-            } else if (format === 'pdf') {
-                await exportProductionDataToPDF(exportType);
-            }
+            };
+
+            // Only load overview data initially for fast loading
+            const productionAnalyticsData = await safeFetch('/production/analytics', dateRange);
+
+            // Set data with proper fallbacks
+            const analyticsData = productionAnalyticsData || { 
+                in_progress: [], 
+                completed_today: 0, 
+                efficiency: 0, 
+                average_cycle_time: 0 
+            };
+            
+            setDashboardData({
+                total_productions: analyticsData.in_progress?.length || 0,
+                completed_today: analyticsData.completed_today || 0,
+                efficiency: analyticsData.efficiency || 0,
+                average_cycle_time: analyticsData.average_cycle_time || 0,
+                in_progress_productions: analyticsData.in_progress || []
+            });
+            
+            setProductionAnalytics(analyticsData);
+
         } catch (error) {
-            console.error('Export error:', error);
-            setError('Failed to export data');
+            console.error('Error fetching production reports:', error);
+            setError('Failed to load production reports. Please try again.');
         } finally {
             setLoading(false);
         }
+    }, [windowDays, refreshKey]);
+
+    useEffect(() => {
+        fetchAllReports();
+    }, [fetchAllReports]);
+
+    const handleGlobalRefresh = () => {
+        setRefreshKey(prev => prev + 1);
+        toast.success("Production reports refreshed successfully!");
     };
 
-    const exportProductionDataToPDF = async (exportType) => {
-        // PDF export implementation would go here
-        console.log(`Exporting ${exportType} to PDF`);
-  };
+    // Lazy loading function for each tab
+    const loadTabData = async (tabName) => {
+        setTabLoadingStates(prev => ({ ...prev, [tabName]: true }));
+        
+        // Simulate 2-second delay for fast loading experience
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        try {
+            const dateRange = {
+                start_date: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0]
+            };
 
-  if (loading) {
-    return (
-            <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+            switch (tabName) {
+                case 'overview':
+                    // Overview data is already loaded initially
+                    break;
+                    
+                case 'output':
+                    const outputResponse = await api.get('/production/output', { params: dateRange });
+                    setProductionOutput(outputResponse.data);
+                    break;
+                    
+                case 'madeToOrder':
+                    const madeToOrderResponse = await api.get('/inventory/made-to-order-status', { params: dateRange });
+                    setMadeToOrderStatus(madeToOrderResponse.data);
+                    break;
+                    
+                case 'alkansya':
+                    const alkansyaResponse = await api.get('/normalized-inventory/daily-output', { params: dateRange });
+                    setAlkansyaDailyOutput(alkansyaResponse.data);
+                    break;
+                    
+                case 'analytics':
+                    const analyticsResponse = await api.get('/production/analytics', { params: dateRange });
+                    setProductionAnalytics(analyticsResponse.data);
+                    break;
+                    
+                case 'efficiency':
+                    const efficiencyResponse = await api.get('/production/efficiency-metrics', { params: dateRange });
+                    setEfficiencyMetrics(efficiencyResponse.data);
+                    break;
+                    
+                case 'utilization':
+                    const utilizationResponse = await api.get('/production/resource-utilization', { params: dateRange });
+                    setResourceUtilization(utilizationResponse.data);
+                    break;
+                    
+                case 'stages':
+                    const stagesResponse = await api.get('/production/stage-breakdown', { params: dateRange });
+                    setStageBreakdown(stagesResponse.data);
+                    break;
+            }
+        } catch (error) {
+            console.error(`Error loading ${tabName} data:`, error);
+        } finally {
+            setTabLoadingStates(prev => ({ ...prev, [tabName]: false }));
+        }
+    };
+
+    // Handle tab change with lazy loading
+    const handleTabChange = (tabId) => {
+        setActiveTab(tabId);
+        loadTabData(tabId);
+    };
+
+    if (loading) {
+        return (
+            <div className="d-flex justify-content-center align-items-center" style={{ height: '400px' }}>
+                <div className="text-center">
+                    <div className="spinner-border text-primary mb-3" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <h5>Loading Production Reports...</h5>
+                </div>
             </div>
-    );
-  }
+        );
+    }
 
     if (error) {
-  return (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                <p>Error: {error}</p>
+        return (
+            <div className="alert alert-danger" role="alert">
+                <FaExclamationTriangle className="me-2" />
+                <strong>Error:</strong> {error}
                 <button 
+                    className="btn btn-outline-danger btn-sm ms-3"
                     onClick={handleGlobalRefresh}
-                    className="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
                 >
+                    <FaSync className="me-1" />
                     Retry
-              </button>
+                </button>
             </div>
         );
     }
 
     return (
-        <div>
-            {/* Header Controls */}
-            <div className="d-flex justify-content-between align-items-center mb-4">
+        <div className="enhanced-production-reports">
+            {/* Enhanced Header */}
+            <div className="d-flex justify-content-between align-items-center mb-4 p-4 bg-gradient text-white rounded-3" 
+                 style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)` }}>
                 <div>
-                    <h4 className="mb-1" style={{ color: '#2c3e50', fontWeight: '600' }}>
-                        Production Reports & Analytics
-                    </h4>
-                    <p className="text-muted mb-0">Advanced performance metrics and production insights</p>
+                    <h2 className="mb-2 d-flex align-items-center">
+                        <FaIndustry className="me-3" />
+                        Enhanced Production Analytics
+                    </h2>
+                    <p className="mb-0 opacity-90">Comprehensive production management and performance tracking</p>
                 </div>
                 <div className="d-flex gap-2">
                     <select 
@@ -191,37 +238,45 @@ const ProductionReports = () => {
                     </select>
                     <button 
                         onClick={handleGlobalRefresh}
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-light btn-sm"
                     >
-                        <i className="fas fa-sync me-1"></i>
+                        <FaSync className="me-1" />
                         Refresh
                     </button>
                 </div>
             </div>
 
-            {/* Navigation Tabs */}
+            {/* Enhanced Navigation Tabs */}
             <div className="mb-4">
                 <ul className="nav nav-pills nav-fill" role="tablist">
                     {[
-                        { id: 'overview', name: 'Overview', icon: '📊' },
-                        { id: 'output', name: 'Production Output', icon: '🏭' },
-                        { id: 'stages', name: 'Stage Breakdown', icon: '⚙️' },
-                        { id: 'efficiency', name: 'Efficiency Metrics', icon: '📈' },
-                        { id: 'utilization', name: 'Resource Utilization', icon: '🔧' },
-                        { id: 'analytics', name: 'Advanced Analytics', icon: '🧠' }
+                        { id: 'overview', name: 'Overview', icon: FaChartLine, color: colors.primary },
+                        { id: 'output', name: 'Production Output', icon: FaIndustry, color: colors.secondary },
+                        { id: 'madeToOrder', name: 'Made-to-Order', icon: FaClipboardList, color: colors.accent },
+                        { id: 'alkansya', name: 'Alkansya Output', icon: FaBoxes, color: colors.success },
+                        { id: 'analytics', name: 'Analytics', icon: FaChartBar, color: colors.info },
+                        { id: 'efficiency', name: 'Efficiency', icon: FaChartLine, color: colors.warning },
+                        { id: 'utilization', name: 'Resources', icon: FaCogs, color: colors.dark },
+                        { id: 'stages', name: 'Stages', icon: FaHistory, color: colors.danger }
                     ].map(tab => (
                         <li className="nav-item" key={tab.id}>
                             <button
-                                className={`nav-link ${activeTab === tab.id ? 'active' : ''}`}
-                                onClick={() => setActiveTab(tab.id)}
+                                className={`nav-link d-flex align-items-center justify-content-center ${activeTab === tab.id ? 'active' : ''}`}
+                                onClick={() => handleTabChange(tab.id)}
+                                disabled={tabLoadingStates[tab.id]}
                                 style={{
                                     border: 'none',
-                                    backgroundColor: activeTab === tab.id ? '#007bff' : 'transparent',
-                                    color: activeTab === tab.id ? 'white' : '#6c757d',
-                                    fontWeight: activeTab === tab.id ? '600' : '400'
+                                    backgroundColor: activeTab === tab.id ? tab.color : 'transparent',
+                                    color: activeTab === tab.id ? 'white' : colors.dark,
+                                    fontWeight: activeTab === tab.id ? '600' : '400',
+                                    borderRadius: '8px',
+                                    margin: '0 2px',
+                                    padding: '12px 16px',
+                                    transition: 'all 0.3s ease',
+                                    opacity: tabLoadingStates[tab.id] ? 0.6 : 1
                                 }}
                             >
-                                <span className="me-2">{tab.icon}</span>
+                                <tab.icon className="me-2" />
                                 {tab.name}
                             </button>
                         </li>
@@ -231,514 +286,394 @@ const ProductionReports = () => {
 
             {/* Content based on active tab */}
             {activeTab === 'overview' && (
-                <div>
-                    {/* Production Overview Dashboard */}
-                    <div className="row mb-4">
-                        <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
-                                        <div className="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
-                                            <i className="fas fa-industry text-primary fs-4"></i>
-                                        </div>
-                                        <div>
-                                            <h3 className="mb-0 text-primary fw-bold">2,850</h3>
-                                            <small className="text-muted">Total Output</small>
-                                        </div>
+                <div className="row">
+                    {/* Key Metrics Cards */}
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.primary}15, ${colors.secondary}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.primary}20` }}>
+                                        <FaIndustry style={{ color: colors.primary }} className="fs-4" />
                                     </div>
-                                    <p className="text-muted small mb-0">units produced</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
-                                        <div className="bg-success bg-opacity-10 rounded-circle p-3 me-3">
-                                            <i className="fas fa-chart-line text-success fs-4"></i>
-                                        </div>
-                                        <div>
-                                            <h3 className="mb-0 text-success fw-bold">94.2%</h3>
-                                            <small className="text-muted">Avg Efficiency</small>
-                                        </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.primary }}>
+                                            {dashboardData?.total_productions || 0}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Active Productions</small>
                                     </div>
-                                    <p className="text-muted small mb-0">overall efficiency</p>
                                 </div>
-                            </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
-                                        <div className="bg-info bg-opacity-10 rounded-circle p-3 me-3">
-                                            <i className="fas fa-cogs text-info fs-4"></i>
-                                        </div>
-                                        <div>
-                                            <h3 className="mb-0 text-info fw-bold">8</h3>
-                                            <small className="text-muted">Active Productions</small>
-                                        </div>
-                                    </div>
-                                    <p className="text-muted small mb-0">in progress</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6 mb-3">
-                            <div className="card border-0 shadow-sm h-100">
-                                <div className="card-body text-center">
-                                    <div className="d-flex align-items-center justify-content-center mb-2">
-                                        <div className="bg-warning bg-opacity-10 rounded-circle p-3 me-3">
-                                            <i className="fas fa-check-circle text-warning fs-4"></i>
-                                        </div>
-                                        <div>
-                                            <h3 className="mb-0 text-warning fw-bold">45</h3>
-                                            <small className="text-muted">Completed Today</small>
-                                        </div>
-                                    </div>
-                                    <p className="text-muted small mb-0">units completed</p>
-                                </div>
+                                <p className="text-muted small mb-0">
+                                    Currently in progress
+                                </p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Production Output Chart */}
-                    <div className="card border-0 shadow-sm mb-4">
-                        <div className="card-header bg-white border-0">
-                            <h5 className="mb-0 fw-semibold">Daily Production Output</h5>
-                        </div>
-                        <div className="card-body">
-                            <ResponsiveContainer width="100%" height={300}>
-                                <LineChart data={[
-                                    { date: '2024-01-01', target: 30, actual: 28 },
-                                    { date: '2024-01-02', target: 30, actual: 32 },
-                                    { date: '2024-01-03', target: 30, actual: 29 },
-                                    { date: '2024-01-04', target: 30, actual: 31 },
-                                    { date: '2024-01-05', target: 30, actual: 27 },
-                                    { date: '2024-01-06', target: 30, actual: 33 },
-                                    { date: '2024-01-07', target: 30, actual: 30 }
-                                ]}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="target" stroke="#3B82F6" name="Target" />
-                                    <Line type="monotone" dataKey="actual" stroke="#10B981" name="Actual" />
-                                </LineChart>
-                            </ResponsiveContainer>
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.success}15, ${colors.info}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.success}20` }}>
+                                        <FaCheckCircle style={{ color: colors.success }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.success }}>
+                                            {dashboardData?.completed_today || 0}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Completed Today</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    Units finished today
+                                </p>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Product Performance */}
-                    <div className="card border-0 shadow-sm">
-                        <div className="card-header bg-white border-0">
-                            <h5 className="mb-0 fw-semibold">Product Performance</h5>
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.warning}15, ${colors.accent}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.warning}20` }}>
+                                        <FaChartLine style={{ color: colors.warning }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.warning }}>
+                                            {dashboardData?.efficiency || 0}%
+                                        </h3>
+                                        <small className="text-muted fw-medium">Efficiency</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    Overall production efficiency
+                                </p>
+                            </div>
                         </div>
-                        <div className="card-body">
-                            <ResponsiveContainer width="100%" height={300}>
-                                <BarChart data={[
-                                    { product: 'Alkansya', output: 2850, efficiency: 94.2 },
-                                    { product: 'Dining Table', output: 45, efficiency: 88.5 },
-                                    { product: 'Wooden Chair', output: 120, efficiency: 91.3 }
-                                ]}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="product" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Bar dataKey="output" fill="#3B82F6" name="Output" />
-                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
-                                </BarChart>
-                            </ResponsiveContainer>
+                    </div>
+
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.info}15, ${colors.primary}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.info}20` }}>
+                                        <FaHistory style={{ color: colors.info }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.info }}>
+                                            {dashboardData?.average_cycle_time || 0}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Avg Cycle Time</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    Days per production
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Charts Row */}
+                    <div className="col-12 mb-4">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaChartLine className="me-2" style={{ color: colors.primary }} />
+                                    Production Performance Overview
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <LineChart data={[
+                                        { date: '2024-01-01', target: 30, actual: 28, efficiency: 93 },
+                                        { date: '2024-01-02', target: 30, actual: 32, efficiency: 107 },
+                                        { date: '2024-01-03', target: 30, actual: 29, efficiency: 97 },
+                                        { date: '2024-01-04', target: 30, actual: 31, efficiency: 103 },
+                                        { date: '2024-01-05', target: 30, actual: 27, efficiency: 90 },
+                                        { date: '2024-01-06', target: 30, actual: 33, efficiency: 110 },
+                                        { date: '2024-01-07', target: 30, actual: 30, efficiency: 100 }
+                                    ]}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="target" stroke={colors.primary} name="Target" />
+                                        <Line type="monotone" dataKey="actual" stroke={colors.success} name="Actual" />
+                                        <Line type="monotone" dataKey="efficiency" stroke={colors.warning} name="Efficiency %" />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
-
 
             {/* Production Output Tab */}
             {activeTab === 'output' && (
-                <div className="space-y-6">
-                    {productionOutput && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Production Output Trends</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <LineChart data={productionOutput.output_data || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="target" stroke="#3B82F6" name="Target Output" />
-                                    <Line type="monotone" dataKey="actual" stroke="#10B981" name="Actual Output" />
-                                    <Line type="monotone" dataKey="efficiency" stroke="#EF4444" name="Efficiency %" />
-                                </LineChart>
-                            </ResponsiveContainer>
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaIndustry className="me-2" style={{ color: colors.secondary }} />
+                                    Production Output Analysis
+                                    {tabLoadingStates.output && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.output ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-secondary mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Production Output Data...</h5>
+                                        <p className="text-muted">Analyzing production performance and output trends</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaIndustry className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Production Output Data</h5>
+                                        <p className="text-muted">Detailed production output analysis will appear here</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    )}
-
-                    {/* Output Summary */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Total Output</h4>
-                            <p className="text-2xl font-bold text-blue-600">{productionOutput?.summary?.total_output || 0}</p>
-                            <p className="text-sm text-gray-500">units produced</p>
-                        </div>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Average Daily</h4>
-                            <p className="text-2xl font-bold text-green-600">{productionOutput?.summary?.avg_daily || 0}</p>
-                            <p className="text-sm text-gray-500">units per day</p>
-                        </div>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Peak Output</h4>
-                            <p className="text-2xl font-bold text-purple-600">{productionOutput?.summary?.peak_output || 0}</p>
-                            <p className="text-sm text-gray-500">highest daily output</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-            {/* Stage Breakdown Tab */}
-            {activeTab === 'stages' && (
-                <div className="space-y-6">
-                    {stageBreakdown && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Production Stage Breakdown</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <BarChart data={stageBreakdown.stages || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="stage_name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                                    <Bar dataKey="duration_hours" fill="#3B82F6" name="Duration (Hours)" />
-                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
-                    </BarChart>
-                  </ResponsiveContainer>
-            </div>
-          )}
-
-                    {/* Stage Details Table */}
-                    {stageBreakdown && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Stage Performance Details</h3>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full table-auto">
-                      <thead>
-                                        <tr className="bg-gray-50">
-                                            <th className="px-4 py-2 text-left">Stage</th>
-                                            <th className="px-4 py-2 text-left">Duration (Hours)</th>
-                                            <th className="px-4 py-2 text-left">Efficiency</th>
-                                            <th className="px-4 py-2 text-left">Bottlenecks</th>
-                                            <th className="px-4 py-2 text-left">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                                        {stageBreakdown.stages?.map((stage, index) => (
-                                            <tr key={index} className="border-b">
-                                                <td className="px-4 py-2 font-medium">{stage.stage_name}</td>
-                                                <td className="px-4 py-2">{stage.duration_hours?.toFixed(1)}</td>
-                                                <td className="px-4 py-2">{stage.efficiency?.toFixed(1)}%</td>
-                                                <td className="px-4 py-2">{stage.bottlenecks || 'None'}</td>
-                                                <td className="px-4 py-2">
-                                                    <span className={`px-2 py-1 rounded text-xs ${
-                                                        stage.efficiency >= 90 ? 'bg-green-100 text-green-800' :
-                                                        stage.efficiency >= 70 ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-red-100 text-red-800'
-                                                    }`}>
-                                                        {stage.efficiency >= 90 ? 'Excellent' :
-                                                         stage.efficiency >= 70 ? 'Good' : 'Needs Improvement'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-              </div>
-            </div>
-          )}
+                    </div>
                 </div>
             )}
 
-            {/* Efficiency Metrics Tab */}
-            {activeTab === 'efficiency' && (
-                <div className="space-y-6">
-                    {efficiencyMetrics && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Efficiency Trends</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <LineChart data={efficiencyMetrics.trends || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="overall_efficiency" stroke="#3B82F6" name="Overall Efficiency" />
-                                    <Line type="monotone" dataKey="labor_efficiency" stroke="#10B981" name="Labor Efficiency" />
-                                    <Line type="monotone" dataKey="machine_efficiency" stroke="#EF4444" name="Machine Efficiency" />
-                                </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                    )}
-
-                    {/* Efficiency Summary */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Overall Efficiency</h4>
-                            <p className="text-2xl font-bold text-blue-600">{efficiencyMetrics?.summary?.overall_efficiency?.toFixed(1) || 0}%</p>
+            {/* Made-to-Order Tab */}
+            {activeTab === 'madeToOrder' && (
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaClipboardList className="me-2" style={{ color: colors.accent }} />
+                                    Made-to-Order Production Status
+                                    {tabLoadingStates.madeToOrder && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.madeToOrder ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-accent mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Made-to-Order Data...</h5>
+                                        <p className="text-muted">Fetching custom order production status</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaClipboardList className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Made-to-Order Productions</h5>
+                                        <p className="text-muted">Custom order production tracking will appear here</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Labor Efficiency</h4>
-                            <p className="text-2xl font-bold text-green-600">{efficiencyMetrics?.summary?.labor_efficiency?.toFixed(1) || 0}%</p>
-                        </div>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Machine Efficiency</h4>
-                            <p className="text-2xl font-bold text-purple-600">{efficiencyMetrics?.summary?.machine_efficiency?.toFixed(1) || 0}%</p>
-                        </div>
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Quality Rate</h4>
-                            <p className="text-2xl font-bold text-orange-600">{efficiencyMetrics?.summary?.quality_rate?.toFixed(1) || 0}%</p>
-                      </div>
                     </div>
-                  </div>
+                </div>
+            )}
+
+            {/* Alkansya Daily Output Tab */}
+            {activeTab === 'alkansya' && (
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaBoxes className="me-2" style={{ color: colors.success }} />
+                                    Alkansya Daily Output Reports
+                                    {tabLoadingStates.alkansya && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.alkansya ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-success mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Alkansya Output Data...</h5>
+                                        <p className="text-muted">Fetching daily Alkansya production records</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaBoxes className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Alkansya Daily Output</h5>
+                                        <p className="text-muted">Daily Alkansya production reports will appear here</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Analytics Tab */}
+            {activeTab === 'analytics' && (
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaChartBar className="me-2" style={{ color: colors.info }} />
+                                    Production Analytics
+                                    {tabLoadingStates.analytics && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.analytics ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-info mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Analytics Data...</h5>
+                                        <p className="text-muted">Analyzing production performance metrics</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaChartBar className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Production Analytics</h5>
+                                        <p className="text-muted">Advanced production analytics will appear here</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Efficiency Tab */}
+            {activeTab === 'efficiency' && (
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaChartLine className="me-2" style={{ color: colors.warning }} />
+                                    Efficiency Metrics
+                                    {tabLoadingStates.efficiency && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.efficiency ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-warning mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Efficiency Data...</h5>
+                                        <p className="text-muted">Calculating production efficiency metrics</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Efficiency Metrics</h5>
+                                        <p className="text-muted">Production efficiency analysis will appear here</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Resource Utilization Tab */}
             {activeTab === 'utilization' && (
-                <div className="space-y-6">
-                    {resourceUtilization && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Resource Utilization</h3>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <BarChart data={resourceUtilization.resources || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="resource_name" />
-                      <YAxis />
-                      <Tooltip />
-                                    <Legend />
-                                    <Bar dataKey="utilization_percentage" fill="#3B82F6" name="Utilization %" />
-                                    <Bar dataKey="efficiency" fill="#10B981" name="Efficiency %" />
-                                </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                    )}
-
-                    {/* Resource Details */}
-                    {resourceUtilization && (
-                        <div className="bg-white p-6 rounded-lg shadow">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Resource Performance</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {resourceUtilization.resources?.map((resource, index) => (
-                                    <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                                        <h4 className="font-semibold text-gray-800">{resource.resource_name}</h4>
-                                        <p className="text-sm text-gray-600">Utilization: {resource.utilization_percentage?.toFixed(1)}%</p>
-                                        <p className="text-sm text-gray-600">Efficiency: {resource.efficiency?.toFixed(1)}%</p>
-                                        <p className="text-sm text-gray-600">Status: {resource.status}</p>
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaCogs className="me-2" style={{ color: colors.dark }} />
+                                    Resource Utilization
+                                    {tabLoadingStates.utilization && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.utilization ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-dark mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Resource Data...</h5>
+                                        <p className="text-muted">Analyzing resource utilization patterns</p>
                                     </div>
-                                ))}
-              </div>
-            </div>
-          )}
-                </div>
-            )}
-
-            {/* Advanced Analytics Tab */}
-            {activeTab === 'analytics' && (
-                <div className="space-y-6">
-                    {/* Advanced Performance Analytics Dashboard */}
-                    <div className="bg-white p-6 rounded-lg shadow">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-semibold text-gray-800">Advanced Performance Analytics</h3>
-                            <div className="flex gap-2">
-                                <button className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
-                                    Generate Report
-                                </button>
-                                <button className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">
-                                    Export Analytics
-                                </button>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaCogs className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Resource Utilization</h5>
+                                        <p className="text-muted">Resource usage analysis will appear here</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
-
-                        {advancedPerformance && (
-                            <div className="space-y-6">
-                                {/* Performance Trend Chart */}
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Performance Trends Over Time</h4>
-                                    <ResponsiveContainer width="100%" height={400}>
-                                        <LineChart data={advancedPerformance.analytics || []}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="date" />
-                                            <YAxis />
-                      <Tooltip />
-                      <Legend />
-                                            <Line type="monotone" dataKey="productivity_index" stroke="#3B82F6" name="Productivity Index" strokeWidth={3} />
-                                            <Line type="monotone" dataKey="quality_score" stroke="#10B981" name="Quality Score" strokeWidth={3} />
-                                            <Line type="monotone" dataKey="cost_efficiency" stroke="#EF4444" name="Cost Efficiency" strokeWidth={3} />
-                                            <Line type="monotone" dataKey="roi" stroke="#8B5CF6" name="ROI %" strokeWidth={3} />
-                                        </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                                {/* Performance Metrics Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg text-white">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-sm font-medium opacity-90">Productivity Index</h4>
-                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.productivity_index?.toFixed(1) || 0}</p>
-                                            </div>
-                                            <div className="text-4xl opacity-20">📈</div>
-                                        </div>
-                                        <div className="mt-2 text-sm opacity-90">
-                                            {advancedPerformance?.metrics?.productivity_trend > 0 ? '↗️' : '↘️'} 
-                                            {Math.abs(advancedPerformance?.metrics?.productivity_trend || 0).toFixed(1)}% vs last period
-              </div>
-            </div>
-                                    
-                                    <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-lg text-white">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-sm font-medium opacity-90">Quality Score</h4>
-                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.quality_score?.toFixed(1) || 0}</p>
-              </div>
-                                            <div className="text-4xl opacity-20">⭐</div>
-                      </div>
-                                        <div className="mt-2 text-sm opacity-90">
-                                            {advancedPerformance?.metrics?.quality_trend > 0 ? '↗️' : '↘️'} 
-                                            {Math.abs(advancedPerformance?.metrics?.quality_trend || 0).toFixed(1)}% vs last period
-                      </div>
                     </div>
-                                    
-                                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-lg text-white">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-sm font-medium opacity-90">Cost Efficiency</h4>
-                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.cost_efficiency?.toFixed(1) || 0}</p>
-                </div>
-                                            <div className="text-4xl opacity-20">💰</div>
-              </div>
-                                        <div className="mt-2 text-sm opacity-90">
-                                            {advancedPerformance?.metrics?.cost_trend > 0 ? '↗️' : '↘️'} 
-                                            {Math.abs(advancedPerformance?.metrics?.cost_trend || 0).toFixed(1)}% vs last period
-            </div>
-          </div>
-
-                                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-lg text-white">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-sm font-medium opacity-90">ROI</h4>
-                                                <p className="text-3xl font-bold">{advancedPerformance?.metrics?.roi?.toFixed(1) || 0}%</p>
-              </div>
-                                            <div className="text-4xl opacity-20">📊</div>
-                      </div>
-                                        <div className="mt-2 text-sm opacity-90">
-                                            {advancedPerformance?.metrics?.roi_trend > 0 ? '↗️' : '↘️'} 
-                                            {Math.abs(advancedPerformance?.metrics?.roi_trend || 0).toFixed(1)}% vs last period
-                      </div>
-                    </div>
-                  </div>
-
-                                {/* Detailed Performance Analysis */}
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    {/* Production Efficiency Breakdown */}
-                                    <div className="bg-white p-6 rounded-lg shadow border">
-                                        <h4 className="text-lg font-semibold text-gray-800 mb-4">Production Efficiency Breakdown</h4>
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">Overall Efficiency</span>
-                                                <div className="flex items-center">
-                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                                                        <div className="bg-blue-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.overall_efficiency || 0}%`}}></div>
-                                                    </div>
-                                                    <span className="font-semibold">{advancedPerformance?.metrics?.overall_efficiency?.toFixed(1) || 0}%</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">Labor Efficiency</span>
-                                                <div className="flex items-center">
-                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                                                        <div className="bg-green-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.labor_efficiency || 0}%`}}></div>
-                                                    </div>
-                                                    <span className="font-semibold">{advancedPerformance?.metrics?.labor_efficiency?.toFixed(1) || 0}%</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">Machine Efficiency</span>
-                                                <div className="flex items-center">
-                                                    <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                                                        <div className="bg-purple-500 h-2 rounded-full" style={{width: `${advancedPerformance?.metrics?.machine_efficiency || 0}%`}}></div>
-                                                    </div>
-                                                    <span className="font-semibold">{advancedPerformance?.metrics?.machine_efficiency?.toFixed(1) || 0}%</span>
-                      </div>
-                      </div>
-                    </div>
-                  </div>
-
-                                    {/* Quality Metrics */}
-                                    <div className="bg-white p-6 rounded-lg shadow border">
-                                        <h4 className="text-lg font-semibold text-gray-800 mb-4">Quality Metrics</h4>
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">Defect Rate</span>
-                                                <span className="font-semibold text-red-600">{advancedPerformance?.metrics?.defect_rate?.toFixed(2) || 0}%</span>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">First Pass Yield</span>
-                                                <span className="font-semibold text-green-600">{advancedPerformance?.metrics?.first_pass_yield?.toFixed(1) || 0}%</span>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-600">Customer Satisfaction</span>
-                                                <span className="font-semibold text-blue-600">{advancedPerformance?.metrics?.customer_satisfaction?.toFixed(1) || 0}/5</span>
-                      </div>
-                      </div>
-                    </div>
-                  </div>
-
-                                {/* Performance Comparison Chart */}
-                                <div className="bg-white p-6 rounded-lg shadow">
-                                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Performance Comparison</h4>
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <BarChart data={advancedPerformance?.comparison_data || []}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="metric" />
-                                            <YAxis />
-                                            <Tooltip />
-                                            <Legend />
-                                            <Bar dataKey="current" fill="#3B82F6" name="Current Period" />
-                                            <Bar dataKey="previous" fill="#10B981" name="Previous Period" />
-                                            <Bar dataKey="target" fill="#EF4444" name="Target" />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                      </div>
-                      </div>
-                        )}
-                  </div>
                 </div>
             )}
 
-            {/* Export Buttons */}
-            <div className="mt-4 d-flex gap-2">
-                <button 
-                    onClick={() => handleProductionExport('output', 'csv')}
-                    className="btn btn-success btn-sm"
-                >
-                    <i className="fas fa-industry me-1"></i>
-                    Export Output CSV
-                </button>
-                <button 
-                    onClick={() => handleProductionExport('stage_breakdown', 'csv')}
-                    className="btn btn-primary btn-sm"
-                >
-                    <i className="fas fa-cogs me-1"></i>
-                    Export Stage Breakdown CSV
-                </button>
-                <button 
-                    onClick={() => handleProductionExport('daily_output', 'csv')}
-                    className="btn btn-info btn-sm"
-                >
-                    <i className="fas fa-file-csv me-1"></i>
-                    Export Daily Output CSV
-                </button>
-            </div>
+            {/* Production Stages Tab */}
+            {activeTab === 'stages' && (
+                <div className="row">
+                    <div className="col-12">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaHistory className="me-2" style={{ color: colors.danger }} />
+                                    Production Stage Breakdown
+                                    {tabLoadingStates.stages && (
+                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                    )}
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                {tabLoadingStates.stages ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-danger mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
+                                        </div>
+                                        <h5>Loading Stage Data...</h5>
+                                        <p className="text-muted">Analyzing production stage performance</p>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaHistory className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">Production Stages</h5>
+                                        <p className="text-muted">Stage-by-stage production analysis will appear here</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 };

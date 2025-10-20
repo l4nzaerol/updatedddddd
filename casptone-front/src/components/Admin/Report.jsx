@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
 import InventoryReports from "./InventoryReports";
+import EnhancedInventoryReports from "./EnhancedInventoryReports";
 import ProductionReports from "./ProductionReports";
 import SalesAnalytics from "./SalesAnalytics";
 
@@ -130,7 +131,7 @@ const Report = () => {
                     {/* Report Content */}
                     <div className="row">
                         <div className="col-12">
-                            {activeReport === 'inventory' && <InventoryReports />}
+                            {activeReport === 'inventory' && <EnhancedInventoryReports />}
                             {activeReport === 'production' && <ProductionReports />}
                             {activeReport === 'sales' && <SalesAnalytics />}
                         </div>

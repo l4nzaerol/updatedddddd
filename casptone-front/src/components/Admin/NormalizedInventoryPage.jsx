@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
 import { toast } from "sonner";
+import api from "../../api/client";
 
 // Custom styles for simple, clean design
 const customStyles = `
@@ -15,7 +16,7 @@ const customStyles = `
   /* Simple transparent button styles */
   .btn-action {
     background: rgba(255, 255, 255, 0.8);
-    border: 1px solid #d1d5db;
+    border: 1px solid #3d66a2ff;
     border-radius: 6px;
     transition: all 0.2s ease;
     display: flex;
@@ -109,53 +110,30 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-  const apiCall = useCallback(async (path, options = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    };
-
-    const url = path.startsWith('http') ? path : `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
-
-    const response = await fetch(url, {
-      ...options,
-      headers
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
-  }, [apiBase]);
-
   const fetchAvailableMaterials = useCallback(async () => {
     try {
-      const materials = await apiCall('/normalized-inventory/materials');
-      setAvailableMaterials(materials);
+      const response = await api.get('/normalized-inventory/materials');
+      setAvailableMaterials(response.data);
     } catch (error) {
       console.error('Failed to fetch materials:', error);
       toast.error("Failed to fetch materials");
     }
-  }, [apiCall]);
+  }, []);
 
   const fetchBOM = useCallback(async () => {
     if (!product) return;
     
     setLoading(true);
     try {
-      const bom = await apiCall(`/normalized-inventory/bom/${product.product_id}`);
-      setFormData({ materials: bom });
+      const response = await api.get(`/normalized-inventory/bom/${product.product_id}`);
+      setFormData({ materials: response.data });
     } catch (error) {
       console.error('Failed to fetch BOM:', error);
       toast.error("Failed to fetch BOM");
     } finally {
       setLoading(false);
     }
-  }, [product, apiCall]);
+  }, [product]);
 
   useEffect(() => {
     if (show) {
@@ -198,12 +176,9 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
 
     setSaving(true);
     try {
-      await apiCall('/normalized-inventory/bom', {
-        method: 'POST',
-        body: JSON.stringify({
-          product_id: product.product_id,
-          materials: formData.materials
-        })
+      await api.post('/normalized-inventory/bom', {
+        product_id: product.product_id,
+        materials: formData.materials
       });
 
       toast.success("BOM updated successfully!");
@@ -658,29 +633,6 @@ const AlkansyaOutputModal = ({ show, onHide, onSuccess }) => {
   });
   const [saving, setSaving] = useState(false);
 
-  const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-  const apiCall = useCallback(async (path, options = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    };
-
-    const url = path.startsWith('http') ? path : `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
-
-    const response = await fetch(url, {
-      ...options,
-      headers
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
-  }, [apiBase]);
-
   const handleSave = async () => {
     if (formData.quantity_produced <= 0) {
       toast.error("Quantity produced must be greater than 0");
@@ -689,10 +641,7 @@ const AlkansyaOutputModal = ({ show, onHide, onSuccess }) => {
 
     setSaving(true);
     try {
-      await apiCall('/normalized-inventory/alkansya-output', {
-        method: 'POST',
-        body: JSON.stringify(formData)
-      });
+      const response = await api.post('/normalized-inventory/alkansya-output', formData);
 
       toast.success("📊 Alkansya Output Recorded!", {
         description: `${formData.quantity_produced} units recorded for ${formData.output_date}`,
@@ -708,8 +657,14 @@ const AlkansyaOutputModal = ({ show, onHide, onSuccess }) => {
       onHide();
     } catch (error) {
       console.error('Failed to record output:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        response: error.response?.data
+      });
+      
       toast.error("❌ Failed to Record Output", {
-        description: "Unable to record the daily output. Please try again.",
+        description: `Unable to record the daily output. ${error.response?.data?.error || error.message}`,
         duration: 5000,
         style: {
           background: '#fee2e2',
@@ -795,29 +750,6 @@ const StockAdjustmentModal = ({ show, onHide, material, onSuccess }) => {
   });
   const [saving, setSaving] = useState(false);
 
-  const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-  const apiCall = useCallback(async (path, options = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    };
-
-    const url = path.startsWith('http') ? path : `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
-
-    const response = await fetch(url, {
-      ...options,
-      headers
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
-  }, [apiBase]);
-
   useEffect(() => {
     if (show && material) {
       setFormData({
@@ -842,15 +774,12 @@ const StockAdjustmentModal = ({ show, onHide, material, onSuccess }) => {
 
     setSaving(true);
     try {
-      await apiCall('/normalized-inventory/stock-adjustment', {
-        method: 'POST',
-        body: JSON.stringify({
-          material_id: material.material_id,
-          adjustment_type: formData.adjustment_type,
-          quantity: formData.quantity,
-          reason: formData.reason,
-          reference: formData.reference
-        })
+      await api.post('/normalized-inventory/stock-adjustment', {
+        material_id: material.material_id,
+        adjustment_type: formData.adjustment_type,
+        quantity: formData.quantity,
+        reason: formData.reason,
+        reference: formData.reference
       });
 
       toast.success("📦 Stock Adjusted Successfully!", {
@@ -868,7 +797,7 @@ const StockAdjustmentModal = ({ show, onHide, material, onSuccess }) => {
     } catch (error) {
       console.error('Failed to adjust stock:', error);
       toast.error("❌ Stock Adjustment Failed", {
-        description: "Unable to adjust stock. Please try again.",
+        description: `Unable to adjust stock. ${error.response?.data?.error || error.message}`,
         duration: 5000,
         style: {
           background: '#fee2e2',
@@ -1229,53 +1158,31 @@ const NormalizedInventoryPage = () => {
   }, [materials, materialFilter]);
 
   // API helper function
-  const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-  const apiCall = useCallback(async (path, options = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    };
-
-    const url = path.startsWith('http') ? path : `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
-
-    const response = await fetch(url, {
-      ...options,
-      headers
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
-  }, [apiBase]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [materialsRes, productsRes, summaryRes, transactionsRes, dailyOutputsRes] = await Promise.allSettled([
-        apiCall("/normalized-inventory/materials"),
-        apiCall("/normalized-inventory/products"),
-        apiCall("/normalized-inventory/summary"),
-        apiCall("/normalized-inventory/transactions"),
-        apiCall("/normalized-inventory/daily-output")
+        api.get("/normalized-inventory/materials"),
+        api.get("/normalized-inventory/products"),
+        api.get("/normalized-inventory/summary"),
+        api.get("/normalized-inventory/transactions"),
+        api.get("/normalized-inventory/daily-output")
       ]);
 
-      if (materialsRes.status === "fulfilled") setMaterials(materialsRes.value || []);
-      if (productsRes.status === "fulfilled") setProducts(productsRes.value || []);
-      if (summaryRes.status === "fulfilled") setSummary(summaryRes.value || {});
-      if (transactionsRes.status === "fulfilled") setTransactions(transactionsRes.value?.data || []);
-      if (dailyOutputsRes.status === "fulfilled") setDailyOutputs(dailyOutputsRes.value?.data || []);
+      if (materialsRes.status === "fulfilled") setMaterials(materialsRes.value?.data || []);
+      if (productsRes.status === "fulfilled") setProducts(productsRes.value?.data || []);
+      if (summaryRes.status === "fulfilled") setSummary(summaryRes.value?.data || {});
+      if (transactionsRes.status === "fulfilled") setTransactions(transactionsRes.value?.data?.data || []);
+      if (dailyOutputsRes.status === "fulfilled") setDailyOutputs(dailyOutputsRes.value?.data?.daily_outputs || []);
     } catch (err) {
       console.error(err);
       setError("Failed to fetch data. Check API settings.");
     } finally {
       setLoading(false);
     }
-  }, [apiCall]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -1295,15 +1202,9 @@ const NormalizedInventoryPage = () => {
   const handleSaveMaterial = async (materialData) => {
     try {
       if (editingMaterial) {
-        await apiCall(`/normalized-inventory/materials/${editingMaterial.material_id}`, {
-          method: 'PUT',
-          body: JSON.stringify(materialData)
-        });
+        await api.put(`/normalized-inventory/materials/${editingMaterial.material_id}`, materialData);
       } else {
-        await apiCall("/normalized-inventory/materials", {
-          method: 'POST',
-          body: JSON.stringify(materialData)
-        });
+        await api.post("/normalized-inventory/materials", materialData);
       }
       await fetchData();
     } catch (error) {
@@ -1318,9 +1219,7 @@ const NormalizedInventoryPage = () => {
     }
 
     try {
-      await apiCall(`/normalized-inventory/materials/${materialId}`, {
-        method: 'DELETE'
-      });
+      await api.delete(`/normalized-inventory/materials/${materialId}`);
       
       toast.success("🗑️ Material Deleted Successfully!", {
         description: "Material has been removed from the inventory.",
@@ -1336,7 +1235,7 @@ const NormalizedInventoryPage = () => {
     } catch (error) {
       console.error("Delete material error:", error);
       toast.error("❌ Material Deletion Failed", {
-        description: "Unable to delete the material. Please try again.",
+        description: `Unable to delete the material. ${error.response?.data?.error || error.message}`,
         duration: 5000,
         style: {
           background: '#fee2e2',

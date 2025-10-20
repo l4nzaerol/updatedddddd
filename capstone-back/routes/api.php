@@ -26,6 +26,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\NormalizedInventoryController;
 use App\Http\Controllers\InventoryTransactionController;
+use App\Http\Controllers\EnhancedInventoryReportsController;
 
 use App\Models\Production;
 use Illuminate\Support\Facades\DB;
@@ -342,6 +343,29 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'getProfile']);
     Route::put('/profile', [ProfileController::class, 'updateProfile']);
     Route::post('/profile/change-password', [ProfileController::class, 'changePassword']);
+
+    // Enhanced Inventory Reports Routes
+    Route::prefix('inventory')->group(function () {
+        Route::get('/normalized-inventory', [EnhancedInventoryReportsController::class, 'getNormalizedInventoryData']);
+        Route::get('/consumption-trends', [EnhancedInventoryReportsController::class, 'getConsumptionTrends']);
+        Route::get('/made-to-order-status', [EnhancedInventoryReportsController::class, 'getMadeToOrderStatus']);
+        Route::get('/forecast', [EnhancedInventoryReportsController::class, 'getForecastData']);
+        Route::get('/replenishment-schedule', [EnhancedInventoryReportsController::class, 'getReplenishmentSchedule']);
+        Route::get('/transactions', [EnhancedInventoryReportsController::class, 'getInventoryTransactions']);
+        Route::get('/alerts', [EnhancedInventoryReportsController::class, 'getAlerts']);
+    });
+
+    // Sales Analytics Routes
+    Route::prefix('analytics')->group(function () {
+        Route::get('/sales-dashboard', [EnhancedInventoryReportsController::class, 'getSalesDashboard']);
+        Route::get('/revenue-analytics', [EnhancedInventoryReportsController::class, 'getRevenueAnalytics']);
+        Route::get('/product-performance', [EnhancedInventoryReportsController::class, 'getProductPerformance']);
+        Route::get('/customer-analytics', [EnhancedInventoryReportsController::class, 'getCustomerAnalytics']);
+        Route::get('/order-analytics', [EnhancedInventoryReportsController::class, 'getOrderAnalytics']);
+        Route::get('/payment-analytics', [EnhancedInventoryReportsController::class, 'getPaymentAnalytics']);
+        Route::get('/trend-analysis', [EnhancedInventoryReportsController::class, 'getTrendAnalysis']);
+        Route::get('/sales-reports', [EnhancedInventoryReportsController::class, 'getSalesReports']);
+    });
 });
 
 // Webhooks (no auth)

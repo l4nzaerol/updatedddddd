@@ -17,6 +17,11 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// Sanctum CSRF cookie route for stateful authentication
+Route::get('/sanctum/csrf-cookie', function () {
+    return response()->json(['message' => 'CSRF cookie set']);
+})->middleware('web');
+
 // Add a simple login route to prevent route not found errors
 Route::get('/login', function () {
     return response()->json(['message' => 'Please login via the API'], 401);

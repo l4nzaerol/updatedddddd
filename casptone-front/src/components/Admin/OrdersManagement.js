@@ -3,7 +3,7 @@ import api from "../../api/client";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
-const EnhancedOrdersManagement = () => {
+const OrdersManagement = () => {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(false); // Never show full loading screen
@@ -1013,7 +1013,7 @@ const EnhancedOrdersManagement = () => {
   );
 };
 
-export default EnhancedOrdersManagement;
+export default OrdersManagement;
 
 // Add CSS styles for minimalist filters
 const styles = `

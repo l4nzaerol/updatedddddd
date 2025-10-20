@@ -320,11 +320,11 @@ const ProductionTracking = () => {
                         </div>
                         <div className="col-md-6 text-end">
                           <div className="d-flex flex-column align-items-end gap-2">
-                            <span className={`badge bg-${getStatusColor(orderStatus.status)} fs-6 px-3 py-2`}>
-                              {orderStatus.message}
-                            </span>
+                          <span className={`badge bg-${getStatusColor(orderStatus.status)} fs-6 px-3 py-2`}>
+                            {orderStatus.message}
+                          </span>
                             <div>
-                              <strong>Total: ₱{Number(order.total_price).toLocaleString()}</strong>
+                            <strong>Total: ₱{Number(order.total_price).toLocaleString()}</strong>
                             </div>
                             {canCancelOrder(order) && (
                               <button
