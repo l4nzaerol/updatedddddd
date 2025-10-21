@@ -14,7 +14,6 @@ class Inventory extends Model
     
     protected $fillable = [
         'material_id',
-        'product_id',
         'location_id',
         'current_stock',
         'quantity_reserved',
@@ -187,14 +186,18 @@ class Inventory extends Model
             return null;
         }
 
-        $inventory = self::where('product_id', $productId)->first();
+        // Get BOM materials for the product
         $bomMaterials = BOM::where('product_id', $productId)
             ->with(['material', 'material.inventory'])
             ->get();
 
+        // Get inventory records for all materials used in this product
+        $materialIds = $bomMaterials->pluck('material_id')->toArray();
+        $inventoryRecords = self::whereIn('material_id', $materialIds)->get();
+
         return [
             'product' => $product,
-            'inventory' => $inventory,
+            'inventory_records' => $inventoryRecords,
             'bom_materials' => $bomMaterials,
             'total_materials' => $bomMaterials->count(),
         ];

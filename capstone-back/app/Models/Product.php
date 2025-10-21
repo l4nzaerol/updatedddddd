@@ -25,15 +25,12 @@ class Product extends Model
         'is_available_for_order', // New column for availability toggle
         'raw_materials', // New JSON column
         'total_bom_cost', // New column
-        'unit_of_measure',
-        'standard_cost',
         'price',
         'stock', // Original column
         'image' // Keep existing column
     ];
 
     protected $casts = [
-        'standard_cost' => 'decimal:2',
         'price' => 'decimal:2',
         'total_bom_cost' => 'decimal:2',
         'raw_materials' => 'array',

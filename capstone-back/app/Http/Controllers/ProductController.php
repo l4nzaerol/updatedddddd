@@ -10,6 +10,42 @@ use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
+    /**
+     * Generate a new product code based on category
+     */
+    public function generateProductCode(Request $request)
+    {
+        $category = $request->input('category', 'Stocked Products');
+        
+        // Determine prefix based on category
+        $prefix = 'PROD'; // Default prefix
+        if (str_contains(strtolower($category), 'alkansya') || $category === 'Stocked Products') {
+            $prefix = 'ALK';
+        } elseif (str_contains(strtolower($category), 'table') || str_contains(strtolower($category), 'dining')) {
+            $prefix = 'DT';
+        } elseif (str_contains(strtolower($category), 'chair') || str_contains(strtolower($category), 'wooden')) {
+            $prefix = 'WC';
+        }
+        
+        // Find the next available number for this prefix
+        $lastProduct = Product::where('product_code', 'like', $prefix . '%')
+            ->orderBy('product_code', 'desc')
+            ->first();
+        
+        $nextNumber = 1;
+        if ($lastProduct) {
+            // Extract number from product code (e.g., "ALK001" -> 1)
+            preg_match('/' . $prefix . '(\d+)/', $lastProduct->product_code, $matches);
+            if (isset($matches[1])) {
+                $nextNumber = intval($matches[1]) + 1;
+            }
+        }
+        
+        $productCode = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+        
+        return response()->json(['product_code' => $productCode]);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -18,10 +54,7 @@ class ProductController extends Controller
             'product_code' => 'required|string|unique:products,product_code',
             'description' => 'nullable|string',
             'category_name' => 'nullable|string',
-            'unit_of_measure' => 'nullable|string',
-            'standard_cost' => 'required|numeric|min:0',
             'price' => 'required|numeric|min:0',
-            'stock' => 'required|integer|min:0',
             'image' => 'nullable|string',
             'bom' => 'nullable|array',
             'bom.*.material_id' => 'required|exists:materials,material_id',

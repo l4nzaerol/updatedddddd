@@ -5,9 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\AlkansyaDailyOutput;
 use App\Models\Product;
-use App\Models\ProductMaterial;
-use App\Models\InventoryItem;
-use App\Models\InventoryUsage;
+use App\Models\BOM;
+use App\Models\Material;
+use App\Models\Inventory;
+use App\Models\InventoryTransaction;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -53,17 +54,22 @@ class AlkansyaDailyOutputController extends Controller
         try {
             DB::beginTransaction();
 
-            // Get Alkansya product and BOM
-            $alkansyaProduct = Product::where('name', 'Alkansya')->first();
-            if (!$alkansyaProduct) {
-                Log::error('Alkansya product not found in database');
-                return response()->json(['error' => 'Alkansya product not found. Please ensure the product exists in the database.'], 404);
+            // Get all Alkansya products
+            $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+                ->where('name', 'Alkansya')
+                ->get();
+
+            if ($alkansyaProducts->isEmpty()) {
+                Log::error('No Alkansya products found in database');
+                return response()->json(['error' => 'No Alkansya products found. Please ensure the products exist in the database.'], 404);
             }
 
-            Log::info('Found Alkansya product with ID: ' . $alkansyaProduct->id);
+            Log::info('Found ' . $alkansyaProducts->count() . ' Alkansya products');
 
-            $bomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
-                ->with('inventoryItem')
+            // Use the first Alkansya product for BOM calculation (they all have the same BOM)
+            $alkansyaProduct = $alkansyaProducts->first();
+            $bomMaterials = BOM::where('product_id', $alkansyaProduct->id)
+                ->with('material')
                 ->get();
 
             Log::info('Found ' . $bomMaterials->count() . ' BOM materials for Alkansya');
@@ -82,61 +88,74 @@ class AlkansyaDailyOutputController extends Controller
 
             // Calculate materials needed and deduct from inventory
             foreach ($bomMaterials as $bomMaterial) {
-                $inventoryItem = $bomMaterial->inventoryItem;
+                $material = $bomMaterial->material;
                 
-                if (!$inventoryItem) {
-                    Log::error('Inventory item not found for BOM material ID: ' . $bomMaterial->id);
+                if (!$material) {
+                    Log::error('Material not found for BOM material ID: ' . $bomMaterial->id);
                     DB::rollBack();
                     return response()->json([
-                        'error' => 'Inventory item not found for BOM material. Please check the database setup.'
+                        'error' => 'Material not found for BOM material. Please check the database setup.'
                     ], 500);
                 }
                 
-                $requiredQuantity = $bomMaterial->qty_per_unit * $quantity;
+                $requiredQuantity = $bomMaterial->quantity_per_product * $quantity;
                 
-                Log::info("Processing material: {$inventoryItem->name} (SKU: {$inventoryItem->sku}), Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}");
+                Log::info("Processing material: {$material->material_name} (Code: {$material->material_code}), Required: {$requiredQuantity}, Available: {$material->current_stock}");
                 
                 if ($requiredQuantity > 0) {
                     // Check if enough stock
-                    if ($inventoryItem->quantity_on_hand < $requiredQuantity) {
+                    if ($material->current_stock < $requiredQuantity) {
                         DB::rollBack();
-                        Log::error("Insufficient stock for {$inventoryItem->name}. Required: {$requiredQuantity}, Available: {$inventoryItem->quantity_on_hand}");
+                        Log::error("Insufficient stock for {$material->material_name}. Required: {$requiredQuantity}, Available: {$material->current_stock}");
                         return response()->json([
-                            'error' => "Insufficient stock for {$inventoryItem->name}",
+                            'error' => "Insufficient stock for {$material->material_name}",
                             'details' => [
-                                'material' => $inventoryItem->name,
-                                'sku' => $inventoryItem->sku,
+                                'material' => $material->material_name,
+                                'code' => $material->material_code,
                                 'required' => $requiredQuantity,
-                                'available' => $inventoryItem->quantity_on_hand,
-                                'shortage' => $requiredQuantity - $inventoryItem->quantity_on_hand
+                                'available' => $material->current_stock,
+                                'shortage' => $requiredQuantity - $material->current_stock
                             ]
                         ], 400);
                     }
 
-                    // Deduct from inventory
-                    $inventoryItem->quantity_on_hand -= $requiredQuantity;
-                    $inventoryItem->save();
+                    // Deduct from material stock
+                    $material->current_stock -= $requiredQuantity;
+                    $material->save();
+
+                    // Update inventory record
+                    $inventory = Inventory::where('material_id', $material->material_id)->first();
+                    if ($inventory) {
+                        $inventory->current_stock -= $requiredQuantity;
+                        $inventory->last_updated = now();
+                        $inventory->save();
+                    }
 
                     // Record material usage
                     $materialsUsed[] = [
-                        'inventory_item_id' => $inventoryItem->id,
-                        'item_name' => $inventoryItem->name,
-                        'sku' => $inventoryItem->sku,
+                        'material_id' => $material->material_id,
+                        'material_name' => $material->material_name,
+                        'material_code' => $material->material_code,
                         'quantity_used' => $requiredQuantity,
-                        'unit_cost' => $inventoryItem->unit_cost,
-                        'total_cost' => $inventoryItem->unit_cost * $requiredQuantity,
+                        'unit_cost' => $material->standard_cost,
+                        'total_cost' => $material->standard_cost * $requiredQuantity,
                     ];
 
-                    $totalCost += $inventoryItem->unit_cost * $requiredQuantity;
+                    $totalCost += $material->standard_cost * $requiredQuantity;
 
-                    // Log usage in inventory_usages table
-                    InventoryUsage::create([
-                        'inventory_item_id' => $inventoryItem->id,
-                        'qty_used' => $requiredQuantity,
-                        'date' => $request->date,
+                    // Create inventory transaction
+                    InventoryTransaction::create([
+                        'material_id' => $material->material_id,
+                        'transaction_type' => 'PRODUCTION_USAGE',
+                        'quantity' => -$requiredQuantity,
+                        'reference' => 'Alkansya Daily Output - ' . $request->date,
+                        'remarks' => 'Material used for Alkansya production',
+                        'timestamp' => now(),
+                        'unit_cost' => $material->standard_cost,
+                        'total_cost' => $material->standard_cost * $requiredQuantity
                     ]);
 
-                    Log::info("Auto-deducted {$requiredQuantity} {$inventoryItem->unit} of {$inventoryItem->name} for Alkansya daily output");
+                    Log::info("Auto-deducted {$requiredQuantity} {$material->unit_of_measure} of {$material->material_name} for Alkansya daily output");
                 }
             }
 
@@ -158,14 +177,10 @@ class AlkansyaDailyOutputController extends Controller
                 ]
             );
 
-            // Update finished goods inventory
-            $alkansyaFinishedGood = InventoryItem::where('sku', 'FG-ALKANSYA')->first();
-            if ($alkansyaFinishedGood) {
-                $alkansyaFinishedGood->quantity_on_hand += $quantity;
-                $alkansyaFinishedGood->save();
-                Log::info("Updated finished goods inventory: {$alkansyaFinishedGood->name} now has {$alkansyaFinishedGood->quantity_on_hand} units");
-            } else {
-                Log::warning('Finished goods inventory item (FG-ALKANSYA) not found. Daily output recorded but finished goods inventory not updated.');
+            // Update stock for ALL Alkansya products
+            foreach ($alkansyaProducts as $alkansyaProduct) {
+                $alkansyaProduct->increment('stock', $quantity);
+                Log::info("Updated stock for {$alkansyaProduct->product_name}: +{$quantity} units");
             }
 
             DB::commit();

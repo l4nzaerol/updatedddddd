@@ -345,8 +345,9 @@ class ProductionController extends Controller
                 \Log::warning("Failed to sync stage logs for production {$production->id}: " . $e->getMessage());
             }
 
-            // Recompute overall progress if available
-            if (method_exists($production, 'updateOverallProgress')) {
+            // Recompute overall progress if available, but only if not using process-based tracking
+            // Process-based completion takes precedence over stage-based completion
+            if (method_exists($production, 'updateOverallProgress') && !$production->processes()->exists()) {
                 try {
                     $production->updateOverallProgress();
                 } catch (\Exception $e) {
@@ -458,7 +459,7 @@ class ProductionController extends Controller
                 \Log::info("Process {$process->id} ({$process->process_name}) completed successfully", [
                     'production_id' => $productionId,
                     'process_id' => $processId,
-                    'started_at' => $updateData['started_at'],
+                    'started_at' => $updateData['started_at'] ?? $process->started_at,
                     'completed_at' => $updateData['completed_at'],
                     'completed_by' => $updateData['completed_by_name'] ?? 'Unknown'
                 ]);
@@ -467,6 +468,7 @@ class ProductionController extends Controller
             $process->update($updateData);
 
             // Update production current_stage based on processes
+            // This ensures process-based completion takes precedence
             $this->updateProductionStageFromProcesses($production);
 
             // Reload production with relationships
@@ -543,10 +545,27 @@ class ProductionController extends Controller
                 $production->overall_progress = 100;
                 $production->actual_completion_date = now();
                 
-                \Log::info("Production {$production->id} completed - all processes finished");
+                // Create inventory transaction for production completion
+                $this->createProductionCompletionTransaction($production);
                 
-                // DO NOT auto-update order status to ready_for_delivery
-                // Admin must manually mark as ready for delivery from the "Ready (Furniture)" tab
+                // Update order status to 'ready_for_delivery' when production is done
+                if ($production->order_id) {
+                    $order = Order::find($production->order_id);
+                    if ($order && $order->status === 'processing') {
+                        $order->status = 'ready_for_delivery';
+                        $order->save();
+                        \Log::info("Order #{$order->id} status updated to 'ready_for_delivery' because all production processes completed");
+                        
+                        // Update order tracking status
+                        OrderTracking::where('order_id', $order->id)->update([
+                            'status' => 'ready_for_delivery',
+                            'current_stage' => 'Ready for Delivery',
+                            'progress_percentage' => 100,
+                        ]);
+                    }
+                }
+                
+                \Log::info("Production {$production->id} completed - all processes finished");
             } else {
                 // Find the next process that should be started
                 // Look for the first process that's not completed

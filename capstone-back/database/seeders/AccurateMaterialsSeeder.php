@@ -20,14 +20,12 @@ class AccurateMaterialsSeeder extends Seeder
         $alkansya = Product::updateOrCreate(
             ['product_code' => 'ALK001'],
             [
-                'product_name' => 'Alkansya',
+                'product_name' => 'Alkansya Savings Box',
                 'name' => 'Alkansya',
                 'description' => 'Traditional Filipino wooden savings box',
-                'price' => 0, // Will be calculated from BOM
+                'price' => 0, // Will be calculated from BOM on frontend
                 'stock' => 0, // Will be updated by AlkansyaFactorySeeder
-                'image' => 'storage/products/alkansya.jpg',
-                'unit_of_measure' => 'pcs',
-                'standard_cost' => 0, // Will be calculated
+                'image' => 'storage/products/Alkansya.jpg',
                 'category_name' => 'Stocked Products',
                 'raw_materials' => json_encode([
                     'Pinewood 1x4x8ft' => 1/350, // 1 piece produces 350 Alkansya
@@ -43,8 +41,89 @@ class AccurateMaterialsSeeder extends Seeder
                     'Fragile Tape' => 1/500, // 1 piece per 500 Alkansya
                     'Bubble Wrap 40 inch x 100m' => 1/250, // 1 piece per 250 Alkansya
                     'Insulation 8mm 40 inch x 100m' => 1/250 // 1 piece per 250 Alkansya
-                ]),
-                'total_bom_cost' => 0 // Will be calculated
+                ])
+            ]
+        );
+
+        $alkansya = Product::updateOrCreate(
+            ['product_code' => 'ALK002'],
+            [
+                'product_name' => 'Alkansya (Rhinoplasty)',
+                'name' => 'Alkansya',
+                'description' => 'Traditional Filipino wooden savings box',
+                'price' => 0, // Will be calculated from BOM on frontend
+                'stock' => 0, // Will be updated by AlkansyaFactorySeeder
+                'image' => 'storage/products/Rhino.webp',
+                'category_name' => 'Stocked Products',
+                'raw_materials' => json_encode([
+                    'Pinewood 1x4x8ft' => 1/350, // 1 piece produces 350 Alkansya
+                    'Plywood 4.2mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Acrylic 1.5mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Pin Nail F30' => 14, // 14 nails per Alkansya
+                    'Black Screw 1 1/2' => 4, // 4 screws per Alkansya
+                    'Stikwell 250 grams' => 1/200, // 1 piece per 200 Alkansya
+                    'Grinder pad 4inch 120 grit' => 1/50, // 1 piece per 50 Alkansya
+                    'Sticker 24 inch Car Decals' => 1/78, // 1 piece produces 78 Alkansya
+                    'Transfer Tape' => 1/300, // 1 piece per 300 Alkansya
+                    'TAPE 2 inch 200m' => 1/150, // 1 piece per 150 Alkansya
+                    'Fragile Tape' => 1/500, // 1 piece per 500 Alkansya
+                    'Bubble Wrap 40 inch x 100m' => 1/250, // 1 piece per 250 Alkansya
+                    'Insulation 8mm 40 inch x 100m' => 1/250 // 1 piece per 250 Alkansya
+                ])
+            ]
+        );
+        $alkansya = Product::updateOrCreate(
+            ['product_code' => 'ALK003'],
+            [
+                'product_name' => 'Alkansya (100k)',
+                'name' => 'Alkansya',
+                'description' => 'Traditional Filipino wooden savings box',
+                'price' => 0, // Will be calculated from BOM on frontend
+                'stock' => 0, // Will be updated by AlkansyaFactorySeeder
+                'image' => 'storage/products/Alkansya (100k).webp',
+                'category_name' => 'Stocked Products',
+                'raw_materials' => json_encode([
+                    'Pinewood 1x4x8ft' => 1/350, // 1 piece produces 350 Alkansya
+                    'Plywood 4.2mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Acrylic 1.5mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Pin Nail F30' => 14, // 14 nails per Alkansya
+                    'Black Screw 1 1/2' => 4, // 4 screws per Alkansya
+                    'Stikwell 250 grams' => 1/200, // 1 piece per 200 Alkansya
+                    'Grinder pad 4inch 120 grit' => 1/50, // 1 piece per 50 Alkansya
+                    'Sticker 24 inch Car Decals' => 1/78, // 1 piece produces 78 Alkansya
+                    'Transfer Tape' => 1/300, // 1 piece per 300 Alkansya
+                    'TAPE 2 inch 200m' => 1/150, // 1 piece per 150 Alkansya
+                    'Fragile Tape' => 1/500, // 1 piece per 500 Alkansya
+                    'Bubble Wrap 40 inch x 100m' => 1/250, // 1 piece per 250 Alkansya
+                    'Insulation 8mm 40 inch x 100m' => 1/250 // 1 piece per 250 Alkansya
+                ])
+            ]
+        );
+        $alkansya = Product::updateOrCreate(
+            ['product_code' => 'ALK004'],
+            [
+                'product_name' => 'Alkansya (Forda Iphone)',
+                'name' => 'Alkansya',
+                'description' => 'Traditional Filipino wooden savings box',
+                'price' => 0, // Will be calculated from BOM on frontend
+                'stock' => 0, // Will be updated by AlkansyaFactorySeeder
+                'image' => 'storage/products/Forda.webp',
+                'category_name' => 'Stocked Products',
+                'raw_materials' => json_encode([
+                    'Pinewood 1x4x8ft' => 1/350, // 1 piece produces 350 Alkansya
+                    'Plywood 4.2mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Acrylic 1.5mm 4x8ft' => 1/78, // 1 piece produces 78 Alkansya
+                    'Pin Nail F30' => 14, // 14 nails per Alkansya
+                    'Black Screw 1 1/2' => 4, // 4 screws per Alkansya
+                    'Stikwell 250 grams' => 1/200, // 1 piece per 200 Alkansya
+                    'Grinder pad 4inch 120 grit' => 1/50, // 1 piece per 50 Alkansya
+                    'Sticker 24 inch Car Decals' => 1/78, // 1 piece produces 78 Alkansya
+                    'Transfer Tape' => 1/300, // 1 piece per 300 Alkansya
+                    'TAPE 2 inch 200m' => 1/150, // 1 piece per 150 Alkansya
+                    'Fragile Tape' => 1/500, // 1 piece per 500 Alkansya
+                    'Bubble Wrap 40 inch x 100m' => 1/250, // 1 piece per 250 Alkansya
+                    'Insulation 8mm 40 inch x 100m' => 1/250 // 1 piece per 250 Alkansya
+                ])
             ]
         );
 
@@ -52,30 +131,14 @@ class AccurateMaterialsSeeder extends Seeder
         $diningTable = Product::updateOrCreate(
             ['product_code' => 'DT001'],
             [
-                'product_name' => 'Dining Table',
+                'product_name' => 'Dining Table Set',
                 'name' => 'Dining Table',
-                'description' => 'High-quality mahogany dining table',
-                'price' => 0, // Will be calculated from BOM
+                'description' => 'High-quality mahogany dining table set with 4 curved chairs',
+                'price' => rand(15000, 25000), // Random price for made-to-order product
                 'stock' => 0, // Made to order
-                'image' => 'storage/products/Table.jpg',
-                'unit_of_measure' => 'pcs',
-                'standard_cost' => 0, // Will be calculated
+                'image' => 'storage/products/DiningTableSet.png',
                 'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([
-                    'Mahogany Hardwood 2x4x8ft' => 4,
-                    'Mahogany Hardwood 1x6x10ft' => 6,
-                    'Plywood 18mm 4x8ft' => 1,
-                    'Metal Table Brackets' => 1,
-                    'Wood Screws 3 inch' => 32,
-                    'Wood Glue 500ml' => 1,
-                    'Sandpaper 80 Grit' => 4,
-                    'Sandpaper 120 Grit' => 6,
-                    'Sandpaper 220 Grit' => 4,
-                    'Wood Stain Walnut 1 Liter' => 0.3,
-                    'Polyurethane Gloss 1 Liter' => 0.4,
-                    'Felt Pads Large' => 1
-                ]),
-                'total_bom_cost' => 0 // Will be calculated
+                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
             ]
         );
 
@@ -83,33 +146,57 @@ class AccurateMaterialsSeeder extends Seeder
         $woodenChair = Product::updateOrCreate(
             ['product_code' => 'WC001'],
             [
-                'product_name' => 'Wooden Chair',
+                'product_name' => 'Curved Back High Chair',
                 'name' => 'Wooden Chair',
-                'description' => 'Comfortable mahogany wooden chair',
-                'price' => 0, // Will be calculated from BOM
+                'description' => 'Comfortable mahogany wooden chair with curved back',
+                'price' => rand(8000, 15000), // Random price for made-to-order product
                 'stock' => 0, // Made to order
-                'image' => 'storage/products/Chair.jpg',
-                'unit_of_measure' => 'pcs',
-                'standard_cost' => 0, // Will be calculated
+                'image' => 'storage/products/CurvedBackHighChair.png',
                 'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([
-                    'Mahogany Hardwood 2x2x6ft' => 4,
-                    'Mahogany Hardwood 1x4x6ft' => 3,
-                    'Plywood 12mm 2x4ft' => 1,
-                    'Wood Screws 2.5 inch' => 24,
-                    'Wood Dowels 8mm' => 8,
-                    'Wood Glue 250ml' => 1,
-                    'Foam Cushion 2 inch' => 1,
-                    'Upholstery Fabric' => 1.5,
-                    'Upholstery Staples' => 50,
-                    'Sandpaper 80 Grit' => 2,
-                    'Sandpaper 120 Grit' => 3,
-                    'Sandpaper 220 Grit' => 2,
-                    'Wood Stain Walnut 500ml' => 0.3,
-                    'Lacquer Spray Clear' => 1,
-                    'Felt Pads Small' => 1
-                ]),
-                'total_bom_cost' => 0 // Will be calculated
+                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
+            ]
+        );
+
+        // Create additional products based on provided images
+        $centerTable = Product::updateOrCreate(
+            ['product_code' => 'CT001'],
+            [
+                'product_name' => 'Center Table',
+                'name' => 'Center Table',
+                'description' => 'Modern mahogany center table with metal legs',
+                'price' => rand(12000, 20000), // Random price for made-to-order product
+                'stock' => 0, // Made to order
+                'image' => 'storage/products/CenterTable.png',
+                'category_name' => 'Made to Order',
+                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
+            ]
+        );
+
+        $benchChair = Product::updateOrCreate(
+            ['product_code' => 'BC001'],
+            [
+                'product_name' => 'Bench Chair',
+                'name' => 'Bench Chair',
+                'description' => 'Mahogany wood bench chair with modern design',
+                'price' => rand(10000, 18000), // Random price for made-to-order product
+                'stock' => 0, // Made to order
+                'image' => 'storage/products/BenchChair.png',
+                'category_name' => 'Made to Order',
+                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
+            ]
+        );
+
+        $computerTable = Product::updateOrCreate(
+            ['product_code' => 'CPT001'],
+            [
+                'product_name' => 'Computer Table',
+                'name' => 'Computer Table',
+                'description' => 'Mahogany computer table with modern design',
+                'price' => rand(15000, 25000), // Random price for made-to-order product
+                'stock' => 0, // Made to order
+                'image' => 'storage/products/ComputerTable.png',
+                'category_name' => 'Made to Order',
+                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
             ]
         );
 
@@ -122,8 +209,8 @@ class AccurateMaterialsSeeder extends Seeder
         // Create raw materials entries for each product
         $this->createRawMaterials($alkansya, $diningTable, $woodenChair);
 
-        // Create BOM entries
-        $this->createBomEntries($alkansya, $diningTable, $woodenChair);
+        // Create BOM entries for all Alkansya products (made-to-order products don't have predefined BOM)
+        $this->createBomEntriesForAllAlkansya();
 
         $this->command->info('Accurate materials data seeded successfully!');
     }
@@ -429,10 +516,17 @@ class AccurateMaterialsSeeder extends Seeder
         }
     }
 
-    private function createBomEntries($alkansya, $diningTable, $woodenChair)
+    private function createBomEntriesForAllAlkansya()
     {
         // Get materials for BOM entries
         $materials = Material::all()->keyBy('material_code');
+
+        // Get all Alkansya products
+        $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+            ->where('name', 'Alkansya')
+            ->get();
+
+        $this->command->info('Found ' . $alkansyaProducts->count() . ' Alkansya products to create BOM entries for');
 
         // Alkansya BOM entries - calculated based on how many Alkansya can be produced from each piece
         $alkansyaBomMaterials = [
@@ -451,117 +545,28 @@ class AccurateMaterialsSeeder extends Seeder
             'INS-8MM-40IN-100M' => 1/250, // 1 piece per 250 Alkansya, so per Alkansya = 1/250
         ];
 
-        foreach ($alkansyaBomMaterials as $materialCode => $quantity) {
-            if (isset($materials[$materialCode])) {
-                Bom::updateOrCreate(
-                    [
-                        'product_id' => $alkansya->id,
-                        'material_id' => $materials[$materialCode]->material_id
-                    ],
-                    [
-                        'material_name' => $materials[$materialCode]->material_name,
-                        'quantity_per_product' => $quantity,
-                        'unit_of_measure' => $materials[$materialCode]->unit_of_measure
-                    ]
-                );
+        // Create BOM entries for each Alkansya product
+        foreach ($alkansyaProducts as $alkansyaProduct) {
+            $this->command->info("Creating BOM entries for {$alkansyaProduct->product_name} (ID: {$alkansyaProduct->id})");
+            
+            foreach ($alkansyaBomMaterials as $materialCode => $quantity) {
+                if (isset($materials[$materialCode])) {
+                    Bom::updateOrCreate(
+                        [
+                            'product_id' => $alkansyaProduct->id,
+                            'material_id' => $materials[$materialCode]->material_id
+                        ],
+                        [
+                            'material_name' => $materials[$materialCode]->material_name,
+                            'quantity_per_product' => $quantity,
+                            'unit_of_measure' => $materials[$materialCode]->unit_of_measure
+                        ]
+                    );
+                }
             }
         }
 
-        // Dining Table BOM entries
-        $diningTableBomMaterials = [
-            'HW-MAHOG-2X4X8' => 4,
-            'HW-MAHOG-1X6X10' => 6,
-            'PLY-18-4X8' => 1,
-            'TBRACKET-METAL' => 1,
-            'WS-3' => 32,
-            'WG-500' => 1,
-            'SAND-80-DT' => 4,
-            'SAND-120-DT' => 6,
-            'SAND-220-DT' => 4,
-            'STAIN-WALNUT-1L' => 0.3,
-            'POLY-GLOSS-1L' => 0.4,
-            'FELT-PAD-LG' => 1,
-        ];
-
-        foreach ($diningTableBomMaterials as $materialCode => $quantity) {
-            if (isset($materials[$materialCode])) {
-                Bom::updateOrCreate(
-                    [
-                        'product_id' => $diningTable->id,
-                        'material_id' => $materials[$materialCode]->material_id
-                    ],
-                    [
-                        'material_name' => $materials[$materialCode]->material_name,
-                        'quantity_per_product' => $quantity,
-                        'unit_of_measure' => $materials[$materialCode]->unit_of_measure
-                    ]
-                );
-            }
-        }
-
-        // Wooden Chair BOM entries
-        $woodenChairBomMaterials = [
-            'HW-MAHOG-2X2X6' => 4,
-            'HW-MAHOG-1X4X6' => 3,
-            'PLY-12-2X4' => 1,
-            'WS-2.5' => 24,
-            'WD-8MM' => 8,
-            'WG-250' => 1,
-            'FOAM-CUSHION-2' => 1,
-            'FABRIC-UPHOLSTERY' => 1.5,
-            'STAPLES-UPHOLSTERY' => 50,
-            'SAND-80-WC' => 2,
-            'SAND-120-WC' => 3,
-            'SAND-220-WC' => 2,
-            'STAIN-WALNUT-500' => 0.3,
-            'LACQUER-SPRAY' => 1,
-            'FELT-PAD-SM' => 1,
-        ];
-
-        foreach ($woodenChairBomMaterials as $materialCode => $quantity) {
-            if (isset($materials[$materialCode])) {
-                Bom::updateOrCreate(
-                    [
-                        'product_id' => $woodenChair->id,
-                        'material_id' => $materials[$materialCode]->material_id
-                    ],
-                    [
-                        'material_name' => $materials[$materialCode]->material_name,
-                        'quantity_per_product' => $quantity,
-                        'unit_of_measure' => $materials[$materialCode]->unit_of_measure
-                    ]
-                );
-            }
-        }
-
-        // Calculate and update total BOM costs for each product
-        $this->updateProductBomCosts($alkansya, $diningTable, $woodenChair);
+        $this->command->info('BOM entries created for all Alkansya products!');
     }
 
-    private function updateProductBomCosts($alkansya, $diningTable, $woodenChair)
-    {
-        // Calculate Alkansya total BOM cost
-        $alkansyaTotalCost = RawMaterial::where('product_id', $alkansya->id)->sum('total_cost');
-        $alkansya->update([
-            'total_bom_cost' => $alkansyaTotalCost,
-            'price' => $alkansyaTotalCost * 1.5, // 50% markup
-            'standard_cost' => $alkansyaTotalCost
-        ]);
-
-        // Calculate Dining Table total BOM cost
-        $diningTableTotalCost = RawMaterial::where('product_id', $diningTable->id)->sum('total_cost');
-        $diningTable->update([
-            'total_bom_cost' => $diningTableTotalCost,
-            'price' => $diningTableTotalCost * 1.5, // 50% markup
-            'standard_cost' => $diningTableTotalCost
-        ]);
-
-        // Calculate Wooden Chair total BOM cost
-        $woodenChairTotalCost = RawMaterial::where('product_id', $woodenChair->id)->sum('total_cost');
-        $woodenChair->update([
-            'total_bom_cost' => $woodenChairTotalCost,
-            'price' => $woodenChairTotalCost * 1.5, // 50% markup
-            'standard_cost' => $woodenChairTotalCost
-        ]);
-    }
 }

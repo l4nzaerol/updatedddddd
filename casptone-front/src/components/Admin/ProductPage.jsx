@@ -132,6 +132,81 @@ const customStyles = `
   }
 `;
 
+// Searchable Material Selector Component
+const SearchableMaterialSelector = ({ materials, value, onChange, placeholder = "Search materials..." }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredMaterials, setFilteredMaterials] = useState(materials);
+
+  useEffect(() => {
+    if (searchTerm) {
+      const filtered = materials.filter(material =>
+        material.material_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        material.material_code.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredMaterials(filtered);
+    } else {
+      setFilteredMaterials(materials);
+    }
+  }, [searchTerm, materials]);
+
+  const selectedMaterial = materials.find(m => m.material_id === value);
+
+  return (
+    <div className="position-relative">
+      <input
+        type="text"
+        className="form-control form-control-sm"
+        value={selectedMaterial ? `${selectedMaterial.material_name} (${selectedMaterial.material_code})` : ""}
+        placeholder={placeholder}
+        onFocus={() => setIsOpen(true)}
+        readOnly
+      />
+      {isOpen && (
+        <div className="position-absolute w-100 bg-white border rounded shadow-lg" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+          <div className="p-2 border-bottom">
+            <input
+              type="text"
+              className="form-control form-control-sm"
+              placeholder="Search materials..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="list-group list-group-flush">
+            {filteredMaterials.map(material => (
+              <button
+                key={material.material_id}
+                type="button"
+                className="list-group-item list-group-item-action"
+                onClick={() => {
+                  onChange(material.material_id);
+                  setIsOpen(false);
+                  setSearchTerm("");
+                }}
+              >
+                <div className="fw-semibold">{material.material_name}</div>
+                <small className="text-muted">{material.material_code} - ₱{material.standard_cost}</small>
+              </button>
+            ))}
+            {filteredMaterials.length === 0 && (
+              <div className="p-3 text-muted text-center">No materials found</div>
+            )}
+          </div>
+        </div>
+      )}
+      {isOpen && (
+        <div
+          className="position-fixed w-100 h-100"
+          style={{ top: 0, left: 0, zIndex: 999 }}
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+    </div>
+  );
+};
+
 // Product Form Modal Component
 const ProductFormModal = ({ show, onHide, product, onSave }) => {
   const [formData, setFormData] = useState({
@@ -139,17 +214,19 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     product_code: "",
     description: "",
     category_name: "Stocked Products",
-    unit_of_measure: "pcs",
-    standard_cost: 0,
     price: 0,
     image: "",
-    stock: 0,
     bom: []
   });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [materials, setMaterials] = useState([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
+  const [priceCalculation, setPriceCalculation] = useState(null);
+  const [laborPercentage, setLaborPercentage] = useState(30);
+  const [profitMargin, setProfitMargin] = useState(25);
+  const [bomMinimized, setBomMinimized] = useState(false);
+  const [priceCalculatorMinimized, setPriceCalculatorMinimized] = useState(false);
 
   const apiBase = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
   const apiCall = useCallback(async (path, options = {}) => {
@@ -173,6 +250,16 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
 
     return response.json();
   }, [apiBase]);
+
+  const generateProductCode = useCallback(async (category) => {
+    try {
+      const response = await apiCall(`/products/generate-code?category=${encodeURIComponent(category)}`);
+      return response.product_code;
+    } catch (error) {
+      console.error("Failed to generate product code:", error);
+      return null;
+    }
+  }, [apiCall]);
 
   const fetchMaterials = useCallback(async () => {
     setLoadingMaterials(true);
@@ -207,6 +294,43 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     }));
   };
 
+  const addAlkansyaBOM = () => {
+    // Alkansya BOM materials with their quantities
+    const alkansyaMaterials = [
+      { material_code: 'PW-1X4X8', quantity: 1/350, unit: 'pcs' },
+      { material_code: 'PLY-4.2-4X8', quantity: 1/78, unit: 'pcs' },
+      { material_code: 'ACR-1.5-4X8', quantity: 1/78, unit: 'pcs' },
+      { material_code: 'PN-F30', quantity: 14, unit: 'pcs' },
+      { material_code: 'BS-1.5', quantity: 4, unit: 'pcs' },
+      { material_code: 'STK-250G', quantity: 1/200, unit: 'pcs' },
+      { material_code: 'GP-4IN-120', quantity: 1/50, unit: 'pcs' },
+      { material_code: 'STK-24IN', quantity: 1/78, unit: 'pcs' },
+      { material_code: 'TT-TAPE', quantity: 1/300, unit: 'pcs' },
+      { material_code: 'TAPE-2IN-200M', quantity: 1/150, unit: 'pcs' },
+      { material_code: 'FT-TAPE', quantity: 1/500, unit: 'pcs' },
+      { material_code: 'BW-40IN-100M', quantity: 1/250, unit: 'pcs' },
+      { material_code: 'INS-8MM-40IN-100M', quantity: 1/250, unit: 'pcs' }
+    ];
+
+    // Find materials by code and add to BOM
+    const newBOMItems = alkansyaMaterials.map(alkansyaMaterial => {
+      const material = materials.find(m => m.material_code === alkansyaMaterial.material_code);
+      if (material) {
+        return {
+          material_id: material.material_id,
+          quantity_per_product: alkansyaMaterial.quantity,
+          unit_of_measure: alkansyaMaterial.unit
+        };
+      }
+      return null;
+    }).filter(item => item !== null);
+
+    setFormData(prev => ({
+      ...prev,
+      bom: [...prev.bom, ...newBOMItems]
+    }));
+  };
+
   const removeBOMItem = (index) => {
     setFormData(prev => ({
       ...prev,
@@ -223,11 +347,53 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     }));
   };
 
+  const calculatePrice = useCallback(() => {
+    if (formData.bom.length === 0) {
+      setPriceCalculation(null);
+      return;
+    }
+
+    // Calculate total material cost
+    const totalMaterialCost = formData.bom.reduce((sum, item) => {
+      const material = materials.find(m => m.material_id === item.material_id);
+      const unitCost = parseFloat(material?.standard_cost) || 0;
+      return sum + (item.quantity_per_product * unitCost);
+    }, 0);
+
+    // Calculate labor cost
+    const laborCost = totalMaterialCost * (laborPercentage / 100);
+
+    // Calculate total cost (materials + labor)
+    const totalCost = totalMaterialCost + laborCost;
+
+    // Calculate selling price with profit margin
+    const sellingPrice = totalCost * (1 + profitMargin / 100);
+
+    setPriceCalculation({
+      materialCost: totalMaterialCost,
+      laborCost: laborCost,
+      totalCost: totalCost,
+      profitMargin: profitMargin,
+      sellingPrice: sellingPrice
+    });
+
+    // Update the selling price in form data
+    setFormData(prev => ({
+      ...prev,
+      price: sellingPrice
+    }));
+  }, [formData.bom, materials, laborPercentage, profitMargin]);
+
   useEffect(() => {
     if (show) {
       fetchMaterials();
     }
   }, [show, fetchMaterials]);
+
+  // Auto-calculate price when BOM or pricing parameters change
+  useEffect(() => {
+    calculatePrice();
+  }, [calculatePrice]);
 
   useEffect(() => {
     const loadProductData = async () => {
@@ -239,23 +405,20 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
           description: product.description || "",
           category_name: product.category_name || "Stocked Products",
           unit_of_measure: product.unit_of_measure || "pcs",
-          standard_cost: product.standard_cost || 0,
           price: product.price || 0,
           image: product.image || "",
-          stock: product.stock || 0,
           bom: bomData || []
         });
       } else {
+        // Auto-generate product code for new products
+        const generatedCode = await generateProductCode("Stocked Products");
         setFormData({
           product_name: "",
-          product_code: "",
+          product_code: generatedCode || "",
           description: "",
           category_name: "Stocked Products",
-          unit_of_measure: "pcs",
-          standard_cost: 0,
           price: 0,
           image: "",
-          stock: 0,
           bom: []
         });
       }
@@ -263,15 +426,13 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     };
 
     loadProductData();
-  }, [product, show, fetchProductBOM]);
+  }, [product, show, fetchProductBOM, generateProductCode]);
 
   const validateForm = () => {
     const newErrors = {};
     if (!formData.product_name.trim()) newErrors.product_name = "Product name is required";
     if (!formData.product_code.trim()) newErrors.product_code = "Product code is required";
-    if (formData.standard_cost < 0) newErrors.standard_cost = "Standard cost cannot be negative";
     if (formData.price < 0) newErrors.price = "Price cannot be negative";
-    if (formData.stock < 0) newErrors.stock = "Stock cannot be negative";
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -331,11 +492,16 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     }
   };
 
-  const calculateMargin = () => {
-    if (formData.standard_cost > 0 && formData.price > 0) {
-      return ((formData.price - formData.standard_cost) / formData.price * 100).toFixed(1);
+  const handleCategoryChange = async (category) => {
+    setFormData(prev => ({ ...prev, category_name: category }));
+    
+    // Auto-generate product code when category changes
+    if (!product) { // Only for new products
+      const generatedCode = await generateProductCode(category);
+      if (generatedCode) {
+        setFormData(prev => ({ ...prev, product_code: generatedCode }));
+      }
     }
-    return 0;
   };
 
   if (!show) return null;
@@ -364,70 +530,85 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
               </div>
               <div className="col-md-6">
                 <label className="form-label">Product Code *</label>
-                <input
-                  type="text"
-                  className={`form-control ${errors.product_code ? "is-invalid" : ""}`}
-                  value={formData.product_code}
-                  onChange={(e) => handleChange("product_code", e.target.value)}
-                />
+                <div className="d-flex gap-2">
+                  <input
+                    type="text"
+                    className={`form-control flex-grow-1 ${errors.product_code ? "is-invalid" : ""}`}
+                    value={formData.product_code}
+                    onChange={(e) => handleChange("product_code", e.target.value)}
+                    placeholder="Auto-generated"
+                  />
+                  {!product && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={async () => {
+                        const generatedCode = await generateProductCode(formData.category_name);
+                        if (generatedCode) {
+                          handleChange("product_code", generatedCode);
+                        }
+                      }}
+                      title="Regenerate Product Code"
+                      style={{ minWidth: '45px' }}
+                    >
+                      <i className="fas fa-sync-alt"></i>
+                    </button>
+                  )}
+                </div>
                 {errors.product_code && <div className="invalid-feedback">{errors.product_code}</div>}
+                <small className="form-text text-muted">
+                  Code format: ALK001 (Alkansya), DT001 (Tables), WC001 (Chairs)
+                </small>
               </div>
               <div className="col-md-6">
                 <label className="form-label">Category</label>
-                <select
-                  className="form-control"
-                  value={formData.category_name}
-                  onChange={(e) => handleChange("category_name", e.target.value)}
-                >
-                  <option value="Stocked Products">Stocked Products</option>
-                  <option value="Made to Order">Made to Order</option>
-                </select>
+                <div className="mt-2">
+                  <div className="form-check form-check-inline">
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="category"
+                      id="category_stocked"
+                      value="Stocked Products"
+                      checked={formData.category_name === "Stocked Products"}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
+                    />
+                    <label className="form-check-label" htmlFor="category_stocked">
+                      Stocked Products
+                    </label>
+                  </div>
+                  <div className="form-check form-check-inline">
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      name="category"
+                      id="category_made_to_order"
+                      value="Made to Order"
+                      checked={formData.category_name === "Made to Order"}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
+                    />
+                    <label className="form-check-label" htmlFor="category_made_to_order">
+                      Made to Order
+                    </label>
+                  </div>
+                </div>
               </div>
               <div className="col-md-6">
-                <label className="form-label">Unit of Measure</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={formData.unit_of_measure}
-                  onChange={(e) => handleChange("unit_of_measure", e.target.value)}
-                  placeholder="pcs, kg, m, etc."
-                />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Standard Cost</label>
-                <input
-                  type="number"
-                  className={`form-control ${errors.standard_cost ? "is-invalid" : ""}`}
-                  value={formData.standard_cost}
-                  onChange={(e) => handleChange("standard_cost", Math.max(0, parseFloat(e.target.value) || 0))}
-                  min="0"
-                  step="0.01"
-                />
-                {errors.standard_cost && <div className="invalid-feedback">{errors.standard_cost}</div>}
-              </div>
-              <div className="col-md-4">
                 <label className="form-label">Selling Price</label>
                 <input
                   type="number"
-                  className={`form-control ${errors.price ? "is-invalid" : ""}`}
+                  className={`form-control ${errors.price ? "is-invalid" : ""} ${formData.bom.length === 0 ? 'bg-light' : ''}`}
                   value={formData.price}
                   onChange={(e) => handleChange("price", Math.max(0, parseFloat(e.target.value) || 0))}
                   min="0"
                   step="0.01"
+                  readOnly={formData.bom.length === 0}
+                  placeholder={formData.bom.length === 0 ? "Add BOM materials to calculate price" : ""}
                 />
+                {formData.bom.length === 0 && (
+                  <small className="form-text text-muted">Price will be calculated automatically when BOM is added</small>
+                )}
                 {errors.price && <div className="invalid-feedback">{errors.price}</div>}
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">Current Stock</label>
-                <input
-                  type="number"
-                  className={`form-control ${errors.stock ? "is-invalid" : ""}`}
-                  value={formData.stock}
-                  onChange={(e) => handleChange("stock", Math.max(0, parseFloat(e.target.value) || 0))}
-                  min="0"
-                  step="0.01"
-                />
-                {errors.stock && <div className="invalid-feedback">{errors.stock}</div>}
               </div>
               <div className="col-12">
                 <label className="form-label">Description</label>
@@ -449,136 +630,304 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
                   placeholder="https://example.com/image.jpg"
                 />
               </div>
-              {formData.standard_cost > 0 && formData.price > 0 && (
-                <div className="col-12">
-                  <div className="alert alert-info">
-                    <strong>Profit Margin:</strong> {calculateMargin()}% 
-                    <span className="ms-3">
-                      <strong>Profit:</strong> ₱{(formData.price - formData.standard_cost).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              )}
               
               {/* BOM Section */}
               <div className="col-12">
                 <div className="card">
                   <div className="card-header d-flex justify-content-between align-items-center">
-                    <h6 className="mb-0">Bill of Materials (BOM)</h6>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      onClick={addBOMItem}
-                      disabled={loadingMaterials}
-                    >
-                      <i className="fas fa-plus me-1"></i>
-                      Add Material
-                    </button>
+                    <div className="d-flex align-items-center">
+                      <h6 className="mb-0 me-2">Bill of Materials (BOM)</h6>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setBomMinimized(!bomMinimized)}
+                        title={bomMinimized ? "Expand BOM" : "Minimize BOM"}
+                      >
+                        <i className={`fas fa-chevron-${bomMinimized ? 'down' : 'up'}`}></i>
+                      </button>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <small className="text-muted">Define materials needed for this product</small>
+                      <div className="d-flex gap-2">
+                        {formData.category_name === "Stocked Products" && (
+                          <button
+                            type="button"
+                            className="btn btn-success btn-sm"
+                            onClick={addAlkansyaBOM}
+                            disabled={loadingMaterials}
+                            title="Add all Alkansya materials at once"
+                          >
+                            <i className="fas fa-magic me-1"></i>
+                            Add Alkansya BOM
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={addBOMItem}
+                          disabled={loadingMaterials}
+                        >
+                          <i className="fas fa-plus me-1"></i>
+                          Add Material
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="card-body">
-                    {loadingMaterials ? (
-                      <div className="text-center py-3">
-                        <div className="spinner-border spinner-border-sm" role="status">
-                          <span className="visually-hidden">Loading materials...</span>
+                  {!bomMinimized && (
+                    <div className="card-body p-0">
+                      {loadingMaterials ? (
+                        <div className="text-center py-4">
+                          <div className="spinner-border text-primary" role="status">
+                            <span className="visually-hidden">Loading materials...</span>
+                          </div>
+                          <p className="mt-2 mb-0 text-muted">Loading materials...</p>
                         </div>
-                        <p className="mt-2 mb-0 text-muted">Loading materials...</p>
-                      </div>
-                    ) : formData.bom.length === 0 ? (
-                      <div className="text-center py-4 text-muted">
-                        <i className="fas fa-box-open fa-2x mb-2"></i>
-                        <p>No materials added yet. Click "Add Material" to get started.</p>
-                      </div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="table table-sm">
-                          <thead>
-                            <tr>
-                              <th>Material</th>
-                              <th>Quantity</th>
-                              <th>Unit</th>
-                              <th>Cost</th>
-                              <th>Total</th>
-                              <th width="50">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {formData.bom.map((item, index) => {
-                              const material = materials.find(m => m.material_id === item.material_id);
-                              const unitCost = parseFloat(material?.standard_cost) || 0;
-                              const totalCost = item.quantity_per_product * unitCost;
-                              
-                              return (
-                                <tr key={index}>
-                                  <td>
-                                    <select
-                                      className="form-select form-select-sm"
+                      ) : formData.bom.length === 0 ? (
+                        <div className="text-center py-5 text-muted">
+                          <i className="fas fa-box-open fa-3x mb-3 text-primary"></i>
+                          <h6 className="mb-2">No Materials Added</h6>
+                          <p className="mb-3">Start building your product by adding the required materials.</p>
+                          <div className="d-flex gap-2 justify-content-center">
+                            {formData.category_name === "Stocked Products" && (
+                              <button
+                                type="button"
+                                className="btn btn-success"
+                                onClick={addAlkansyaBOM}
+                                title="Add all Alkansya materials at once"
+                              >
+                                <i className="fas fa-magic me-1"></i>
+                                Add Alkansya BOM
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-outline-primary"
+                              onClick={addBOMItem}
+                            >
+                              <i className="fas fa-plus me-1"></i>
+                              Add Your First Material
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bom-materials-container">
+                          {formData.bom.map((item, index) => {
+                            const material = materials.find(m => m.material_id === item.material_id);
+                            const unitCost = parseFloat(material?.standard_cost) || 0;
+                            const totalCost = item.quantity_per_product * unitCost;
+                            
+                            return (
+                              <div key={index} className="bom-material-item border-bottom p-3">
+                                <div className="row g-3 align-items-end">
+                                  <div className="col-md-4">
+                                    <label className="form-label small fw-semibold text-muted">Material</label>
+                                    <SearchableMaterialSelector
+                                      materials={materials}
                                       value={item.material_id}
-                                      onChange={(e) => updateBOMItem(index, 'material_id', e.target.value)}
-                                    >
-                                      <option value="">Select Material</option>
-                                      {materials.map(material => (
-                                        <option key={material.material_id} value={material.material_id}>
-                                          {material.material_name} ({material.material_code})
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                  <td>
+                                      onChange={(value) => updateBOMItem(index, 'material_id', value)}
+                                      placeholder="Search and select material..."
+                                    />
+                                  </div>
+                                  <div className="col-md-2">
+                                    <label className="form-label small fw-semibold text-muted">Quantity</label>
                                     <input
                                       type="number"
-                                      className="form-control form-control-sm"
+                                      className="form-control"
                                       value={item.quantity_per_product || 0}
                                       onChange={(e) => updateBOMItem(index, 'quantity_per_product', parseFloat(e.target.value) || 0)}
                                       min="0"
                                       step="0.0001"
+                                      placeholder="0"
                                     />
-                                  </td>
-                                  <td>
+                                  </div>
+                                  <div className="col-md-2">
+                                    <label className="form-label small fw-semibold text-muted">Unit</label>
                                     <input
                                       type="text"
-                                      className="form-control form-control-sm"
+                                      className="form-control"
                                       value={item.unit_of_measure}
                                       onChange={(e) => updateBOMItem(index, 'unit_of_measure', e.target.value)}
                                       placeholder="pcs, kg, etc."
                                     />
-                                  </td>
-                                  <td>
-                                    <span className="text-muted">₱{(unitCost || 0).toFixed(2)}</span>
-                                  </td>
-                                  <td>
-                                    <span className="fw-semibold">₱{(totalCost || 0).toFixed(2)}</span>
-                                  </td>
-                                  <td>
+                                  </div>
+                                  <div className="col-md-2">
+                                    <label className="form-label small fw-semibold text-muted">Unit Cost</label>
+                                    <div className="form-control-plaintext text-muted">
+                                      ₱{(unitCost || 0).toFixed(2)}
+                                    </div>
+                                  </div>
+                                  <div className="col-md-1">
+                                    <label className="form-label small fw-semibold text-muted">Total</label>
+                                    <div className="form-control-plaintext fw-bold text-success">
+                                      ₱{(totalCost || 0).toFixed(2)}
+                                    </div>
+                                  </div>
+                                  <div className="col-md-1">
                                     <button
                                       type="button"
-                                      className="btn btn-sm btn-outline-danger"
+                                      className="btn btn-outline-danger btn-sm"
                                       onClick={() => removeBOMItem(index)}
+                                      title="Remove Material"
                                     >
                                       <i className="fas fa-trash"></i>
                                     </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                          <tfoot>
-                            <tr className="table-light">
-                              <td colSpan="4" className="text-end fw-bold">Total BOM Cost:</td>
-                              <td className="fw-bold">
-                                ₱{formData.bom.reduce((sum, item) => {
-                                  const material = materials.find(m => m.material_id === item.material_id);
-                                  return sum + (item.quantity_per_product * (parseFloat(material?.standard_cost) || 0));
-                                }, 0).toFixed(2)}
-                              </td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        </table>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          
+                          {/* Total Summary */}
+                          <div className="bom-total-summary p-3 bg-light">
+                            <div className="row">
+                              <div className="col-md-8">
+                                <div className="d-flex align-items-center">
+                                  <i className="fas fa-calculator text-primary me-2"></i>
+                                  <span className="text-muted">Total Materials: {formData.bom.length} item{formData.bom.length !== 1 ? 's' : ''}</span>
+                                </div>
+                              </div>
+                              <div className="col-md-4">
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <span className="fw-bold">Total BOM Cost:</span>
+                                  <span className="fw-bold text-success fs-5">
+                                    ₱{formData.bom.reduce((sum, item) => {
+                                      const material = materials.find(m => m.material_id === item.material_id);
+                                      return sum + (item.quantity_per_product * (parseFloat(material?.standard_cost) || 0));
+                                    }, 0).toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Minimized Summary */}
+                  {bomMinimized && formData.bom.length > 0 && (
+                    <div className="card-body py-2">
+                      <div className="d-flex justify-content-between align-items-center text-muted">
+                        <span>
+                          <i className="fas fa-box me-1"></i>
+                          {formData.bom.length} material{formData.bom.length !== 1 ? 's' : ''} added
+                        </span>
+                        <span className="fw-semibold text-success">
+                          Total: ₱{formData.bom.reduce((sum, item) => {
+                            const material = materials.find(m => m.material_id === item.material_id);
+                            return sum + (item.quantity_per_product * (parseFloat(material?.standard_cost) || 0));
+                          }, 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Price Calculator Section */}
+              {formData.bom.length > 0 && (
+                <div className="col-12">
+                  <div className="card">
+                    <div className="card-header d-flex justify-content-between align-items-center">
+                      <div className="d-flex align-items-center">
+                        <h6 className="mb-0 me-2">Price Calculator</h6>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() => setPriceCalculatorMinimized(!priceCalculatorMinimized)}
+                          title={priceCalculatorMinimized ? "Expand Calculator" : "Minimize Calculator"}
+                        >
+                          <i className={`fas fa-chevron-${priceCalculatorMinimized ? 'down' : 'up'}`}></i>
+                        </button>
+                      </div>
+                      {priceCalculatorMinimized && priceCalculation && (
+                        <span className="fw-bold text-success fs-5">
+                          ₱{priceCalculation.sellingPrice.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                    {!priceCalculatorMinimized && (
+                      <div className="card-body">
+                        <div className="row g-3">
+                          <div className="col-md-4">
+                            <label className="form-label">Labor Percentage (%)</label>
+                            <input
+                              type="number"
+                              className="form-control"
+                              value={laborPercentage}
+                              onChange={(e) => setLaborPercentage(Math.max(0, parseFloat(e.target.value) || 0))}
+                              min="0"
+                              max="100"
+                              step="0.1"
+                            />
+                          </div>
+                          <div className="col-md-4">
+                            <label className="form-label">Profit Margin (%)</label>
+                            <input
+                              type="number"
+                              className="form-control"
+                              value={profitMargin}
+                              onChange={(e) => setProfitMargin(Math.max(0, parseFloat(e.target.value) || 0))}
+                              min="0"
+                              max="100"
+                              step="0.1"
+                            />
+                          </div>
+                          <div className="col-md-4">
+                            <label className="form-label">Selling Price (₱)</label>
+                            <input
+                              type="number"
+                              className="form-control fw-bold text-success"
+                              value={priceCalculation?.sellingPrice?.toFixed(2) || 0}
+                              onChange={(e) => handleChange("price", Math.max(0, parseFloat(e.target.value) || 0))}
+                              min="0"
+                              step="0.01"
+                            />
+                          </div>
+                        </div>
+                        
+                        {priceCalculation && (
+                          <div className="mt-3">
+                            <div className="row">
+                              <div className="col-md-6">
+                                <h6>Cost Breakdown:</h6>
+                                <ul className="list-unstyled">
+                                  <li>Material Cost: <span className="fw-semibold">₱{priceCalculation.materialCost.toFixed(2)}</span></li>
+                                  <li>Labor Cost ({laborPercentage}%): <span className="fw-semibold">₱{priceCalculation.laborCost.toFixed(2)}</span></li>
+                                  <li className="border-top pt-1 mt-1">Total Cost: <span className="fw-bold">₱{priceCalculation.totalCost.toFixed(2)}</span></li>
+                                </ul>
+                              </div>
+                              <div className="col-md-6">
+                                <h6>Pricing Summary:</h6>
+                                <ul className="list-unstyled">
+                                  <li>Profit Margin: <span className="fw-semibold">{profitMargin}%</span></li>
+                                  <li>Profit Amount: <span className="fw-semibold">₱{(priceCalculation.sellingPrice - priceCalculation.totalCost).toFixed(2)}</span></li>
+                                  <li className="border-top pt-1 mt-1">Selling Price: <span className="fw-bold text-success">₱{priceCalculation.sellingPrice.toFixed(2)}</span></li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Minimized Summary */}
+                    {priceCalculatorMinimized && priceCalculation && (
+                      <div className="card-body py-2">
+                        <div className="d-flex justify-content-between align-items-center text-muted">
+                          <span>
+                            <i className="fas fa-calculator me-1"></i>
+                            Labor: {laborPercentage}% | Profit: {profitMargin}%
+                          </span>
+                          <span className="fw-bold text-success fs-5">
+                            ₱{priceCalculation.sellingPrice.toFixed(2)}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
           <div className="modal-footer">
@@ -828,14 +1177,6 @@ const ProductPage = () => {
     }
   };
 
-  const calculateMargin = (product) => {
-    if (product.standard_cost > 0 && product.price > 0) {
-      return ((product.price - product.standard_cost) / product.price * 100).toFixed(1);
-    }
-    return 0;
-  };
-
-
   return (
     <AppLayout>
       <style>{customStyles}</style>
@@ -989,7 +1330,6 @@ const ProductPage = () => {
                   <div className="row">
                     {filteredProducts.map((product) => {
                       const availability = getProductAvailability(product);
-                      const margin = calculateMargin(product);
                       
                       return (
                         <div key={product.id} className="col-lg-4 col-md-6 mb-4">
@@ -1020,7 +1360,6 @@ const ProductPage = () => {
                                   <div className="product-cost">{formatPrice(product.standard_cost)}</div>
                                 </div>
                                 <div className="text-end">
-                                  <div className="product-margin">{margin}% margin</div>
                                   <div className="small text-muted">
                                     {product.category_name === "Made to Order" ? "On Demand" : (product.stock > 0 ? `${product.stock} in stock` : 'Out of Stock')}
                                   </div>
@@ -1080,7 +1419,6 @@ const ProductPage = () => {
                             <th>Category</th>
                             <th className="text-end">Price</th>
                             <th className="text-end">Cost</th>
-                            <th className="text-end">Margin</th>
                             <th className="text-end">Stock</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -1089,7 +1427,6 @@ const ProductPage = () => {
                         <tbody>
                           {filteredProducts.map((product) => {
                             const availability = getProductAvailability(product);
-                            const margin = calculateMargin(product);
                             
                             return (
                               <tr key={product.id}>
@@ -1123,9 +1460,6 @@ const ProductPage = () => {
                                 </td>
                                 <td className="text-end text-muted">
                                   {formatPrice(product.standard_cost)}
-                                </td>
-                                <td className="text-end">
-                                  <span className="text-success fw-semibold">{margin}%</span>
                                 </td>
                                 <td className="text-end">
                                   {product.category_name === "Made to Order" ? (

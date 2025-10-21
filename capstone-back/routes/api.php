@@ -122,6 +122,7 @@ Route::get('/inventory/alkansya-daily-output/materials-analysis', [AlkansyaDaily
 
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
+Route::get('/products/generate-code', [ProductController::class, 'generateProductCode']);
 
 
 Route::middleware(['auth:sanctum'])->group(function () {

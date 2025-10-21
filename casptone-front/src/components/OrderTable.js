@@ -125,7 +125,7 @@ const OrderTable = () => {
 
       const confirmed = window.confirm(
         "Are you sure you want to cancel this order?\n\n" +
-        "This action cannot be undone and any materials already deducted will be restored to inventory."
+        ""
       );
 
       if (!confirmed) return;

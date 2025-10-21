@@ -55,11 +55,17 @@ class AlkansyaDailyOutput extends Model
      */
     public static function addDailyOutput($date, $quantity, $producedBy = null)
     {
-        // Get Alkansya product
-        $alkansyaProduct = Product::where('name', 'Alkansya')->first();
-        if (!$alkansyaProduct) {
-            throw new \Exception('Alkansya product not found');
+        // Get all Alkansya products
+        $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+            ->where('name', 'Alkansya')
+            ->get();
+
+        if ($alkansyaProducts->isEmpty()) {
+            throw new \Exception('No Alkansya products found');
         }
+
+        // Use the first Alkansya product for BOM calculation (they all have the same BOM)
+        $alkansyaProduct = $alkansyaProducts->first();
 
         // Use the new inventory system to deduct materials and add finished goods
         $result = Inventory::deductMaterialsForProduction($alkansyaProduct->id, $quantity, $date);
@@ -77,6 +83,11 @@ class AlkansyaDailyOutput extends Model
                 'materials_used' => $result['deducted_materials'],
             ]
         );
+
+        // Update stock for ALL Alkansya products
+        foreach ($alkansyaProducts as $alkansyaProduct) {
+            $alkansyaProduct->increment('stock', $quantity);
+        }
 
         return $dailyOutput;
     }

@@ -257,15 +257,17 @@ class NormalizedInventoryController extends Controller
 
         DB::beginTransaction();
         try {
-            // Find Alkansya product
-            $alkansyaProduct = Product::where('product_code', 'like', '%alkansya%')
-                ->orWhere('product_name', 'like', '%alkansya%')
-                ->orWhere('name', 'like', '%alkansya%')
-                ->first();
+            // Find all Alkansya products
+            $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+                ->where('name', 'Alkansya')
+                ->get();
 
-            if (!$alkansyaProduct) {
-                throw new \Exception('Alkansya product not found');
+            if ($alkansyaProducts->isEmpty()) {
+                throw new \Exception('No Alkansya products found');
             }
+
+            // Use the first Alkansya product for BOM calculation (they all have the same BOM)
+            $alkansyaProduct = $alkansyaProducts->first();
 
             // Get BOM for Alkansya
             $bomItems = BOM::with('material')->where('product_id', $alkansyaProduct->id)->get();
@@ -377,8 +379,10 @@ class NormalizedInventoryController extends Controller
                 ]);
             }
 
-            // Update Alkansya product stock
-            $alkansyaProduct->increment('stock', $request->quantity_produced);
+            // Update stock for ALL Alkansya products
+            foreach ($alkansyaProducts as $alkansyaProduct) {
+                $alkansyaProduct->increment('stock', $request->quantity_produced);
+            }
 
             // Create production output transaction
             InventoryTransaction::create([
