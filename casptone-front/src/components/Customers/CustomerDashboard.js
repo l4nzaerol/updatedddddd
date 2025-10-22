@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useCallback } from "react";
+ import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { Spinner } from "react-bootstrap";
@@ -21,8 +21,8 @@ const CustomerDashboard = () => {
             const cacheValid = cacheTimestamp && (now - parseInt(cacheTimestamp)) < 300000; // 5 minutes
             
             if (cachedProducts && cacheValid) {
-                console.log("Using cached products for faster loading");
-                setProducts(JSON.parse(cachedProducts));
+                const parsedProducts = JSON.parse(cachedProducts);
+                setProducts(parsedProducts);
                 setLoading(false);
                 return;
             }
@@ -69,20 +69,12 @@ const CustomerDashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, []); // Keep empty dependency array
 
     useEffect(() => {
         fetchProducts();
-    }, [fetchProducts]);
+    }, []); // Remove fetchProducts dependency to prevent infinite loop
 
-    const filteredProducts = products.filter((product) => {
-        const productName = product.product_name || product.name || '';
-        const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        // Show all products regardless of availability status
-        // Availability will be handled in the UI (disabled buttons, etc.)
-        return matchesSearch;
-    });
 
     return (
       <div className="enhanced-customer-dashboard">
@@ -167,7 +159,7 @@ const CustomerDashboard = () => {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.9, duration: 1 }}
             >
-              <ProductCatalog products={filteredProducts} />
+              <ProductCatalog products={products} searchTerm={searchTerm} />
             </motion.div>
           )}
         </div>
@@ -178,4 +170,5 @@ const CustomerDashboard = () => {
 };
 
 
-export default CustomerDashboard;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(CustomerDashboard);

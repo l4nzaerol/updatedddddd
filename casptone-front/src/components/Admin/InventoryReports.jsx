@@ -13,6 +13,7 @@ const InventoryReports = () => {
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
     const [materialFilter, setMaterialFilter] = useState('all');
+    const [productTypeFilter, setProductTypeFilter] = useState('all'); // 'all', 'alkansya', 'made_to_order'
     const [refreshKey, setRefreshKey] = useState(0);
     
     // Inventory report data states
@@ -87,6 +88,7 @@ const InventoryReports = () => {
             const safeFetch = async (endpoint, params = {}) => {
                 try {
                     const response = await api.get(endpoint, { params });
+                    console.log(`✅ Successfully fetched ${endpoint}:`, response.data);
                     return response.data;
                 } catch (error) {
                     console.warn(`⚠️ Failed to fetch ${endpoint}:`, error.message);
@@ -107,7 +109,7 @@ const InventoryReports = () => {
             ] = await Promise.allSettled([
                 safeFetch('/inventory/dashboard'),
                 safeFetch('/inventory/report', dateRange),
-                safeFetch('/inventory/consumption-trends', { days: windowDays }),
+                safeFetch('/api/public/inventory/consumption-trends', { days: windowDays, product_type: productTypeFilter }),
                 safeFetch('/inventory/replenishment-schedule'),
                 safeFetch('/inventory/forecast', { forecast_days: 30, historical_days: windowDays }),
                 safeFetch('/inventory/turnover-report', { days: windowDays }),
@@ -136,7 +138,13 @@ const InventoryReports = () => {
                 items: []
             });
             
-            setConsumptionTrends(consumptionData.value || { trends: {}, period_days: windowDays });
+            setConsumptionTrends(consumptionData.value || { 
+                chart_data: [], 
+                summary: {}, 
+                top_materials: [], 
+                trends: {},
+                period: { days: windowDays }
+            });
             setReplenishmentSchedule(replenishmentData.value || { schedule: [], summary: {} });
             setForecastReport(forecastData.value || { forecasts: [], summary: {} });
             setTurnoverReport(turnoverData.value || { items: [], summary: {} });
@@ -179,7 +187,13 @@ const InventoryReports = () => {
                 },
                 items: []
             });
-            setConsumptionTrends({ trends: {}, period_days: windowDays });
+            setConsumptionTrends({ 
+                chart_data: [], 
+                summary: {}, 
+                top_materials: [], 
+                trends: {},
+                period: { days: windowDays }
+            });
             setReplenishmentSchedule({ schedule: [], summary: {} });
             setForecastReport({ forecasts: [], summary: {} });
             setTurnoverReport({ items: [], summary: {} });
@@ -194,7 +208,7 @@ const InventoryReports = () => {
         } finally {
             setLoading(false);
         }
-    }, [windowDays]);
+    }, [windowDays, productTypeFilter]);
 
     useEffect(() => {
         fetchAllReports();
@@ -655,13 +669,68 @@ const InventoryReports = () => {
             {/* Consumption Trends Tab */}
             {activeTab === 'consumption' && (
                 <div className="bg-white rounded-3 shadow-sm p-4">
-                    {consumptionTrends && (
+                    {console.log('🔍 Consumption Trends Data:', consumptionTrends)}
+                    {/* Debug Info */}
+                    <div className="mb-3 p-3 bg-light rounded">
+                        <h6>Debug Info:</h6>
+                        <p><strong>Data Structure:</strong> {JSON.stringify(Object.keys(consumptionTrends || {}))}</p>
+                        <p><strong>Chart Data Count:</strong> {consumptionTrends?.chart_data?.length || 0}</p>
+                        <p><strong>Top Materials Count:</strong> {consumptionTrends?.top_materials?.length || 0}</p>
+                        <p><strong>Summary:</strong> {JSON.stringify(consumptionTrends?.summary || {})}</p>
+                    </div>
+                    {consumptionTrends ? (
                         <div>
                             <div className="d-flex justify-content-between align-items-center mb-4">
-                                <h3 className="text-xl font-semibold text-dark mb-0">Material Consumption Trends</h3>
+                                <div>
+                                    <h3 className="text-xl font-semibold text-dark mb-0">Material Consumption Trends</h3>
+                                    {consumptionTrends?.is_sample_data && (
+                                        <div className="alert alert-info alert-sm mt-2 mb-0">
+                                            <i className="fas fa-info-circle me-2"></i>
+                                            <strong>Sample Data:</strong> No real consumption data found. Displaying sample data for demonstration.
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="d-flex gap-2 align-items-center">
+                                    <div className="d-flex gap-2">
+                                        <select 
+                                            className="form-select form-select-sm" 
+                                            value={productTypeFilter}
+                                            onChange={(e) => setProductTypeFilter(e.target.value)}
+                                            style={{width: 'auto'}}
+                                        >
+                                            <option value="all">All Products</option>
+                                            <option value="alkansya">Alkansya Only</option>
+                                            <option value="made_to_order">Made-to-Order Only</option>
+                                        </select>
+                                        <button 
+                                            className="btn btn-outline-primary btn-sm"
+                                            onClick={() => setRefreshKey(prev => prev + 1)}
+                                        >
+                                            <i className="fas fa-sync-alt"></i> Refresh
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-info btn-sm"
+                                            onClick={async () => {
+                                                try {
+                                                    const response = await api.get('/api/public/inventory/debug-consumption', { 
+                                                        params: { days: windowDays, product_type: productTypeFilter } 
+                                                    });
+                                                    console.log('Debug Response:', response.data);
+                                                    alert('Debug data logged to console');
+                                                } catch (error) {
+                                                    console.error('Debug Error:', error);
+                                                    alert('Debug failed: ' + error.message);
+                                                }
+                                            }}
+                                        >
+                                            <i className="fas fa-bug"></i> Debug
+                                        </button>
+                                    </div>
                                 <div className="d-flex gap-2">
                                     <span className="badge bg-primary">Daily Usage</span>
                                     <span className="badge bg-success">Trend Analysis</span>
+                                        <span className="badge bg-info">{productTypeFilter === 'all' ? 'All Products' : productTypeFilter === 'alkansya' ? 'Alkansya' : 'Made-to-Order'}</span>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -670,15 +739,15 @@ const InventoryReports = () => {
                                 <div className="col-lg-3 col-md-6 mb-3">
                                     <div className="card bg-primary text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">{consumptionTrends.trends ? Object.keys(consumptionTrends.trends).length : 0}</h3>
-                                            <small className="opacity-75">Items Tracked</small>
+                                            <h3 className="mb-0 fw-bold">{consumptionTrends.summary?.materials_consumed || 0}</h3>
+                                            <small className="opacity-75">Materials Tracked</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="col-lg-3 col-md-6 mb-3">
                                     <div className="card bg-info text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">{consumptionTrends.period_days || 0}</h3>
+                                            <h3 className="mb-0 fw-bold">{consumptionTrends.period?.days || 0}</h3>
                                             <small className="opacity-75">Analysis Period (Days)</small>
                                         </div>
                                     </div>
@@ -687,11 +756,9 @@ const InventoryReports = () => {
                                     <div className="card bg-success text-white h-100">
                                         <div className="card-body text-center">
                                             <h3 className="mb-0 fw-bold">
-                                                {consumptionTrends.trends ? 
-                                                    Object.values(consumptionTrends.trends).reduce((sum, item) => sum + (item.total_usage_period || 0), 0) : 0
-                                                }
+                                                {consumptionTrends.summary?.total_consumption || 0}
                                             </h3>
-                                            <small className="opacity-75">Total Usage</small>
+                                            <small className="opacity-75">Total Consumption</small>
                                         </div>
                                     </div>
                                 </div>
@@ -699,42 +766,125 @@ const InventoryReports = () => {
                                     <div className="card bg-warning text-white h-100">
                                         <div className="card-body text-center">
                                             <h3 className="mb-0 fw-bold">
-                                                {consumptionTrends.trends ? 
-                                                    Math.round(Object.values(consumptionTrends.trends).reduce((sum, item) => sum + (item.avg_daily_usage || 0), 0) / Math.max(1, Object.keys(consumptionTrends.trends).length)) : 0
-                                                }
+                                                {Math.round(consumptionTrends.summary?.average_daily_consumption || 0)}
                                             </h3>
-                                            <small className="opacity-75">Avg Daily Usage</small>
+                                            <small className="opacity-75">Avg Daily Consumption</small>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Product Type Breakdown */}
+                            {productTypeFilter === 'all' && (
+                                <div className="row mb-4">
+                                    <div className="col-lg-6 col-md-6 mb-3">
+                                        <div className="card bg-light border-0 h-100">
+                                            <div className="card-body text-center">
+                                                <h4 className="mb-1 fw-bold text-primary">{consumptionTrends.summary?.alkansya_consumption || 0}</h4>
+                                                <small className="text-muted">Alkansya Consumption</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-lg-6 col-md-6 mb-3">
+                                        <div className="card bg-light border-0 h-100">
+                                            <div className="card-body text-center">
+                                                <h4 className="mb-1 fw-bold text-success">{consumptionTrends.summary?.made_to_order_consumption || 0}</h4>
+                                                <small className="text-muted">Made-to-Order Consumption</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Consumption Chart */}
                             <div className="mb-4">
                                 <div className="card border-0 shadow-sm bg-white">
                                     <div className="card-header bg-white border-0 p-4">
-                                        <h6 className="fw-semibold mb-0 text-dark">Top Items by Daily Usage</h6>
+                                        <h6 className="fw-semibold mb-0 text-dark">Daily Consumption Trends</h6>
                                     </div>
                                     <div className="card-body p-4">
                                         <div className="bg-white rounded-3 p-3">
                                             <ResponsiveContainer width="100%" height={350}>
-                                                <BarChart data={consumptionTrends.trends ? 
-                                                    Object.values(consumptionTrends.trends)
-                                                        .sort((a, b) => (b.avg_daily_usage || 0) - (a.avg_daily_usage || 0))
-                                                        .slice(0, 10)
-                                                        .map(item => ({
-                                                            name: item.item_name?.length > 15 ? item.item_name.substring(0, 15) + '...' : item.item_name,
-                                                            avg_daily_usage: item.avg_daily_usage,
-                                                            total_usage: item.total_usage_period,
-                                                            days_until_stockout: item.days_until_stockout
-                                                        })) : []}>
+                                                <AreaChart data={consumptionTrends.chart_data || []}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                                     <XAxis 
-                                                        dataKey="name" 
+                                                        dataKey="date" 
+                                                        tick={{ fontSize: 12, fill: '#666' }}
+                                                        tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                    />
+                                                    <YAxis 
+                                                        tick={{ fontSize: 12, fill: '#666' }}
+                                                    />
+                                                    <Tooltip 
+                                                        contentStyle={{ 
+                                                            backgroundColor: 'white', 
+                                                            border: '1px solid #e0e0e0',
+                                                            borderRadius: '8px',
+                                                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                        }}
+                                                        labelFormatter={(value) => new Date(value).toLocaleDateString('en-US', { 
+                                                            year: 'numeric', 
+                                                            month: 'long', 
+                                                            day: 'numeric' 
+                                                        })}
+                                                    />
+                                                    <Legend />
+                                                    <Area 
+                                                        type="monotone" 
+                                                        dataKey="total_consumption" 
+                                                        stackId="1" 
+                                                        stroke="#3B82F6" 
+                                                        fill="#3B82F6" 
+                                                        fillOpacity={0.6}
+                                                        name="Total Consumption"
+                                                    />
+                                                    {productTypeFilter === 'all' && (
+                                                        <>
+                                                            <Area 
+                                                                type="monotone" 
+                                                                dataKey="alkansya_consumption" 
+                                                                stackId="2" 
+                                                                stroke="#10B981" 
+                                                                fill="#10B981" 
+                                                                fillOpacity={0.4}
+                                                                name="Alkansya"
+                                                            />
+                                                            <Area 
+                                                                type="monotone" 
+                                                                dataKey="made_to_order_consumption" 
+                                                                stackId="3" 
+                                                                stroke="#F59E0B" 
+                                                                fill="#F59E0B" 
+                                                                fillOpacity={0.4}
+                                                                name="Made-to-Order"
+                                                            />
+                                                        </>
+                                                    )}
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Top Materials Chart */}
+                            <div className="mb-4">
+                                <div className="card border-0 shadow-sm bg-white">
+                                    <div className="card-header bg-white border-0 p-4">
+                                        <h6 className="fw-semibold mb-0 text-dark">Top Materials by Consumption</h6>
+                                    </div>
+                                    <div className="card-body p-4">
+                                        <div className="bg-white rounded-3 p-3">
+                                            <ResponsiveContainer width="100%" height={350}>
+                                                <BarChart data={consumptionTrends.top_materials?.slice(0, 10) || []}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                                    <XAxis 
+                                                        dataKey="material_name" 
                                                         angle={-45} 
                                                         textAnchor="end" 
                                                         height={100}
                                                         tick={{ fontSize: 12, fill: '#666' }}
+                                                        tickFormatter={(value) => value?.length > 15 ? value.substring(0, 15) + '...' : value}
                                                     />
                                                     <YAxis 
                                                         tick={{ fontSize: 12, fill: '#666' }}
@@ -748,7 +898,13 @@ const InventoryReports = () => {
                                                         }} 
                                                     />
                                         <Legend />
-                                                    <Bar dataKey="avg_daily_usage" fill="#3B82F6" name="Avg Daily Usage" radius={[4, 4, 0, 0]} />
+                                                    <Bar dataKey="total_consumption" fill="#3B82F6" name="Total Consumption" radius={[4, 4, 0, 0]} />
+                                                    {productTypeFilter === 'all' && (
+                                                        <>
+                                                            <Bar dataKey="alkansya_consumption" fill="#10B981" name="Alkansya" radius={[4, 4, 0, 0]} />
+                                                            <Bar dataKey="made_to_order_consumption" fill="#F59E0B" name="Made-to-Order" radius={[4, 4, 0, 0]} />
+                                                        </>
+                                                    )}
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
@@ -761,48 +917,79 @@ const InventoryReports = () => {
                                 <table className="min-w-full table-auto">
                                     <thead>
                                         <tr className="bg-gray-50">
-                                            <th className="px-4 py-2 text-left">Item</th>
-                                            <th className="px-4 py-2 text-left">SKU</th>
+                                            <th className="px-4 py-2 text-left">Material</th>
+                                            <th className="px-4 py-2 text-left">Total Consumption</th>
                                             <th className="px-4 py-2 text-left">Avg Daily Usage</th>
-                                            <th className="px-4 py-2 text-left">Total Usage</th>
                                             <th className="px-4 py-2 text-left">Days Until Stockout</th>
                                             <th className="px-4 py-2 text-left">Trend</th>
+                                            {productTypeFilter === 'all' && (
+                                                <>
+                                                    <th className="px-4 py-2 text-left">Alkansya</th>
+                                                    <th className="px-4 py-2 text-left">Made-to-Order</th>
+                                                </>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {consumptionTrends.trends ? Object.values(consumptionTrends.trends).map((item, index) => (
-                                            <tr key={index} className="border-b">
-                                                <td className="px-4 py-2">{item.item_name}</td>
-                                                <td className="px-4 py-2">{item.sku}</td>
-                                                <td className="px-4 py-2">{item.avg_daily_usage}</td>
-                                                <td className="px-4 py-2">{item.total_usage_period}</td>
+                                        {consumptionTrends.top_materials?.map((item, index) => (
+                                            <tr key={index} className="border-b hover:bg-gray-50">
+                                                <td className="px-4 py-2 font-medium">{item.material_name || 'Unknown Material'}</td>
+                                                <td className="px-4 py-2">{item.total_consumption || 0}</td>
+                                                <td className="px-4 py-2">{item.avg_daily_usage || 0}</td>
                                                 <td className="px-4 py-2">
                                                     <span className={`fw-bold ${
-                                                        item.days_until_stockout < 7 ? 'text-danger' :
-                                                        item.days_until_stockout < 14 ? 'text-warning' :
+                                                        (item.days_until_stockout || 0) < 7 ? 'text-danger' :
+                                                        (item.days_until_stockout || 0) < 14 ? 'text-warning' :
                                                         'text-success'
                                                     }`}>
-                                                        {item.days_until_stockout === 999 ? 'N/A' : `${item.days_until_stockout} days`}
+                                                        {(item.days_until_stockout || 0) === 999 ? 'N/A' : `${item.days_until_stockout || 0} days`}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2">
                                                     <span className={`px-2 py-1 rounded text-xs ${
-                                                        item.trend > 0 ? 'bg-danger text-white' :
-                                                        item.trend < 0 ? 'bg-success text-white' :
+                                                        (item.trend || 0) > 0 ? 'bg-danger text-white' :
+                                                        (item.trend || 0) < 0 ? 'bg-success text-white' :
                                                         'bg-info text-white'
                                                     }`}>
-                                                        {item.trend > 0 ? '↗ Increasing' :
-                                                         item.trend < 0 ? '↘ Decreasing' : '→ Stable'}
+                                                        {(item.trend || 0) > 0 ? '↗ Increasing' :
+                                                         (item.trend || 0) < 0 ? '↘ Decreasing' : '→ Stable'}
                                                     </span>
                                                 </td>
+                                                {productTypeFilter === 'all' && (
+                                                    <>
+                                                        <td className="px-4 py-2 text-primary">{item.alkansya_consumption || 0}</td>
+                                                        <td className="px-4 py-2 text-success">{item.made_to_order_consumption || 0}</td>
+                                                    </>
+                                                )}
                                             </tr>
-                                        )) : []}
+                                        )) || []}
                                     </tbody>
                                 </table>
-                                            </div>
-                                            </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-center py-5">
+                            <div className="mb-3">
+                                <i className="fas fa-chart-line fa-3x text-muted"></i>
+                            </div>
+                            <h4 className="text-muted">No Consumption Data Available</h4>
+                            <p className="text-muted">
+                                {productTypeFilter === 'alkansya' 
+                                    ? 'No Alkansya daily output data found for the selected period.'
+                                    : productTypeFilter === 'made_to_order'
+                                    ? 'No accepted orders found for the selected period.'
+                                    : 'No consumption data found for the selected period.'
+                                }
+                            </p>
+                            <button 
+                                className="btn btn-primary"
+                                onClick={() => setRefreshKey(prev => prev + 1)}
+                            >
+                                <i className="fas fa-sync-alt me-2"></i>Refresh Data
+                            </button>
+                        </div>
                     )}
-                                        </div>
+                </div>
             )}
 
             {/* Enhanced Replenishment Tab */}
@@ -848,7 +1035,7 @@ const InventoryReports = () => {
                                 <div className="col-lg-3 col-md-6 mb-3">
                                     <div className="card bg-success text-white h-100">
                                         <div className="card-body text-center">
-                                            <h3 className="mb-0 fw-bold">₱{replenishmentSchedule.summary?.total_reorder_value?.toLocaleString() || 0}</h3>
+                                            <h3 className="mb-0 fw-bold">₱{replenishmentSchedule.summary?.total_reorder_value ? replenishmentSchedule.summary.total_reorder_value.toLocaleString() : '0'}</h3>
                                             <small className="opacity-75">Total Reorder Value</small>
                                 </div>
                                             </div>
@@ -1284,7 +1471,7 @@ const InventoryReports = () => {
                                                             <td className="fw-semibold">{material.qty_per_unit}</td>
                                                             <td className="fw-semibold">{material.current_stock}</td>
                                                             <td className="fw-semibold text-info">{material.total_used_3months}</td>
-                                                            <td className="fw-semibold text-success">₱{material.unit_cost?.toLocaleString()}</td>
+                                                            <td className="fw-semibold text-success">₱{material.unit_cost ? material.unit_cost.toLocaleString() : '0'}</td>
                                                             <td>
                                                                 <span className={`badge ${
                                                                     material.status === 'reorder' ? 'bg-danger' : 'bg-success'

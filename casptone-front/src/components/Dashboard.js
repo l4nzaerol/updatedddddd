@@ -7,7 +7,6 @@ import CustomerDashboard from "./Customers/CustomerDashboard";
 const Dashboard = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState({ username: "", role: "" });
-    const [cartCount, setCartCount] = useState(0);
 
     useEffect(() => {
         const token = localStorage.getItem("token");
@@ -20,10 +19,6 @@ const Dashboard = () => {
         }
 
         setUser({ username: storedUsername, role: storedRole });
-
-        if (storedRole === "customer") {
-            setCartCount(3); 
-        }
     }, [navigate]);
 
     return (

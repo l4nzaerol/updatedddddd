@@ -555,6 +555,24 @@ const CartTable = () => {
     return true;
   };
 
+  const handlePhoneChange = (value) => {
+    // Only allow digits
+    const numericValue = value.replace(/\D/g, '');
+    
+    // Limit to 11 digits maximum
+    const limitedValue = numericValue.slice(0, 11);
+    
+    // Allow typing if it's empty, starts with 0, or starts with 09
+    if (limitedValue.length === 0 || 
+        limitedValue === '0' || 
+        limitedValue.startsWith('09')) {
+      setPhone(limitedValue);
+      if (phoneError) {
+        validatePhone(limitedValue);
+      }
+    }
+  };
+
   // Address validation functions
   const validateProvince = (province) => {
     if (!province) {
@@ -1002,11 +1020,9 @@ const CartTable = () => {
                     className={`form-control ${phoneError ? 'error' : ''}`}
                     type="tel"
                     value={phone} 
-                    onChange={(e) => {
-                      setPhone(e.target.value);
-                      if (phoneError) validatePhone(e.target.value);
-                    }} 
+                    onChange={(e) => handlePhoneChange(e.target.value)} 
                     placeholder="09xxxxxxxxx (11 digits)" 
+                    maxLength="11"
                     required
                   />
                   {phoneError && <div className="error-message">{phoneError}</div>}
@@ -1308,11 +1324,9 @@ const CartTable = () => {
                     className={`form-control ${phoneError ? 'error' : ''}`}
                     type="tel"
                     value={phone} 
-                    onChange={(e) => {
-                      setPhone(e.target.value);
-                      if (phoneError) validatePhone(e.target.value);
-                    }}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
                     placeholder="09xxxxxxxxx (11 digits)" 
+                    maxLength="11"
                     required
                   />
                   {phoneError && <div className="error-message">{phoneError}</div>}

@@ -45,18 +45,23 @@ const Header = ({ role, username }) => {
                     setCartCount(totalItems);
                 } catch (err) {
                     console.error("Failed to fetch cart count:", err);
-                    // If we get rate limited, stop making requests for a while
-                    if (err.response?.status === 429) {
-                        console.warn("Rate limited - stopping cart count requests temporarily");
-                        return;
-                    }
                 }
             };
 
+            // Fetch cart count on mount
             fetchCartCount();
-            // Reduced frequency to prevent rate limiting - every 30 seconds instead of 1 second
-            const interval = setInterval(fetchCartCount, 5000);
-            return () => clearInterval(interval);
+
+            // Listen for cart item added events
+            const handleCartItemAdded = () => {
+                // Simply increment the cart count instead of fetching all cart data
+                setCartCount(prev => prev + 1);
+            };
+
+            window.addEventListener('cartItemAdded', handleCartItemAdded);
+            
+            return () => {
+                window.removeEventListener('cartItemAdded', handleCartItemAdded);
+            };
         }
     }, [role]);
 
@@ -276,8 +281,20 @@ const SidebarProvider = ({ children }) => {
 
 // 📦 Final Layout
 const AppLayout = ({ children }) => {
-    const { role, username } = getUserData();
+    const [userData, setUserData] = useState(() => getUserData());
     const { isMinimized, toggleSidebar } = useSidebar();
+    
+    const { role, username } = userData;
+    
+    // Update user data when localStorage changes (e.g., on login/logout)
+    useEffect(() => {
+        const handleStorageChange = () => {
+            setUserData(getUserData());
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
+        return () => window.removeEventListener('storage', handleStorageChange);
+    }, []);
 
     return (
         <>

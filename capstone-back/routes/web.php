@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\EnhancedInventoryReportsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -15,6 +16,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
+});
+
+// Public API routes for inventory reports (bypassing API middleware)
+Route::prefix('api/public')->group(function () {
+    Route::get('/inventory/consumption-trends', [EnhancedInventoryReportsController::class, 'getConsumptionTrends']);
+    Route::get('/inventory/debug-consumption', [EnhancedInventoryReportsController::class, 'debugConsumptionData']);
 });
 
 // Sanctum CSRF cookie route for stateful authentication

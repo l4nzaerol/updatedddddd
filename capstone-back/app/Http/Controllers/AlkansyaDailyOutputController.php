@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\BOM;
 use App\Models\Material;
 use App\Models\Inventory;
+use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -181,6 +182,30 @@ class AlkansyaDailyOutputController extends Controller
             foreach ($alkansyaProducts as $alkansyaProduct) {
                 $alkansyaProduct->increment('stock', $quantity);
                 Log::info("Updated stock for {$alkansyaProduct->product_name}: +{$quantity} units");
+            }
+
+            // Update finished goods inventory
+            $alkansyaInventoryItem = InventoryItem::where('name', 'LIKE', '%Alkansya%')
+                ->where('category', 'finished')
+                ->first();
+            
+            if ($alkansyaInventoryItem) {
+                $alkansyaInventoryItem->quantity_on_hand += $quantity;
+                $alkansyaInventoryItem->save();
+                
+                // Create inventory transaction for finished goods
+                InventoryTransaction::create([
+                    'inventory_item_id' => $alkansyaInventoryItem->id,
+                    'transaction_type' => 'PRODUCTION_OUTPUT',
+                    'quantity' => $quantity,
+                    'reference' => 'Alkansya Daily Output - ' . $request->date,
+                    'remarks' => "Produced {$quantity} units of Alkansya",
+                    'timestamp' => now(),
+                    'unit_cost' => 0, // Will be calculated based on material costs
+                    'total_cost' => $totalCost
+                ]);
+                
+                Log::info("Updated inventory for Alkansya finished goods: +{$quantity} units");
             }
 
             DB::commit();

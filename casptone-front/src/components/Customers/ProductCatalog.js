@@ -1,5 +1,5 @@
 // src/components/ProductCatalog.js
-import React, { useState, memo } from "react";
+import React, { useState, memo, useCallback, useMemo } from "react";
 import { Form } from "react-bootstrap";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,7 +8,7 @@ import BuyNowModal from "./BuyNowModal";
 import { formatPrice } from "../../utils/currency";
 import "./product_catalog.css";
 
-const ProductCatalog = ({ products }) => {
+const ProductCatalog = ({ products, searchTerm = "" }) => {
   const [showModal, setShowModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
@@ -20,13 +20,38 @@ const ProductCatalog = ({ products }) => {
   // Buy Now modal states
   const [showBuyNowModal, setShowBuyNowModal] = useState(false);
   const [buyNowProduct, setBuyNowProduct] = useState(null);
+  
+  // Modal positioning states (not used - modals are centered with CSS)
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [buyNowModalPosition, setBuyNowModalPosition] = useState({ x: 0, y: 0 });
+
+  // Filter products based on search term
+  const filteredProducts = useMemo(() => {
+    if (!products || products.length === 0) return [];
+    
+    return products.filter((product) => {
+      const productName = product.product_name || product.name || '';
+      const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Show all products regardless of availability status
+      // Availability will be handled in the UI (disabled buttons, etc.)
+      return matchesSearch;
+    });
+  }, [products, searchTerm]);
 
 
-  const handleShowModal = (product) => {
+  const handleShowModal = useCallback((product, event) => {
     setSelectedProduct(product);
     setQuantity(1);
+    
+    // Always center the modal on the screen
+    setModalPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2
+    });
+    
     setShowModal(true);
-  };
+  }, []);
 
   const handleCloseModal = () => {
     setShowModal(false);
@@ -34,14 +59,21 @@ const ProductCatalog = ({ products }) => {
   };
 
   // Buy Now handlers
-  const handleBuyNow = (product) => {
+  const handleBuyNow = useCallback((product, event) => {
     setBuyNowProduct(product);
+    
+    // Always center the modal on the screen
+    setBuyNowModalPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2
+    });
+    
     setShowBuyNowModal(true);
     // Close the view details modal if it's open
     if (showModal) {
       setShowModal(false);
     }
-  };
+  }, [showModal]);
 
   const handleCloseBuyNowModal = () => {
     setShowBuyNowModal(false);
@@ -84,15 +116,13 @@ const ProductCatalog = ({ products }) => {
         }
       );
 
+      // Show success toast
+      toast.success(`${selectedProduct.name} added to cart!`);
       
-      // Show toast notification
-      setToastMessage(`${selectedProduct.name} added to cart!`);
-      setShowToast(true);
-      
-      // Auto hide toast after 3 seconds
+      // Dispatch custom event to update cart count in header (non-blocking)
       setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
+        window.dispatchEvent(new CustomEvent('cartUpdated'));
+      }, 0);
       
       handleCloseModal();
     } catch (err) {
@@ -107,16 +137,19 @@ const ProductCatalog = ({ products }) => {
     }
   };
 
-  const handleAddToCartDirect = async (product) => {
+  const handleAddToCartDirect = useCallback(async (product) => {
     // Add this product to loading set
-    setLoadingProducts(prev => new Set(prev).add(product.id));
-    setError(null);
+    setLoadingProducts(prev => {
+      if (prev.has(product.id)) return prev; // Already loading, don't update
+      return new Set(prev).add(product.id);
+    });
 
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        setError("You need to be logged in to add to cart.");
+        toast.error("You need to be logged in to add to cart.");
         setLoadingProducts(prev => {
+          if (!prev.has(product.id)) return prev; // Already removed, don't update
           const newSet = new Set(prev);
           newSet.delete(product.id);
           return newSet;
@@ -135,29 +168,46 @@ const ProductCatalog = ({ products }) => {
         }
       );
 
+      // Show success toast
+      toast.success(`${product.name} added to cart!`);
       
-      // Show toast notification
-      setToastMessage(`${product.name} added to cart!`);
-      setShowToast(true);
-      
-      // Auto hide toast after 3 seconds
+      // Dispatch custom event to update cart count in header (non-blocking)
       setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
+        window.dispatchEvent(new CustomEvent('cartItemAdded'));
+      }, 0);
       
     } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
+      console.error("Error adding to cart:", err);
+      toast.error(err.response?.data?.message || "Failed to add to cart");
     } finally {
       // Remove this product from loading set
       setLoadingProducts(prev => {
+        if (!prev.has(product.id)) return prev; // Already removed, don't update
         const newSet = new Set(prev);
         newSet.delete(product.id);
         return newSet;
       });
     }
-  };
+  }, []);
 
-  const ProductCard = ({ product, index, category }) => (
+  // Memoized ProductCard component to prevent unnecessary re-renders
+  const ProductCard = React.memo(({ product, index, category, onShowModal, onAddToCart, onBuyNow, isLoading }) => {
+    // Memoize the button handlers to prevent re-renders
+    const handleViewDetails = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onShowModal(product, e);
+    }, [onShowModal, product]);
+    
+    const handleAddToCart = useCallback(() => onAddToCart(product), [onAddToCart, product]);
+    
+    const handleBuyNow = useCallback((e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onBuyNow(product, e);
+    }, [onBuyNow, product]);
+
+    return (
     <motion.div
       key={product.id}
       className={`product-card ${category}`}
@@ -184,7 +234,7 @@ const ProductCatalog = ({ products }) => {
         <div className="product-overlay">
           <motion.button
             className="view-details-btn"
-            onClick={() => handleShowModal(product)}
+            onClick={handleViewDetails}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
           >
@@ -230,18 +280,18 @@ const ProductCatalog = ({ products }) => {
         <div className="product-actions">
           <motion.button
             className="add-to-cart-btn"
-            onClick={() => handleAddToCartDirect(product)}
-            disabled={loadingProducts.has(product.id) || (product.category_name === 'Made to Order' || product.category_name === 'made_to_order') ? (product.is_available === false) : (product.stock === 0)}
+            onClick={handleAddToCart}
+            disabled={isLoading || (product.category_name === 'Made to Order' || product.category_name === 'made_to_order') ? (product.is_available === false) : (product.stock === 0)}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
             <i className="fas fa-shopping-cart"></i>
-            {loadingProducts.has(product.id) ? 'Adding...' : 'Add to Cart'}
+            {isLoading ? 'Adding...' : 'Add to Cart'}
           </motion.button>
           
           <motion.button
             className="buy-now-btn"
-            onClick={() => handleBuyNow(product)}
+            onClick={handleBuyNow}
             disabled={(product.category_name === 'Made to Order' || product.category_name === 'made_to_order') ? (product.is_available === false) : (product.stock === 0)}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -252,12 +302,13 @@ const ProductCatalog = ({ products }) => {
         </div>
       </div>
     </motion.div>
-  );
+    );
+  });
 
   return (
     <div className="products-section">
       <div className="products-container">
-        {!products || products.length === 0 ? (
+        {!filteredProducts || filteredProducts.length === 0 ? (
           <div className="loading-state">
             <div className="loading-spinner">
               <div className="spinner-border text-primary" role="status">
@@ -277,8 +328,17 @@ const ProductCatalog = ({ products }) => {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5 }}
             >
-              {products.map((product, index) => (
-                <ProductCard key={product.id} product={product} index={index} category="all" />
+              {filteredProducts.map((product, index) => (
+                <ProductCard 
+                  key={product.id} 
+                  product={product} 
+                  index={index} 
+                  category="all"
+                  onShowModal={handleShowModal}
+                  onAddToCart={handleAddToCartDirect}
+                  onBuyNow={handleBuyNow}
+                  isLoading={loadingProducts.has(product.id)}
+                />
               ))}
             </motion.div>
           </AnimatePresence>
@@ -395,32 +455,7 @@ const ProductCatalog = ({ products }) => {
                     </Form.Group>
                   </Form>
                   
-                  <div className="modal-action-buttons">
-                    <motion.button 
-                      className="modal-add-to-cart-btn"
-                      onClick={handleAddToCart}
-                      disabled={loadingProducts.has(selectedProduct.id) || 
-                        ((selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order') ? 
-                          (selectedProduct.is_available === false) : (selectedProduct.stock === 0))}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <i className="fas fa-shopping-cart"></i>
-                      {loadingProducts.has(selectedProduct.id) ? 'Adding...' : 'Add to Cart'}
-                    </motion.button>
-                    
-                    <motion.button 
-                      className="modal-buy-now-btn"
-                      onClick={() => handleBuyNow(selectedProduct)}
-                      disabled={(selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order') ? 
-                        (selectedProduct.is_available === false) : (selectedProduct.stock === 0)}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <i className="fas fa-bolt"></i>
-                      Buy Now
-                    </motion.button>
-                  </div>
+                  {/* Action buttons removed as requested */}
                 </div>
               </div>
             </motion.div>
@@ -428,35 +463,6 @@ const ProductCatalog = ({ products }) => {
         )}
       </AnimatePresence>
 
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {showToast && (
-          <motion.div
-            initial={{ opacity: 0, x: 100 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 100 }}
-            transition={{ duration: 0.3 }}
-            className="toast-notification"
-          >
-            <div className="toast-content">
-              <div className="toast-icon">
-                <i className="fas fa-check-circle"></i>
-              </div>
-              <div className="toast-message">
-                <div className="toast-title">Added to Cart!</div>
-                <div className="toast-text">{toastMessage}</div>
-              </div>
-              <button 
-                className="toast-close"
-                onClick={() => setShowToast(false)}
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-            <div className="toast-progress"></div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Buy Now Modal */}
       <BuyNowModal
@@ -464,10 +470,18 @@ const ProductCatalog = ({ products }) => {
         onClose={handleCloseBuyNowModal}
         product={buyNowProduct}
         onOrderSuccess={handleOrderSuccess}
+        position={buyNowModalPosition}
       />
     </div>
   );
 };
 
 // Memoize the component to prevent unnecessary re-renders
-export default memo(ProductCatalog);
+export default memo(ProductCatalog, (prevProps, nextProps) => {
+  // Only re-render if products array reference or searchTerm changes
+  if (prevProps.products !== nextProps.products || prevProps.searchTerm !== nextProps.searchTerm) {
+    return false; // Re-render
+  }
+  // If products and searchTerm are the same, don't re-render
+  return true; // Don't re-render
+});

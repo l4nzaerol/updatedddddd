@@ -276,12 +276,34 @@ const BOMModal = ({ show, onHide, product, onSave }) => {
                                 />
                               </td>
                               <td>
-                                <input
-                                  type="text"
-                                  className="form-control form-control-sm"
+                                <select
+                                  className="form-select form-select-sm"
                                   value={material.unit_of_measure}
                                   onChange={(e) => handleMaterialChange(index, 'unit_of_measure', e.target.value)}
-                                />
+                                >
+                                  <option value="">Select Unit</option>
+                                  <option value="pcs">Pieces (pcs)</option>
+                                  <option value="kg">Kilograms (kg)</option>
+                                  <option value="g">Grams (g)</option>
+                                  <option value="m">Meters (m)</option>
+                                  <option value="cm">Centimeters (cm)</option>
+                                  <option value="mm">Millimeters (mm)</option>
+                                  <option value="ft">Feet (ft)</option>
+                                  <option value="in">Inches (in)</option>
+                                  <option value="sqm">Square Meters (sqm)</option>
+                                  <option value="sqft">Square Feet (sqft)</option>
+                                  <option value="cbm">Cubic Meters (cbm)</option>
+                                  <option value="l">Liters (l)</option>
+                                  <option value="ml">Milliliters (ml)</option>
+                                  <option value="box">Box</option>
+                                  <option value="pack">Pack</option>
+                                  <option value="roll">Roll</option>
+                                  <option value="sheet">Sheet</option>
+                                  <option value="set">Set</option>
+                                  <option value="pair">Pair</option>
+                                  <option value="dozen">Dozen</option>
+                                  <option value="gross">Gross</option>
+                                </select>
                               </td>
                               <td>
                                 ₱{selectedMaterial?.standard_cost?.toLocaleString() || '0'}
@@ -485,13 +507,34 @@ const MaterialModal = ({ show, onHide, material, onSave }) => {
               </div>
               <div className="col-md-6">
                 <label className="form-label">Unit of Measure *</label>
-                <input
-                  type="text"
+                <select
                   className={`form-control ${errors.unit_of_measure ? "is-invalid" : ""}`}
                   value={formData.unit_of_measure}
                   onChange={(e) => handleChange("unit_of_measure", e.target.value)}
-                  placeholder="kg, pcs, m, etc."
-                />
+                >
+                  <option value="">Select Unit</option>
+                  <option value="pcs">Pieces (pcs)</option>
+                  <option value="kg">Kilograms (kg)</option>
+                  <option value="g">Grams (g)</option>
+                  <option value="m">Meters (m)</option>
+                  <option value="cm">Centimeters (cm)</option>
+                  <option value="mm">Millimeters (mm)</option>
+                  <option value="ft">Feet (ft)</option>
+                  <option value="in">Inches (in)</option>
+                  <option value="sqm">Square Meters (sqm)</option>
+                  <option value="sqft">Square Feet (sqft)</option>
+                  <option value="cbm">Cubic Meters (cbm)</option>
+                  <option value="l">Liters (l)</option>
+                  <option value="ml">Milliliters (ml)</option>
+                  <option value="box">Box</option>
+                  <option value="pack">Pack</option>
+                  <option value="roll">Roll</option>
+                  <option value="sheet">Sheet</option>
+                  <option value="set">Set</option>
+                  <option value="pair">Pair</option>
+                  <option value="dozen">Dozen</option>
+                  <option value="gross">Gross</option>
+                </select>
                 {errors.unit_of_measure && <div className="invalid-feedback">{errors.unit_of_measure}</div>}
               </div>
               <div className="col-md-6">
@@ -1149,9 +1192,29 @@ const NormalizedInventoryPage = () => {
       return materials.filter(material => 
         material.category === "raw"
       );
-    } else if (materialFilter === "packaging") {
+    } else if (materialFilter === "alkansya") {
       return materials.filter(material => 
-        material.category === "packaging"
+        material.material_name.toLowerCase().includes('alkansya') ||
+        material.material_code.toLowerCase().includes('alkansya') ||
+        material.material_code.includes('PW-') || 
+        material.material_code.includes('PLY-') || 
+        material.material_code.includes('ACR-') || 
+        material.material_code.includes('PN-') ||
+        material.material_code.includes('BS-') || 
+        material.material_code.includes('STKW-')
+      );
+    } else if (materialFilter === "made_to_order") {
+      return materials.filter(material => 
+        material.material_name.toLowerCase().includes('table') ||
+        material.material_name.toLowerCase().includes('chair') ||
+        material.material_code.toLowerCase().includes('table') ||
+        material.material_code.toLowerCase().includes('chair') ||
+        material.material_code.includes('HW-MAHOG-') || 
+        material.material_code.includes('PLY-18-') ||
+        material.material_code.includes('WS-3') || 
+        material.material_code.includes('WG-500') ||
+        material.material_code.includes('WS-2.5') || 
+        material.material_code.includes('WD-8MM')
       );
     }
     return materials;
@@ -1460,11 +1523,18 @@ const NormalizedInventoryPage = () => {
                     Raw Materials
                   </button>
                   <button 
-                    className={`btn btn-sm ${materialFilter === 'packaging' ? 'btn-info' : 'btn-outline-info'}`}
-                    onClick={() => setMaterialFilter('packaging')}
+                    className={`btn btn-sm ${materialFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                    onClick={() => setMaterialFilter('alkansya')}
                   >
-                    <i className="fas fa-box me-1"></i>
-                    Packaging
+                    <i className="fas fa-piggy-bank me-1"></i>
+                    Alkansya Materials
+                  </button>
+                  <button 
+                    className={`btn btn-sm ${materialFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                    onClick={() => setMaterialFilter('made_to_order')}
+                  >
+                    <i className="fas fa-tools me-1"></i>
+                    Made to Order Materials
                   </button>
                 </div>
               </div>
@@ -1667,15 +1737,16 @@ const NormalizedInventoryPage = () => {
                               <div className="d-flex flex-column align-items-end">
                                 <div className="fw-bold text-dark">{product.current_stock || 0}</div>
                                 <small className={`badge badge-sm ${
-                                  product.stock_status?.status === 'out_of_stock' ? 'bg-danger' :
-                                  product.stock_status?.status === 'low_stock' ? 'bg-warning' :
-                                  product.stock_status?.status === 'in_stock' ? 'bg-success' :
-                                  product.stock_status?.status === 'no_production' ? 'bg-secondary' :
-                                  product.stock_status?.status === 'in_production' ? 'bg-warning' :
-                                  product.stock_status?.status === 'ready_for_delivery' ? 'bg-info' :
+                                  product.status === 'out_of_stock' ? 'bg-danger' :
+                                  product.status === 'low_stock' ? 'bg-warning' :
+                                  product.status === 'in_stock' ? 'bg-success' :
+                                  product.status === 'not_in_production' ? 'bg-secondary' :
+                                  product.status === 'in_production' ? 'bg-warning' :
+                                  product.status === 'ready_to_deliver' ? 'bg-info' :
+                                  product.status === 'completed' ? 'bg-success' :
                                   'bg-secondary'
                                 }`}>
-                                  {product.stock_status?.label || 'Unknown'}
+                                  {product.status_label || 'Unknown'}
                                 </small>
                               </div>
                             </td>

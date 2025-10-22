@@ -113,7 +113,8 @@ Route::get('/alkansya-daily-output/statistics', [\App\Http\Controllers\AlkansyaD
 // Public inventory routes for testing
 Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
 Route::get('/inventory/report', [InventoryController::class, 'getInventoryReport']);
-Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
+Route::get('/inventory/consumption-trends', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getConsumptionTrends']);
+Route::get('/inventory/debug-consumption', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'debugConsumptionData']);
 Route::get('/inventory/replenishment-schedule', [InventoryController::class, 'getReplenishmentSchedule']);
 Route::get('/inventory/forecast', [InventoryController::class, 'getMaterialForecast']);
 Route::get('/inventory/turnover-report', [InventoryController::class, 'getTurnoverReport']);
@@ -123,6 +124,35 @@ Route::get('/inventory/alkansya-daily-output/materials-analysis', [AlkansyaDaily
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/generate-code', [ProductController::class, 'generateProductCode']);
+
+// Test route for consumption trends (completely public)
+Route::get('/test-consumption-trends', function() {
+    return response()->json([
+        'message' => 'Test endpoint working',
+        'timestamp' => now(),
+        'data' => [
+            'chart_data' => [
+                ['date' => '2025-10-23', 'total_consumption' => 100, 'alkansya_consumption' => 60, 'made_to_order_consumption' => 40]
+            ],
+            'summary' => [
+                'total_consumption' => 100,
+                'alkansya_consumption' => 60,
+                'made_to_order_consumption' => 40,
+                'materials_consumed' => 3
+            ],
+            'top_materials' => [
+                [
+                    'material_id' => 1,
+                    'material_name' => 'Test Material 1',
+                    'total_consumption' => 50,
+                    'avg_daily_usage' => 5.0,
+                    'trend' => 0.5,
+                    'days_until_stockout' => 10
+                ]
+            ]
+        ]
+    ]);
+});
 
 
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -349,6 +379,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('inventory')->group(function () {
         Route::get('/normalized-inventory', [EnhancedInventoryReportsController::class, 'getNormalizedInventoryData']);
         Route::get('/consumption-trends', [EnhancedInventoryReportsController::class, 'getConsumptionTrends']);
+        Route::get('/debug-consumption', [EnhancedInventoryReportsController::class, 'debugConsumptionData']);
         Route::get('/made-to-order-status', [EnhancedInventoryReportsController::class, 'getMadeToOrderStatus']);
         Route::get('/forecast', [EnhancedInventoryReportsController::class, 'getForecastData']);
         Route::get('/replenishment-schedule', [EnhancedInventoryReportsController::class, 'getReplenishmentSchedule']);

@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Material;
 use App\Models\BOM;
 use App\Models\Inventory;
+use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
 use App\Models\AlkansyaDailyOutput;
 use Illuminate\Http\Request;
@@ -45,10 +46,95 @@ class NormalizedInventoryController extends Controller
                     $product->standard_cost = 0;
                 }
                 
+                // Get inventory status and stock information
+                $this->addInventoryStatus($product);
+                
                 return $product;
             });
 
         return response()->json($products);
+    }
+    
+    /**
+     * Add inventory status and stock information to product
+     */
+    private function addInventoryStatus($product)
+    {
+        // For Alkansya products (Stocked Products)
+        if ($product->category_name === 'Stocked Products' && str_contains(strtolower($product->name), 'alkansya')) {
+            // Use product stock directly for Alkansya
+            $product->current_stock = $product->stock;
+            $product->status = $product->stock > 0 ? 'in_stock' : 'out_of_stock';
+            $product->status_label = $product->stock > 0 ? 'In Stock' : 'Out of Stock';
+            $product->status_variant = $product->stock > 0 ? 'success' : 'danger';
+            return;
+        }
+        
+        // For Made to Order products
+        if ($product->category_name === 'Made to Order' || $product->category_name === 'made_to_order') {
+            // Find corresponding inventory item
+            $inventoryItem = InventoryItem::where('name', 'like', '%' . $product->name . '%')
+                ->where('category', 'made-to-order')
+                ->first();
+            
+            if ($inventoryItem) {
+                $product->current_stock = $inventoryItem->quantity_on_hand;
+                $product->production_count = $inventoryItem->production_count ?? 0;
+                $product->production_status = $inventoryItem->production_status ?? 'not_in_production';
+                
+                // Set status based on production status
+                if ($inventoryItem->production_status === 'completed') {
+                    $product->status = 'completed';
+                    $product->status_label = 'Completed';
+                    $product->status_variant = 'success';
+                } elseif ($inventoryItem->production_status === 'ready_to_deliver') {
+                    $product->status = 'ready_to_deliver';
+                    $product->status_label = 'Ready to Deliver';
+                    $product->status_variant = 'info';
+                } elseif ($inventoryItem->production_count > 0 || $inventoryItem->production_status === 'in_production') {
+                    $product->status = 'in_production';
+                    $product->status_label = $inventoryItem->production_count . ' Order' . ($inventoryItem->production_count > 1 ? 's' : '') . ' in Production';
+                    $product->status_variant = 'warning';
+                } else {
+                    $product->status = 'not_in_production';
+                    $product->status_label = 'No Production';
+                    $product->status_variant = 'secondary';
+                }
+            } else {
+                // No inventory item found, create one
+                $inventoryItem = InventoryItem::create([
+                    'sku' => 'MTO-' . strtoupper(substr($product->name, 0, 3)) . '-' . $product->id,
+                    'name' => $product->name . ' (Made-to-Order)',
+                    'category' => 'made-to-order',
+                    'status' => 'not_in_production',
+                    'production_count' => 0,
+                    'production_status' => 'not_in_production',
+                    'location' => 'Production Area',
+                    'unit' => 'pcs',
+                    'unit_cost' => $product->price,
+                    'quantity_on_hand' => 0,
+                    'safety_stock' => 0,
+                    'reorder_point' => null,
+                    'max_level' => null,
+                    'lead_time_days' => 14,
+                    'description' => $product->description
+                ]);
+                
+                $product->current_stock = 0;
+                $product->production_count = 0;
+                $product->production_status = 'not_in_production';
+                $product->status = 'not_in_production';
+                $product->status_label = 'No Production';
+                $product->status_variant = 'secondary';
+            }
+            return;
+        }
+        
+        // For other products, use product stock
+        $product->current_stock = $product->stock;
+        $product->status = $product->stock > 0 ? 'in_stock' : 'out_of_stock';
+        $product->status_label = $product->stock > 0 ? 'In Stock' : 'Out of Stock';
+        $product->status_variant = $product->stock > 0 ? 'success' : 'danger';
     }
 
     /**
