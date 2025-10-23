@@ -121,6 +121,25 @@ Route::get('/inventory/turnover-report', [InventoryController::class, 'getTurnov
 Route::get('/inventory/alkansya-daily-output/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
 Route::get('/inventory/alkansya-daily-output/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
 
+// Enhanced forecasting routes
+Route::get('/inventory/forecast/alkansya-materials', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getAlkansyaMaterialForecast']);
+Route::get('/inventory/forecast/made-to-order-materials', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getMadeToOrderMaterialForecast']);
+Route::get('/inventory/forecast/overall-materials', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getOverallMaterialForecast']);
+
+// Enhanced replenishment route
+Route::get('/inventory/enhanced-replenishment', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getEnhancedReplenishmentSchedule']);
+
+// Enhanced transactions route
+Route::get('/inventory/enhanced-transactions', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getEnhancedTransactions']);
+
+// Production overview route
+Route::get('/production/overview', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionOverview']);
+
+// Production reports specific routes
+Route::get('/production/alkansya-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getAlkansyaProductionData']);
+Route::get('/production/made-to-order-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getMadeToOrderProductionData']);
+Route::get('/production/output-analytics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionOutputAnalytics']);
+
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/generate-code', [ProductController::class, 'generateProductCode']);

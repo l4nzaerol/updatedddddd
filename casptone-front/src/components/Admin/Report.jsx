@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
-import InventoryReports from "./InventoryReports";
 import EnhancedInventoryReports from "./EnhancedInventoryReports";
 import ProductionReports from "./ProductionReports";
 import SalesAnalytics from "./SalesAnalytics";
@@ -42,7 +41,7 @@ const Report = () => {
         { 
             id: "inventory", 
             name: "Inventory Reports", 
-            component: InventoryReports,
+            component: EnhancedInventoryReports,
             icon: "📊",
             description: "Predictive analytics for material usage and inventory management"
         },

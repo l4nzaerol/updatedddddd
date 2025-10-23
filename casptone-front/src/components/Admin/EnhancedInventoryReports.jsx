@@ -18,6 +18,7 @@ const EnhancedInventoryReports = () => {
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
     const [materialFilter, setMaterialFilter] = useState('all');
+    const [consumptionFilter, setConsumptionFilter] = useState('all');
     const [refreshKey, setRefreshKey] = useState(0);
     
     // Enhanced data states
@@ -31,6 +32,21 @@ const EnhancedInventoryReports = () => {
     const [materialUsageAnalysis, setMaterialUsageAnalysis] = useState(null);
     const [inventoryTransactions, setInventoryTransactions] = useState(null);
     const [realTimeAlerts, setRealTimeAlerts] = useState(null);
+    
+    // Enhanced forecasting states
+    const [forecastType, setForecastType] = useState('alkansya');
+    const [alkansyaForecast, setAlkansyaForecast] = useState(null);
+    const [madeToOrderForecast, setMadeToOrderForecast] = useState(null);
+    const [overallForecast, setOverallForecast] = useState(null);
+    
+    // Enhanced replenishment states
+    const [enhancedReplenishment, setEnhancedReplenishment] = useState(null);
+    const [replenishmentView, setReplenishmentView] = useState('summary'); // summary, schedule, analytics
+    
+    // Enhanced transactions states
+    const [enhancedTransactions, setEnhancedTransactions] = useState(null);
+    const [transactionView, setTransactionView] = useState('list'); // list, summary, analytics
+    const [transactionFilter, setTransactionFilter] = useState('all'); // all, alkansya, made_to_order, other
     
     // Filtered data
     const [filteredInventoryData, setFilteredInventoryData] = useState(null);
@@ -126,6 +142,13 @@ const EnhancedInventoryReports = () => {
     useEffect(() => {
         fetchAllReports();
     }, [fetchAllReports]);
+
+    // Reload consumption data when filter changes
+    useEffect(() => {
+        if (activeTab === 'consumption') {
+            loadTabData('consumption');
+        }
+    }, [consumptionFilter, windowDays]);
 
     const handleGlobalRefresh = () => {
         setRefreshKey(prev => prev + 1);
@@ -228,63 +251,36 @@ const EnhancedInventoryReports = () => {
                     
                 case 'stock':
                     // Always refresh stock data when tab is clicked
-                    const response = await api.get('/inventory/normalized-inventory');
-                    const data = response.data;
+                    const stockResponse = await api.get('/inventory/normalized-inventory');
+                    const data = stockResponse.data;
                     setInventoryReport(data);
                     applyFilter(data, materialFilter);
                     break;
                     
                 case 'consumption':
-                    if (!consumptionTrends) {
-                        const response = await api.get('/inventory/consumption-trends', { 
-                            params: { days: windowDays } 
-                        });
-                        setConsumptionTrends(response.data);
-                    }
+                    const consumptionResponse = await api.get('/inventory/consumption-trends', { 
+                        params: { 
+                            days: windowDays,
+                            product_type: consumptionFilter
+                        } 
+                    });
+                    console.log('Consumption trends response:', consumptionResponse.data);
+                    setConsumptionTrends(consumptionResponse.data);
                     break;
                     
                 case 'forecast':
-                    if (!forecastReport) {
-                        const response = await api.get('/inventory/forecast', { 
-                            params: { forecast_days: 30, historical_days: windowDays } 
-                        });
-                        setForecastReport(response.data);
-                    }
+                    // Use enhanced forecasting
+                    await fetchForecastData();
                     break;
                     
                 case 'replenishment':
-                    if (!replenishmentSchedule) {
-                        const response = await api.get('/inventory/replenishment-schedule');
-                        setReplenishmentSchedule(response.data);
-                    }
+                    // Use enhanced replenishment
+                    await fetchEnhancedReplenishmentData();
                     break;
                     
                 case 'transactions':
-                    {
-                        // Load last 365 days to include seeder PURCHASE transactions
-                        const txResponse = await api.get('/inventory/transactions', {
-                            params: {
-                                start_date: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                                end_date: new Date().toISOString().split('T')[0]
-                            }
-                        });
-                        const txData = txResponse.data || { transactions: [], summary: { total_transactions: 0, total_value: 0 } };
-                        // Normalize fields to UI expectations
-                        const normalized = {
-                            ...txData,
-                            transactions: (txData.transactions || []).map(t => ({
-                                id: t.id ?? `${t.material_id || 'mat'}-${t.created_at || Date.now()}`,
-                                type: (t.transaction_type || t.type || '').toUpperCase(),
-                                material: t.material_name || t.material || t.material_code || 'Unknown',
-                                quantity: Number(t.quantity ?? 0),
-                                unit_cost: Number(t.unit_cost ?? 0),
-                                total_cost: Number(t.total_cost ?? (Number(t.quantity ?? 0) * Number(t.unit_cost ?? 0))),
-                                reference: t.reference || t.notes || '—',
-                                timestamp: t.created_at || t.timestamp || new Date().toISOString()
-                            }))
-                        };
-                        setInventoryTransactions(normalized);
-                    }
+                    // Use enhanced transactions
+                    await fetchEnhancedTransactionsData();
                     break;
                     
                 case 'alerts':
@@ -305,6 +301,79 @@ const EnhancedInventoryReports = () => {
     const handleTabChange = (tabId) => {
         setActiveTab(tabId);
         loadTabData(tabId);
+    };
+
+    // Enhanced forecasting data fetch function
+    const fetchForecastData = async () => {
+        setTabLoadingStates(prev => ({ ...prev, forecast: true }));
+        
+        try {
+            const params = {
+                forecast_days: windowDays,
+                historical_days: windowDays
+            };
+
+            // Fetch all three types of forecasts in parallel
+            const [alkansyaResponse, madeToOrderResponse, overallResponse] = await Promise.all([
+                api.get('/inventory/forecast/alkansya-materials', { params }).catch(() => ({ data: null })),
+                api.get('/inventory/forecast/made-to-order-materials', { params }).catch(() => ({ data: null })),
+                api.get('/inventory/forecast/overall-materials', { params }).catch(() => ({ data: null }))
+            ]);
+
+            setAlkansyaForecast(alkansyaResponse.data);
+            setMadeToOrderForecast(madeToOrderResponse.data);
+            setOverallForecast(overallResponse.data);
+
+        } catch (error) {
+            console.error('Error fetching forecast data:', error);
+            toast.error('Failed to load forecast data');
+        } finally {
+            setTabLoadingStates(prev => ({ ...prev, forecast: false }));
+        }
+    };
+
+    // Enhanced replenishment data fetch function
+    const fetchEnhancedReplenishmentData = async () => {
+        setTabLoadingStates(prev => ({ ...prev, replenishment: true }));
+        
+        try {
+            const params = {
+                forecast_days: windowDays,
+                historical_days: windowDays
+            };
+
+            const response = await api.get('/inventory/enhanced-replenishment', { params });
+            setEnhancedReplenishment(response.data);
+
+        } catch (error) {
+            console.error('Error fetching enhanced replenishment data:', error);
+            toast.error('Failed to load replenishment data');
+        } finally {
+            setTabLoadingStates(prev => ({ ...prev, replenishment: false }));
+        }
+    };
+
+    // Enhanced transactions data fetch function
+    const fetchEnhancedTransactionsData = async () => {
+        setTabLoadingStates(prev => ({ ...prev, transactions: true }));
+        
+        try {
+            const params = {
+                start_date: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0],
+                transaction_type: transactionFilter,
+                limit: 200
+            };
+
+            const response = await api.get('/inventory/enhanced-transactions', { params });
+            setEnhancedTransactions(response.data);
+
+        } catch (error) {
+            console.error('Error fetching enhanced transactions data:', error);
+            toast.error('Failed to load transactions data');
+        } finally {
+            setTabLoadingStates(prev => ({ ...prev, transactions: false }));
+        }
     };
 
     if (loading) {
@@ -375,7 +444,7 @@ const EnhancedInventoryReports = () => {
                 <ul className="nav nav-pills nav-fill" role="tablist">
                     {[
                         { id: 'overview', name: 'Overview', icon: FaChartLine, color: colors.primary },
-                        { id: 'stock', name: 'Stock Status', icon: FaBox, color: colors.secondary },
+                        { id: 'stock', name: 'Stock Levels', icon: FaBox, color: colors.secondary },
                         { id: 'consumption', name: 'Consumption', icon: FaChartLine, color: colors.accent },
                         { id: 'forecast', name: 'Forecasting', icon: FaChartLine, color: colors.info },
                         { id: 'replenishment', name: 'Replenishment', icon: FaTruck, color: colors.warning },
@@ -487,7 +556,7 @@ const EnhancedInventoryReports = () => {
                                     </div>
                                 </div>
                                 <p className="text-muted small mb-0">
-                                    {dashboardData?.summary?.total_value ? `₱${dashboardData.summary.total_value.toLocaleString()}` : '₱0'} total value
+                                    {dashboardData?.summary?.total_value ? `₱${Number(dashboardData.summary.total_value).toLocaleString()}` : '₱0'} total value
                                 </p>
                             </div>
                         </div>
@@ -556,17 +625,72 @@ const EnhancedInventoryReports = () => {
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaChartLine className="me-2" style={{ color: colors.accent }} />
-                                    Material Consumption Analysis
-                                    {tabLoadingStates.consumption && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 d-flex align-items-center">
+                                        <FaChartLine className="me-2" style={{ color: colors.accent }} />
+                                        Material Consumption Analysis
+                                        {tabLoadingStates.consumption && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
+                                    </h5>
+                                </div>
                             </div>
                             <div className="card-body">
+
+                                {/* Filter Controls */}
+                                <div className="mb-4">
+                                    <div className="row align-items-center">
+                                        <div className="col-md-6">
+                                            <h6 className="mb-2">Filter by Product Type:</h6>
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className={`btn ${consumptionFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                                    onClick={() => setConsumptionFilter('all')}
+                                                >
+                                                    All Products
+                                                </button>
+                                                <button 
+                                                    className={`btn ${consumptionFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                                                    onClick={() => setConsumptionFilter('alkansya')}
+                                                >
+                                                    Alkansya Only
+                                                </button>
+                                                <button 
+                                                    className={`btn ${consumptionFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                                                    onClick={() => setConsumptionFilter('made_to_order')}
+                                                >
+                                                    Made-to-Order Only
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="col-md-6">
+                                            <h6 className="mb-2">Time Period:</h6>
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className={`btn ${windowDays === 7 ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                                    onClick={() => setWindowDays(7)}
+                                                >
+                                                    7 Days
+                                                </button>
+                                                <button 
+                                                    className={`btn ${windowDays === 30 ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                                    onClick={() => setWindowDays(30)}
+                                                >
+                                                    30 Days
+                                                </button>
+                                                <button 
+                                                    className={`btn ${windowDays === 90 ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                                    onClick={() => setWindowDays(90)}
+                                                >
+                                                    90 Days
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {tabLoadingStates.consumption ? (
                                     <div className="text-center py-5">
                                         <div className="spinner-border text-accent mb-3" role="status">
@@ -575,7 +699,7 @@ const EnhancedInventoryReports = () => {
                                         <h5>Loading Consumption Data...</h5>
                                         <p className="text-muted">Analyzing material usage from orders and Alkansya production</p>
                                     </div>
-                                ) : consumptionTrends?.chart_data && consumptionTrends.chart_data.length > 0 ? (
+                                ) : consumptionTrends && Object.keys(consumptionTrends).length > 0 ? (
                                     <div>
                                         {/* Summary Cards */}
                                         <div className="row mb-4">
@@ -583,7 +707,7 @@ const EnhancedInventoryReports = () => {
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
                                                         <h6 className="card-title text-muted">Total Consumption</h6>
-                                                        <h3 className="text-primary">{consumptionTrends.summary?.total_consumption?.toLocaleString() || 0}</h3>
+                                                        <h3 className="text-primary">{consumptionTrends.summary?.total_consumption ? Number(consumptionTrends.summary.total_consumption).toLocaleString() : 0}</h3>
                                                         <small className="text-muted">units</small>
                                                     </div>
                                                 </div>
@@ -592,7 +716,7 @@ const EnhancedInventoryReports = () => {
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
                                                         <h6 className="card-title text-muted">Alkansya Production</h6>
-                                                        <h3 className="text-success">{consumptionTrends.summary?.alkansya_consumption?.toLocaleString() || 0}</h3>
+                                                        <h3 className="text-success">{consumptionTrends.summary?.alkansya_consumption ? Number(consumptionTrends.summary.alkansya_consumption).toLocaleString() : 0}</h3>
                                                         <small className="text-muted">units</small>
                                                     </div>
                                                 </div>
@@ -601,7 +725,7 @@ const EnhancedInventoryReports = () => {
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
                                                         <h6 className="card-title text-muted">Order Consumption</h6>
-                                                        <h3 className="text-info">{consumptionTrends.summary?.order_consumption?.toLocaleString() || 0}</h3>
+                                                        <h3 className="text-info">{consumptionTrends.summary?.order_consumption ? Number(consumptionTrends.summary.order_consumption).toLocaleString() : 0}</h3>
                                                         <small className="text-muted">units</small>
                                                     </div>
                                                 </div>
@@ -610,7 +734,7 @@ const EnhancedInventoryReports = () => {
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
                                                         <h6 className="card-title text-muted">Total Cost</h6>
-                                                        <h3 className="text-warning">₱{consumptionTrends.summary?.total_cost?.toLocaleString() || 0}</h3>
+                                                        <h3 className="text-warning">₱{consumptionTrends.summary?.total_cost ? Number(consumptionTrends.summary.total_cost).toLocaleString() : 0}</h3>
                                                         <small className="text-muted">material cost</small>
                                                     </div>
                                                 </div>
@@ -621,7 +745,7 @@ const EnhancedInventoryReports = () => {
                                         <div className="mb-4">
                                             <h6 className="mb-3">Daily Consumption Trends</h6>
                                             <ResponsiveContainer width="100%" height={400}>
-                                                <AreaChart data={consumptionTrends.chart_data}>
+                                                <AreaChart data={consumptionTrends?.chart_data || []}>
                                                     <CartesianGrid strokeDasharray="3 3" />
                                                     <XAxis dataKey="date" />
                                                     <YAxis />
@@ -650,7 +774,7 @@ const EnhancedInventoryReports = () => {
                                         </div>
 
                                         {/* Top Materials Table */}
-                                        {consumptionTrends.top_materials && consumptionTrends.top_materials.length > 0 && (
+                                        <div>
                                             <div>
                                                 <h6 className="mb-3">Top Consumed Materials</h6>
                                                 <div className="table-responsive">
@@ -666,7 +790,7 @@ const EnhancedInventoryReports = () => {
                                                             </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {consumptionTrends.top_materials.map((material, index) => (
+                                                            {(consumptionTrends.top_materials && consumptionTrends.top_materials.length > 0) ? consumptionTrends.top_materials.map((material, index) => (
                                                                 <tr key={material.material_id}>
                                                                     <td>
                                                                         <div className="d-flex align-items-center">
@@ -689,22 +813,22 @@ const EnhancedInventoryReports = () => {
                                                                     </td>
                                                                     <td>
                                                                         <span className="fw-bold text-primary">
-                                                                            {material.total_consumption.toLocaleString()}
+                                                                            {material.total_consumption ? Number(material.total_consumption).toLocaleString() : 0}
                                                                         </span>
                                                                     </td>
                                                                     <td>
                                                                         <span className="text-success">
-                                                                            {material.alkansya_consumption.toLocaleString()}
+                                                                            {material.alkansya_consumption ? Number(material.alkansya_consumption).toLocaleString() : 0}
                                                                         </span>
                                                                     </td>
                                                                     <td>
                                                                         <span className="text-info">
-                                                                            {material.order_consumption.toLocaleString()}
+                                                                            {material.order_consumption ? Number(material.order_consumption).toLocaleString() : 0}
                                                                         </span>
                                                                     </td>
                                                                     <td>
                                                                         <span className="fw-bold text-warning">
-                                                                            ₱{material.total_cost.toLocaleString()}
+                                                                            ₱{material.total_cost ? Number(material.total_cost).toLocaleString() : 0}
                                                                         </span>
                                                                     </td>
                                                                     <td>
@@ -713,12 +837,20 @@ const EnhancedInventoryReports = () => {
                                                                         </span>
                                                                     </td>
                                                                 </tr>
-                                                            ))}
+                                                            )) : (
+                                                                <tr>
+                                                                    <td colSpan="6" className="text-center text-muted py-4">
+                                                                        <FaBox className="mb-2" style={{ fontSize: '2rem' }} />
+                                                                        <div>No consumption data available</div>
+                                                                        <small>Click "Load Test Data" to see sample data</small>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
                                                         </tbody>
                                                     </table>
                                                 </div>
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="text-center py-5">
@@ -825,7 +957,7 @@ const EnhancedInventoryReports = () => {
                                                         </td>
                                                         <td>
                                                             <span className="fw-bold text-primary">
-                                                                ₱{item.value ? item.value.toLocaleString() : '0'}
+                                                                ₱{item.value ? Number(item.value).toLocaleString() : '0'}
                                                             </span>
                                                         </td>
                                                         <td>
@@ -858,21 +990,44 @@ const EnhancedInventoryReports = () => {
                 </div>
             )}
 
-            {/* Forecasting Tab */}
+            {/* Enhanced Forecasting Tab */}
             {activeTab === 'forecast' && (
                 <div className="row">
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaChartLine className="me-2" style={{ color: colors.info }} />
-                                    Material Usage Forecasting
-                                    {tabLoadingStates.forecast && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 d-flex align-items-center">
+                                        <FaChartLine className="me-2" style={{ color: colors.info }} />
+                                        Enhanced Material Usage Forecasting
+                                        {tabLoadingStates.forecast && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
+                                    </h5>
+                                    <div className="d-flex gap-2">
+                                        <select 
+                                            className="form-select form-select-sm" 
+                                            value={windowDays}
+                                            onChange={(e) => setWindowDays(parseInt(e.target.value))}
+                                            style={{ width: '120px' }}
+                                        >
+                                            <option value={7}>7 Days</option>
+                                            <option value={14}>14 Days</option>
+                                            <option value={30}>30 Days</option>
+                                            <option value={60}>60 Days</option>
+                                            <option value={90}>90 Days</option>
+                                        </select>
+                                        <button 
+                                            className="btn btn-outline-primary btn-sm"
+                                            onClick={() => fetchForecastData()}
+                                        >
+                                            <FaSync className="me-1" />
+                                            Refresh
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="card-body">
                                 {tabLoadingStates.forecast ? (
@@ -880,46 +1035,410 @@ const EnhancedInventoryReports = () => {
                                         <div className="spinner-border text-info mb-3" role="status">
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
-                                        <h5>Loading Forecast Data...</h5>
-                                        <p className="text-muted">Analyzing usage patterns and generating predictions</p>
-                                    </div>
-                                ) : forecastReport?.forecast && forecastReport.forecast.length > 0 ? (
-                                    <div>
-                                        <div className="row mb-4">
-                                            <div className="col-md-6">
-                                                <div className="card bg-light">
-                                                    <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Forecast Accuracy</h6>
-                                                        <h3 className="text-primary">{forecastReport.accuracy || 0}%</h3>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="col-md-6">
-                                                <div className="card bg-light">
-                                                    <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Forecast Period</h6>
-                                                        <h3 className="text-info">30 Days</h3>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <ResponsiveContainer width="100%" height={400}>
-                                            <LineChart data={forecastReport.forecast}>
-                                                <CartesianGrid strokeDasharray="3 3" />
-                                                <XAxis dataKey="date" />
-                                                <YAxis />
-                                                <Tooltip />
-                                                <Legend />
-                                                <Line type="monotone" dataKey="predicted" stroke={colors.info} strokeWidth={3} name="Predicted Usage" />
-                                                <Line type="monotone" dataKey="actual" stroke={colors.success} strokeWidth={2} name="Actual Usage" />
-                                            </LineChart>
-                                        </ResponsiveContainer>
+                                        <h5>Loading Enhanced Forecast Data...</h5>
+                                        <p className="text-muted">Analyzing Alkansya output, made-to-order patterns, and overall material usage</p>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
-                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No forecast data available</h5>
-                                        <p className="text-muted">Forecasting data will appear here once usage patterns are established</p>
+                                    <div>
+                                        {/* Forecast Type Tabs */}
+                                        <ul className="nav nav-tabs mb-4" id="forecastTabs" role="tablist">
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${forecastType === 'alkansya' ? 'active' : ''}`}
+                                                    onClick={() => setForecastType('alkansya')}
+                                                >
+                                                    Alkansya Materials
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${forecastType === 'made-to-order' ? 'active' : ''}`}
+                                                    onClick={() => setForecastType('made-to-order')}
+                                                >
+                                                    Made-to-Order
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${forecastType === 'overall' ? 'active' : ''}`}
+                                                    onClick={() => setForecastType('overall')}
+                                                >
+                                                    Overall Materials
+                                                </button>
+                                            </li>
+                                        </ul>
+
+                                        {/* Alkansya Materials Forecast */}
+                                        {forecastType === 'alkansya' && (
+                                            <div>
+                                                {alkansyaForecast ? (
+                                                    <div>
+                                                        <div className="row mb-4">
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Avg Daily Output</h6>
+                                                                        <h4 className="text-primary">{alkansyaForecast.avg_daily_output}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Materials Analyzed</h6>
+                                                                        <h4 className="text-info">{alkansyaForecast.summary.materials_analyzed}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Need Reorder</h6>
+                                                                        <h4 className="text-warning">{alkansyaForecast.summary.materials_needing_reorder}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Avg Days to Stockout</h6>
+                                                                        <h4 className="text-danger">{Math.round(alkansyaForecast.summary.avg_days_until_stockout)}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="row">
+                                                            <div className="col-md-8">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Daily Output & Material Usage Forecast</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <ResponsiveContainer width="100%" height={300}>
+                                                                            <LineChart data={alkansyaForecast.daily_forecast}>
+                                                                                <CartesianGrid strokeDasharray="3 3" />
+                                                                                <XAxis dataKey="date" />
+                                                                                <YAxis />
+                                                                                <Tooltip />
+                                                                                <Legend />
+                                                                                <Line type="monotone" dataKey="predicted_output" stroke={colors.primary} strokeWidth={2} name="Predicted Output" />
+                                                                                <Line type="monotone" dataKey="total_material_usage" stroke={colors.info} strokeWidth={2} name="Total Material Usage" />
+                                                                            </LineChart>
+                                                                        </ResponsiveContainer>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-4">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Material Forecast Summary</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <div className="table-responsive" style={{ maxHeight: '300px' }}>
+                                                                            <table className="table table-sm">
+                                                                                <thead>
+                                                                                    <tr>
+                                                                                        <th>Material</th>
+                                                                                        <th>Days Left</th>
+                                                                                        <th>Status</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {alkansyaForecast.material_forecasts.slice(0, 5).map((material, index) => (
+                                                                                        <tr key={index}>
+                                                                                            <td className="text-truncate" style={{ maxWidth: '100px' }} title={material.material_name}>
+                                                                                                {material.material_name}
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.days_until_stockout <= 7 ? 'bg-danger' : material.days_until_stockout <= 14 ? 'bg-warning' : 'bg-success'}`}>
+                                                                                                    {material.days_until_stockout}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.needs_reorder ? 'bg-warning' : 'bg-success'}`}>
+                                                                                                    {material.needs_reorder ? 'Reorder' : 'OK'}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-5">
+                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                        <h5 className="text-muted">No Alkansya forecast data available</h5>
+                                                        <p className="text-muted">Alkansya production data is needed to generate material usage forecasts</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Made-to-Order Forecast */}
+                                        {forecastType === 'made-to-order' && (
+                                            <div>
+                                                {madeToOrderForecast ? (
+                                                    <div>
+                                                        <div className="row mb-4">
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Products Analyzed</h6>
+                                                                        <h4 className="text-primary">{madeToOrderForecast.summary.products_analyzed}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Materials Analyzed</h6>
+                                                                        <h4 className="text-info">{madeToOrderForecast.summary.materials_analyzed}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Need Reorder</h6>
+                                                                        <h4 className="text-warning">{madeToOrderForecast.summary.materials_needing_reorder}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Avg Days to Stockout</h6>
+                                                                        <h4 className="text-danger">{Math.round(madeToOrderForecast.summary.avg_days_until_stockout)}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="row">
+                                                            <div className="col-md-8">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Product Order Statistics</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <div className="table-responsive">
+                                                                            <table className="table table-hover">
+                                                                                <thead>
+                                                                                    <tr>
+                                                                                        <th>Product</th>
+                                                                                        <th>Total Orders</th>
+                                                                                        <th>Avg Order Qty</th>
+                                                                                        <th>Avg Orders/Day</th>
+                                                                                        <th>Avg Daily Qty</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {Object.values(madeToOrderForecast.product_stats).map((product, index) => (
+                                                                                        <tr key={index}>
+                                                                                            <td>{product.product_name}</td>
+                                                                                            <td>{product.total_orders}</td>
+                                                                                            <td>{product.avg_order_quantity}</td>
+                                                                                            <td>{product.avg_orders_per_day}</td>
+                                                                                            <td>{product.avg_daily_quantity}</td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-4">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Material Forecast Summary</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <div className="table-responsive" style={{ maxHeight: '300px' }}>
+                                                                            <table className="table table-sm">
+                                                                                <thead>
+                                                                                    <tr>
+                                                                                        <th>Product</th>
+                                                                                        <th>Material</th>
+                                                                                        <th>Days Left</th>
+                                                                                        <th>Status</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {madeToOrderForecast.material_forecasts.slice(0, 5).map((material, index) => (
+                                                                                        <tr key={index}>
+                                                                                            <td className="text-truncate" style={{ maxWidth: '80px' }} title={material.product_name}>
+                                                                                                {material.product_name}
+                                                                                            </td>
+                                                                                            <td className="text-truncate" style={{ maxWidth: '80px' }} title={material.material_name}>
+                                                                                                {material.material_name}
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.days_until_stockout <= 7 ? 'bg-danger' : material.days_until_stockout <= 14 ? 'bg-warning' : 'bg-success'}`}>
+                                                                                                    {material.days_until_stockout}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.needs_reorder ? 'bg-warning' : 'bg-success'}`}>
+                                                                                                    {material.needs_reorder ? 'Reorder' : 'OK'}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-5">
+                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                        <h5 className="text-muted">No made-to-order forecast data available</h5>
+                                                        <p className="text-muted">Order data for made-to-order products is needed to generate material usage forecasts</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Overall Materials Forecast */}
+                                        {forecastType === 'overall' && (
+                                            <div>
+                                                {overallForecast ? (
+                                                    <div>
+                                                        <div className="row mb-4">
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Total Materials</h6>
+                                                                        <h4 className="text-primary">{overallForecast.summary.total_materials}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Need Reorder</h6>
+                                                                        <h4 className="text-warning">{overallForecast.summary.materials_needing_reorder}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Critical (≤7 days)</h6>
+                                                                        <h4 className="text-danger">{overallForecast.summary.critical_materials}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">High Usage</h6>
+                                                                        <h4 className="text-info">{overallForecast.summary.high_usage_materials}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Total Value</h6>
+                                                                        <h4 className="text-success">₱{overallForecast.summary.total_inventory_value.toLocaleString()}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted">Avg Days Left</h6>
+                                                                        <h4 className="text-secondary">{Math.round(overallForecast.summary.avg_days_until_stockout)}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="row">
+                                                            <div className="col-md-8">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Daily Usage Forecast</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <ResponsiveContainer width="100%" height={300}>
+                                                                            <LineChart data={overallForecast.daily_forecast}>
+                                                                                <CartesianGrid strokeDasharray="3 3" />
+                                                                                <XAxis dataKey="date" />
+                                                                                <YAxis />
+                                                                                <Tooltip />
+                                                                                <Legend />
+                                                                                <Line type="monotone" dataKey="predicted_total_usage" stroke={colors.primary} strokeWidth={2} name="Predicted Total Usage" />
+                                                                                <Line type="monotone" dataKey="critical_materials_count" stroke={colors.danger} strokeWidth={2} name="Critical Materials Count" />
+                                                                            </LineChart>
+                                                                        </ResponsiveContainer>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-4">
+                                                                <div className="card">
+                                                                    <div className="card-header">
+                                                                        <h6 className="mb-0">Critical Materials</h6>
+                                                                    </div>
+                                                                    <div className="card-body">
+                                                                        <div className="table-responsive" style={{ maxHeight: '300px' }}>
+                                                                            <table className="table table-sm">
+                                                                                <thead>
+                                                                                    <tr>
+                                                                                        <th>Material</th>
+                                                                                        <th>Days Left</th>
+                                                                                        <th>Usage</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {overallForecast.material_forecasts
+                                                                                        .filter(m => m.days_until_stockout <= 14)
+                                                                                        .slice(0, 5)
+                                                                                        .map((material, index) => (
+                                                                                        <tr key={index}>
+                                                                                            <td className="text-truncate" style={{ maxWidth: '120px' }} title={material.material_name}>
+                                                                                                {material.material_name}
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.days_until_stockout <= 7 ? 'bg-danger' : 'bg-warning'}`}>
+                                                                                                    {material.days_until_stockout}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td>
+                                                                                                <span className={`badge ${material.usage_category === 'high' ? 'bg-danger' : material.usage_category === 'medium' ? 'bg-warning' : 'bg-success'}`}>
+                                                                                                    {material.usage_category}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-5">
+                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                        <h5 className="text-muted">No overall forecast data available</h5>
+                                                        <p className="text-muted">Material usage data is needed to generate comprehensive forecasts</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -928,21 +1447,44 @@ const EnhancedInventoryReports = () => {
                 </div>
             )}
 
-            {/* Replenishment Tab */}
+            {/* Enhanced Replenishment Tab */}
             {activeTab === 'replenishment' && (
                 <div className="row">
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaTruck className="me-2" style={{ color: colors.warning }} />
-                                    Replenishment Schedule
-                                    {tabLoadingStates.replenishment && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 d-flex align-items-center">
+                                        <FaTruck className="me-2" style={{ color: colors.warning }} />
+                                        Enhanced Replenishment Schedule
+                                        {tabLoadingStates.replenishment && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
+                                    </h5>
+                                    <div className="d-flex gap-2">
+                                        <select 
+                                            className="form-select form-select-sm" 
+                                            value={windowDays}
+                                            onChange={(e) => setWindowDays(parseInt(e.target.value))}
+                                            style={{ width: '120px' }}
+                                        >
+                                            <option value={7}>7 Days</option>
+                                            <option value={14}>14 Days</option>
+                                            <option value={30}>30 Days</option>
+                                            <option value={60}>60 Days</option>
+                                            <option value={90}>90 Days</option>
+                                        </select>
+                                        <button 
+                                            className="btn btn-outline-warning btn-sm"
+                                            onClick={() => fetchEnhancedReplenishmentData()}
+                                        >
+                                            <FaSync className="me-1" />
+                                            Refresh
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="card-body">
                                 {tabLoadingStates.replenishment ? (
@@ -950,81 +1492,445 @@ const EnhancedInventoryReports = () => {
                                         <div className="spinner-border text-warning mb-3" role="status">
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
-                                        <h5>Loading Replenishment Data...</h5>
-                                        <p className="text-muted">Calculating reorder points and suggested quantities</p>
+                                        <h5>Loading Enhanced Replenishment Data...</h5>
+                                        <p className="text-muted">Analyzing Alkansya output, made-to-order patterns, and material consumption</p>
                                     </div>
-                                ) : replenishmentSchedule?.items && replenishmentSchedule.items.length > 0 ? (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Material</th>
-                                                    <th>Current Stock</th>
-                                                    <th>Reorder Point</th>
-                                                    <th>Suggested Order</th>
-                                                    <th>Urgency</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {replenishmentSchedule.items.map((item, index) => (
-                                                    <tr key={index}>
-                                                        <td>
-                                                            <div className="d-flex align-items-center">
-                                                                <div className="me-3">
-                                                                    <div className="rounded-circle d-flex align-items-center justify-content-center" 
-                                                                         style={{ 
-                                                                             width: '40px', 
-                                                                             height: '40px', 
-                                                                             backgroundColor: `${colors.warning}20`,
-                                                                             color: colors.warning
-                                                                         }}>
-                                                                        <FaTruck />
+                                ) : enhancedReplenishment ? (
+                                    enhancedReplenishment.error ? (
+                                        <div className="text-center py-5">
+                                            <FaTruck className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                            <h5 className="text-muted">No Consumption Data Available</h5>
+                                            <p className="text-muted mb-4">{enhancedReplenishment.message}</p>
+                                            <div className="card bg-light">
+                                                <div className="card-body">
+                                                    <h6 className="card-title">Setup Instructions:</h6>
+                                                    <ol className="text-start">
+                                                        {enhancedReplenishment.instructions?.map((instruction, index) => (
+                                                            <li key={index} className="mb-2">
+                                                                <code className="bg-dark text-light px-2 py-1 rounded">
+                                                                    {instruction}
+                                                                </code>
+                                                            </li>
+                                                        ))}
+                                                    </ol>
+                                                    <div className="mt-3">
+                                                        <button 
+                                                            className="btn btn-primary"
+                                                            onClick={() => fetchEnhancedReplenishmentData()}
+                                                        >
+                                                            <FaSync className="me-1" />
+                                                            Check Again
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                        {/* View Tabs */}
+                                        <ul className="nav nav-tabs mb-4" id="replenishmentTabs" role="tablist">
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${replenishmentView === 'summary' ? 'active' : ''}`}
+                                                    onClick={() => setReplenishmentView('summary')}
+                                                >
+                                                    Summary Dashboard
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${replenishmentView === 'schedule' ? 'active' : ''}`}
+                                                    onClick={() => setReplenishmentView('schedule')}
+                                                >
+                                                    Replenishment Schedule
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${replenishmentView === 'analytics' ? 'active' : ''}`}
+                                                    onClick={() => setReplenishmentView('analytics')}
+                                                >
+                                                    Consumption Analytics
+                                                </button>
+                                            </li>
+                                        </ul>
+
+                                        {/* Summary Dashboard */}
+                                        {replenishmentView === 'summary' && (
+                                            <div>
+                                                <div className="row mb-4">
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Total Materials</h6>
+                                                                <h4 className="text-primary">{enhancedReplenishment.summary.total_materials}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Critical</h6>
+                                                                <h4 className="text-danger">{enhancedReplenishment.summary.critical_materials}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">High Priority</h6>
+                                                                <h4 className="text-warning">{enhancedReplenishment.summary.high_priority_materials}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Need Reorder</h6>
+                                                                <h4 className="text-info">{enhancedReplenishment.summary.materials_needing_reorder}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Reorder Value</h6>
+                                                                <h4 className="text-success">₱{enhancedReplenishment.summary.total_reorder_value.toLocaleString()}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Avg Lead Time</h6>
+                                                                <h4 className="text-secondary">{Math.round(enhancedReplenishment.summary.avg_lead_time)} days</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="row">
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Material Source Breakdown</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="row text-center">
+                                                                    <div className="col-4">
+                                                                        <h5 className="text-primary">{enhancedReplenishment.summary.alkansya_materials}</h5>
+                                                                        <small className="text-muted">Alkansya Materials</small>
+                                                                    </div>
+                                                                    <div className="col-4">
+                                                                        <h5 className="text-info">{enhancedReplenishment.summary.made_to_order_materials}</h5>
+                                                                        <small className="text-muted">Made-to-Order</small>
+                                                                    </div>
+                                                                    <div className="col-4">
+                                                                        <h5 className="text-success">{enhancedReplenishment.alkansya_daily_output}</h5>
+                                                                        <small className="text-muted">Avg Daily Output</small>
                                                                     </div>
                                                                 </div>
-                                                                <div>
-                                                                    <h6 className="mb-0">{item.material}</h6>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Urgency Distribution</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>Critical</span>
+                                                                    <span className="badge bg-danger">{enhancedReplenishment.summary.critical_materials}</span>
+                                                                </div>
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>High Priority</span>
+                                                                    <span className="badge bg-warning">{enhancedReplenishment.summary.high_priority_materials}</span>
+                                                                </div>
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>Medium Priority</span>
+                                                                    <span className="badge bg-info">{enhancedReplenishment.summary.medium_priority_materials}</span>
                                                                 </div>
                                                             </div>
-                                                        </td>
-                                                        <td>
-                                                            <span className={`fw-bold ${
-                                                                item.current_stock <= 0 ? 'text-danger' :
-                                                                item.current_stock <= item.reorder_point ? 'text-warning' :
-                                                                'text-success'
-                                                            }`}>
-                                                                {item.current_stock}
-                                                            </span>
-                                                        </td>
-                                                        <td>{item.reorder_point}</td>
-                                                        <td>
-                                                            <span className="fw-bold text-primary">{item.suggested_order}</span>
-                                                        </td>
-                                                        <td>
-                                                            <span className={`badge ${
-                                                                item.urgency === 'critical' ? 'bg-danger' :
-                                                                item.urgency === 'high' ? 'bg-warning' :
-                                                                'bg-info'
-                                                            }`}>
-                                                                {item.urgency?.toUpperCase() || 'MEDIUM'}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <button className="btn btn-outline-primary btn-sm">
-                                                                <FaTruck className="me-1" />
-                                                                Order
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Replenishment Schedule */}
+                                        {replenishmentView === 'schedule' && (
+                                            <div>
+                                                <div className="row">
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header bg-danger text-white">
+                                                                <h6 className="mb-0">Immediate Action Required</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive" style={{ maxHeight: '400px' }}>
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Days Left</th>
+                                                                                <th>Order Qty</th>
+                                                                                <th>Reorder Date</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedReplenishment.schedule.immediate.map((item, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={item.material_name}>
+                                                                                        {item.material_name}
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <span className="badge bg-danger">{item.days_until_stockout}</span>
+                                                                                    </td>
+                                                                                    <td>{item.suggested_order_qty}</td>
+                                                                                    <td>{item.reorder_date}</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header bg-warning text-white">
+                                                                <h6 className="mb-0">This Week</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive" style={{ maxHeight: '400px' }}>
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Days Left</th>
+                                                                                <th>Order Qty</th>
+                                                                                <th>Reorder Date</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedReplenishment.schedule.this_week.map((item, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={item.material_name}>
+                                                                                        {item.material_name}
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <span className="badge bg-warning">{item.days_until_stockout}</span>
+                                                                                    </td>
+                                                                                    <td>{item.suggested_order_qty}</td>
+                                                                                    <td>{item.reorder_date}</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="row mt-3">
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header bg-info text-white">
+                                                                <h6 className="mb-0">Next Week</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive" style={{ maxHeight: '400px' }}>
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Days Left</th>
+                                                                                <th>Order Qty</th>
+                                                                                <th>Reorder Date</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedReplenishment.schedule.next_week.map((item, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={item.material_name}>
+                                                                                        {item.material_name}
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <span className="badge bg-info">{item.days_until_stockout}</span>
+                                                                                    </td>
+                                                                                    <td>{item.suggested_order_qty}</td>
+                                                                                    <td>{item.reorder_date}</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header bg-success text-white">
+                                                                <h6 className="mb-0">Future Planning</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive" style={{ maxHeight: '400px' }}>
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Days Left</th>
+                                                                                <th>Order Qty</th>
+                                                                                <th>Reorder Date</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedReplenishment.schedule.future.map((item, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={item.material_name}>
+                                                                                        {item.material_name}
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <span className="badge bg-success">{item.days_until_stockout}</span>
+                                                                                    </td>
+                                                                                    <td>{item.suggested_order_qty}</td>
+                                                                                    <td>{item.reorder_date}</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Consumption Analytics */}
+                                        {replenishmentView === 'analytics' && (
+                                            <div>
+                                                <div className="row">
+                                                    <div className="col-md-8">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Material Consumption Breakdown</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive">
+                                                                    <table className="table table-hover">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Historical</th>
+                                                                                <th>Alkansya</th>
+                                                                                <th>Made-to-Order</th>
+                                                                                <th>Predicted</th>
+                                                                                <th>Days Left</th>
+                                                                                <th>Source</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedReplenishment.replenishment_items.slice(0, 20).map((item, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={item.material_name}>
+                                                                                        {item.material_name}
+                                                                                    </td>
+                                                                                    <td>{item.consumption_breakdown.historical}</td>
+                                                                                    <td>{item.consumption_breakdown.alkansya}</td>
+                                                                                    <td>{item.consumption_breakdown.made_to_order}</td>
+                                                                                    <td className="fw-bold">{item.consumption_breakdown.predicted}</td>
+                                                                                    <td>
+                                                                                        <span className={`badge ${
+                                                                                            item.days_until_stockout <= 7 ? 'bg-danger' : 
+                                                                                            item.days_until_stockout <= 14 ? 'bg-warning' : 
+                                                                                            'bg-success'
+                                                                                        }`}>
+                                                                                            {item.days_until_stockout}
+                                                                                        </span>
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <div className="d-flex gap-1">
+                                                                                            {item.is_alkansya_material && (
+                                                                                                <span className="badge bg-primary">A</span>
+                                                                                            )}
+                                                                                            {item.is_made_to_order_material && (
+                                                                                                <span className="badge bg-info">M</span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-4">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Consumption Sources</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="mb-3">
+                                                                    <div className="d-flex justify-content-between">
+                                                                        <span>Alkansya Materials</span>
+                                                                        <span className="badge bg-primary">{enhancedReplenishment.summary.alkansya_materials}</span>
+                                                                    </div>
+                                                                    <div className="progress mt-1" style={{ height: '8px' }}>
+                                                                        <div 
+                                                                            className="progress-bar bg-primary" 
+                                                                            style={{ 
+                                                                                width: `${(enhancedReplenishment.summary.alkansya_materials / enhancedReplenishment.summary.total_materials) * 100}%` 
+                                                                            }}
+                                                                        ></div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mb-3">
+                                                                    <div className="d-flex justify-content-between">
+                                                                        <span>Made-to-Order</span>
+                                                                        <span className="badge bg-info">{enhancedReplenishment.summary.made_to_order_materials}</span>
+                                                                    </div>
+                                                                    <div className="progress mt-1" style={{ height: '8px' }}>
+                                                                        <div 
+                                                                            className="progress-bar bg-info" 
+                                                                            style={{ 
+                                                                                width: `${(enhancedReplenishment.summary.made_to_order_materials / enhancedReplenishment.summary.total_materials) * 100}%` 
+                                                                            }}
+                                                                        ></div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mb-3">
+                                                                    <div className="d-flex justify-content-between">
+                                                                        <span>Other Materials</span>
+                                                                        <span className="badge bg-secondary">
+                                                                            {enhancedReplenishment.summary.total_materials - enhancedReplenishment.summary.alkansya_materials - enhancedReplenishment.summary.made_to_order_materials}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="progress mt-1" style={{ height: '8px' }}>
+                                                                        <div 
+                                                                            className="progress-bar bg-secondary" 
+                                                                            style={{ 
+                                                                                width: `${((enhancedReplenishment.summary.total_materials - enhancedReplenishment.summary.alkansya_materials - enhancedReplenishment.summary.made_to_order_materials) / enhancedReplenishment.summary.total_materials) * 100}%` 
+                                                                            }}
+                                                                        ></div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        </div>
+                                    )
                                 ) : (
                                     <div className="text-center py-5">
                                         <FaTruck className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No replenishment needed</h5>
-                                        <p className="text-muted">All materials are currently above reorder points</p>
+                                        <h5 className="text-muted">No replenishment data available</h5>
+                                        <p className="text-muted">Enhanced replenishment data will appear here once material usage patterns are established</p>
                                     </div>
                                 )}
                             </div>
@@ -1035,21 +1941,43 @@ const EnhancedInventoryReports = () => {
 
 
 
-            {/* Transactions Tab */}
+            {/* Enhanced Transactions Tab */}
             {activeTab === 'transactions' && (
                 <div className="row">
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaHistory className="me-2" style={{ color: colors.dark }} />
-                                    Inventory Transactions
-                                    {tabLoadingStates.transactions && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 d-flex align-items-center">
+                                        <FaHistory className="me-2" style={{ color: colors.dark }} />
+                                        Enhanced Inventory Transactions
+                                        {tabLoadingStates.transactions && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
+                                    </h5>
+                                    <div className="d-flex gap-2">
+                                        <select 
+                                            className="form-select form-select-sm" 
+                                            value={transactionFilter}
+                                            onChange={(e) => setTransactionFilter(e.target.value)}
+                                            style={{ width: '150px' }}
+                                        >
+                                            <option value="all">All Transactions</option>
+                                            <option value="alkansya">Alkansya</option>
+                                            <option value="made_to_order">Made-to-Order</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                        <button 
+                                            className="btn btn-outline-dark btn-sm"
+                                            onClick={() => fetchEnhancedTransactionsData()}
+                                        >
+                                            <FaSync className="me-1" />
+                                            Refresh
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="card-body">
                                 {tabLoadingStates.transactions ? (
@@ -1057,53 +1985,353 @@ const EnhancedInventoryReports = () => {
                                         <div className="spinner-border text-dark mb-3" role="status">
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
-                                        <h5>Loading Transactions...</h5>
-                                        <p className="text-muted">Fetching all inventory transactions</p>
+                                        <h5>Loading Enhanced Transactions...</h5>
+                                        <p className="text-muted">Fetching normalized inventory transactions with filtering</p>
                                     </div>
-                                ) : inventoryTransactions?.transactions && inventoryTransactions.transactions.length > 0 ? (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Type</th>
-                                                    <th>Material</th>
-                                                    <th>Quantity</th>
-                                                    <th>Unit Cost</th>
-                                                    <th>Total Cost</th>
-                                                    <th>Reference</th>
-                                                    <th>Timestamp</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {inventoryTransactions.transactions.map((transaction) => (
-                                                <tr key={transaction.id}>
-                                                    <td>
-                                                        <span className={`badge ${
-                                                            transaction.type === 'PURCHASE' ? 'bg-success' :
-                                                            transaction.type === 'CONSUMPTION' ? 'bg-danger' :
-                                                            'bg-info'
-                                                        }`}>
-                                                            {transaction.type}
-                                                        </span>
-                                                    </td>
-                                                    <td>{transaction.material}</td>
-                                                    <td className={transaction.quantity > 0 ? 'text-success' : 'text-danger'}>
-                                                        {transaction.quantity > 0 ? '+' : ''}{transaction.quantity}
-                                                    </td>
-                                                    <td>₱{transaction.unit_cost?.toLocaleString() || 'N/A'}</td>
-                                                    <td>₱{transaction.total_cost?.toLocaleString() || 'N/A'}</td>
-                                                    <td>{transaction.reference}</td>
-                                                    <td>{new Date(transaction.timestamp).toLocaleString()}</td>
-                                                </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                ) : enhancedTransactions ? (
+                                    enhancedTransactions.error ? (
+                                        <div className="text-center py-5">
+                                            <FaHistory className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                            <h5 className="text-muted">No Transaction Data Available</h5>
+                                            <p className="text-muted mb-4">{enhancedTransactions.message}</p>
+                                            <div className="card bg-light">
+                                                <div className="card-body">
+                                                    <h6 className="card-title">Setup Instructions:</h6>
+                                                    <ol className="text-start">
+                                                        {enhancedTransactions.instructions?.map((instruction, index) => (
+                                                            <li key={index} className="mb-2">
+                                                                <code className="bg-dark text-light px-2 py-1 rounded">
+                                                                    {instruction}
+                                                                </code>
+                                                            </li>
+                                                        ))}
+                                                    </ol>
+                                                    <div className="mt-3">
+                                                        <button 
+                                                            className="btn btn-primary"
+                                                            onClick={() => fetchEnhancedTransactionsData()}
+                                                        >
+                                                            <FaSync className="me-1" />
+                                                            Check Again
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                        {/* View Tabs */}
+                                        <ul className="nav nav-tabs mb-4" id="transactionTabs" role="tablist">
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${transactionView === 'list' ? 'active' : ''}`}
+                                                    onClick={() => setTransactionView('list')}
+                                                >
+                                                    Transaction List
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${transactionView === 'summary' ? 'active' : ''}`}
+                                                    onClick={() => setTransactionView('summary')}
+                                                >
+                                                    Summary Dashboard
+                                                </button>
+                                            </li>
+                                            <li className="nav-item" role="presentation">
+                                                <button 
+                                                    className={`nav-link ${transactionView === 'analytics' ? 'active' : ''}`}
+                                                    onClick={() => setTransactionView('analytics')}
+                                                >
+                                                    Analytics
+                                                </button>
+                                            </li>
+                                        </ul>
+
+                                        {/* Transaction List */}
+                                        {transactionView === 'list' && (
+                                            <div>
+                                                <div className="table-responsive">
+                                                    <table className="table table-hover">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Date/Time</th>
+                                                                <th>Type</th>
+                                                                <th>Category</th>
+                                                                <th>Material</th>
+                                                                <th>Product</th>
+                                                                <th>Quantity</th>
+                                                                <th>Unit Cost</th>
+                                                                <th>Total Cost</th>
+                                                                <th>Reference</th>
+                                                                <th>Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {enhancedTransactions.transactions.map((transaction) => (
+                                                                <tr key={transaction.id}>
+                                                                    <td>
+                                                                        <div>
+                                                                            <strong>{transaction.date}</strong>
+                                                                            <br />
+                                                                            <small className="text-muted">{transaction.time}</small>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className={`badge ${
+                                                                            transaction.direction === 'in' ? 'bg-success' : 'bg-danger'
+                                                                        }`}>
+                                                                            {transaction.direction_label}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className={`badge ${
+                                                                            transaction.category === 'alkansya' ? 'bg-primary' :
+                                                                            transaction.category === 'made_to_order' ? 'bg-info' :
+                                                                            'bg-secondary'
+                                                                        }`}>
+                                                                            {transaction.category === 'alkansya' ? 'Alkansya' :
+                                                                             transaction.category === 'made_to_order' ? 'Made-to-Order' : 'Other'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <div>
+                                                                            <strong>{transaction.material_name}</strong>
+                                                                            <br />
+                                                                            <small className="text-muted">{transaction.material_code}</small>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className="text-truncate d-inline-block" style={{ maxWidth: '120px' }} title={transaction.product_name}>
+                                                                            {transaction.product_name}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className={transaction.direction === 'in' ? 'text-success' : 'text-danger'}>
+                                                                        <strong>{transaction.quantity_display}</strong>
+                                                                        <br />
+                                                                        <small className="text-muted">{transaction.unit}</small>
+                                                                    </td>
+                                                                    <td>₱{transaction.unit_cost?.toLocaleString() || 'N/A'}</td>
+                                                                    <td>₱{transaction.total_cost?.toLocaleString() || 'N/A'}</td>
+                                                                    <td>
+                                                                        <span className="text-truncate d-inline-block" style={{ maxWidth: '150px' }} title={transaction.reference}>
+                                                                            {transaction.reference}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className={`badge ${
+                                                                            transaction.status === 'completed' ? 'bg-success' :
+                                                                            transaction.status === 'pending' ? 'bg-warning' :
+                                                                            'bg-secondary'
+                                                                        }`}>
+                                                                            {transaction.status}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Summary Dashboard */}
+                                        {transactionView === 'summary' && (
+                                            <div>
+                                                <div className="row mb-4">
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Total Transactions</h6>
+                                                                <h4 className="text-primary">{enhancedTransactions.summary.total_transactions}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Total Value</h6>
+                                                                <h4 className="text-success">₱{enhancedTransactions.summary.total_value.toLocaleString()}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Inbound</h6>
+                                                                <h4 className="text-success">{enhancedTransactions.summary.inbound_transactions}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Outbound</h6>
+                                                                <h4 className="text-danger">{enhancedTransactions.summary.outbound_transactions}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Materials</h6>
+                                                                <h4 className="text-info">{enhancedTransactions.summary.unique_materials}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-2">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="card-title text-muted">Total Qty</h6>
+                                                                <h4 className="text-secondary">{enhancedTransactions.summary.total_quantity.toLocaleString()}</h4>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="row">
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Transaction Categories</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>Alkansya</span>
+                                                                    <span className="badge bg-primary">{enhancedTransactions.summary.alkansya_transactions}</span>
+                                                                </div>
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>Made-to-Order</span>
+                                                                    <span className="badge bg-info">{enhancedTransactions.summary.made_to_order_transactions}</span>
+                                                                </div>
+                                                                <div className="d-flex justify-content-between mb-2">
+                                                                    <span>Other</span>
+                                                                    <span className="badge bg-secondary">{enhancedTransactions.summary.other_transactions}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-6">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Daily Transaction Trends</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <ResponsiveContainer width="100%" height={200}>
+                                                                    <LineChart data={enhancedTransactions.daily_summary}>
+                                                                        <CartesianGrid strokeDasharray="3 3" />
+                                                                        <XAxis dataKey="date" />
+                                                                        <YAxis />
+                                                                        <Tooltip />
+                                                                        <Legend />
+                                                                        <Line type="monotone" dataKey="total_transactions" stroke={colors.primary} strokeWidth={2} name="Total" />
+                                                                        <Line type="monotone" dataKey="inbound" stroke={colors.success} strokeWidth={2} name="Inbound" />
+                                                                        <Line type="monotone" dataKey="outbound" stroke={colors.danger} strokeWidth={2} name="Outbound" />
+                                                                    </LineChart>
+                                                                </ResponsiveContainer>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Analytics */}
+                                        {transactionView === 'analytics' && (
+                                            <div>
+                                                <div className="row">
+                                                    <div className="col-md-8">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Material Transaction Summary</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive">
+                                                                    <table className="table table-hover">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Material</th>
+                                                                                <th>Code</th>
+                                                                                <th>Transactions</th>
+                                                                                <th>Total Qty</th>
+                                                                                <th>Total Value</th>
+                                                                                <th>Net Qty</th>
+                                                                                <th>Last Transaction</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {enhancedTransactions.material_summary.slice(0, 20).map((material, index) => (
+                                                                                <tr key={index}>
+                                                                                    <td className="text-truncate" style={{ maxWidth: '150px' }} title={material.material_name}>
+                                                                                        {material.material_name}
+                                                                                    </td>
+                                                                                    <td>{material.material_code}</td>
+                                                                                    <td>
+                                                                                        <span className="badge bg-info">{material.total_transactions}</span>
+                                                                                    </td>
+                                                                                    <td>{material.total_quantity.toLocaleString()}</td>
+                                                                                    <td>₱{material.total_value.toLocaleString()}</td>
+                                                                                    <td className={material.net_quantity > 0 ? 'text-success' : 'text-danger'}>
+                                                                                        {material.net_quantity > 0 ? '+' : ''}{material.net_quantity}
+                                                                                    </td>
+                                                                                    <td>
+                                                                                        <small>{new Date(material.last_transaction).toLocaleDateString()}</small>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-4">
+                                                        <div className="card">
+                                                            <div className="card-header">
+                                                                <h6 className="mb-0">Transaction Distribution</h6>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <ResponsiveContainer width="100%" height={300}>
+                                                                    <PieChart>
+                                                                        <Pie
+                                                                            data={[
+                                                                                { name: 'Alkansya', value: enhancedTransactions.summary.alkansya_transactions, color: colors.primary },
+                                                                                { name: 'Made-to-Order', value: enhancedTransactions.summary.made_to_order_transactions, color: colors.info },
+                                                                                { name: 'Other', value: enhancedTransactions.summary.other_transactions, color: colors.secondary }
+                                                                            ]}
+                                                                            cx="50%"
+                                                                            cy="50%"
+                                                                            labelLine={false}
+                                                                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                                            outerRadius={80}
+                                                                            fill="#8884d8"
+                                                                            dataKey="value"
+                                                                        >
+                                                                            {[
+                                                                                { name: 'Alkansya', value: enhancedTransactions.summary.alkansya_transactions, color: colors.primary },
+                                                                                { name: 'Made-to-Order', value: enhancedTransactions.summary.made_to_order_transactions, color: colors.info },
+                                                                                { name: 'Other', value: enhancedTransactions.summary.other_transactions, color: colors.secondary }
+                                                                            ].map((entry, index) => (
+                                                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                                                            ))}
+                                                                        </Pie>
+                                                                        <Tooltip />
+                                                                        <Legend />
+                                                                    </PieChart>
+                                                                </ResponsiveContainer>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        </div>
+                                    )
                                 ) : (
                                     <div className="text-center py-5">
                                         <FaHistory className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No transactions recorded</h5>
-                                        <p className="text-muted">Inventory transactions will appear here</p>
+                                        <h5 className="text-muted">No transactions data available</h5>
+                                        <p className="text-muted">Enhanced transaction data will appear here once inventory transactions are recorded</p>
                                     </div>
                                 )}
                             </div>
