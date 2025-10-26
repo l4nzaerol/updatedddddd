@@ -43,6 +43,7 @@ class AccurateMaterialsSeeder extends Seeder
                     'Insulation 8mm 40 inch x 100m' => 1/250 // 1 piece per 250 Alkansya
                 ])
             ]
+        
         );
 
         $alkansya = Product::updateOrCreate(
@@ -127,76 +128,93 @@ class AccurateMaterialsSeeder extends Seeder
             ]
         );
 
-        // Create Dining Table product
-        $diningTable = Product::updateOrCreate(
-            ['product_code' => 'DT001'],
+        // Create Dining Table Set product (includes table, 2 chairs, and 1 bench)
+        $diningTableSet = Product::updateOrCreate(
+            ['product_code' => 'DTS001'],
             [
                 'product_name' => 'Dining Table Set',
-                'name' => 'Dining Table',
-                'description' => 'High-quality mahogany dining table set with 4 curved chairs',
-                'price' => rand(15000, 25000), // Random price for made-to-order product
+                'name' => 'Dining Table Set',
+                'description' => 'Complete mahogany dining set: 1 table (4ft x 3ft x 30in), 2 curved chairs, and 1 bench (4ft x 14in x 18in)',
+                'price' => rand(45000, 65000), // Price for complete set
                 'stock' => 0, // Made to order
                 'image' => 'storage/products/DiningTableSet.png',
                 'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
+                'raw_materials' => json_encode([
+                    // Table materials
+                    'Mahogany Hardwood 2x4x8ft' => 2, // Table top
+                    'Mahogany Hardwood 1x6x8ft' => 1, // Table frame
+                    'Steel Tubing 2x2x8ft' => 2, // Metal legs
+                    'Steel Tubing 1x1x8ft' => 1, // Cross support
+                    'Wood Screws 3 inch' => 16,
+                    'Wood Glue 500ml' => 0.5,
+                    'Sandpaper 80 Grit' => 2,
+                    'Sandpaper 120 Grit' => 3,
+                    'Sandpaper 220 Grit' => 2,
+                    'Wood Stain Walnut 1 Liter' => 0.4,
+                    'Polyurethane Gloss 1 Liter' => 0.5,
+                    'Felt Pads Large' => 4,
+                    
+                    // 2 Curved Chairs materials
+                    'Mahogany Hardwood 2x2x6ft' => 2, // Chair frames
+                    'Mahogany Hardwood 1x4x6ft' => 1, // Chair backs
+                    'Plywood 12mm 2x2ft' => 1, // Chair seats
+                    'Foam Cushion 2 inch' => 2, // Seat cushions
+                    'Upholstery Fabric' => 2, // Seat covers
+                    'Upholstery Staples' => 100,
+                    'Wood Screws 2.5 inch' => 32,
+                    'Wood Dowels 8mm' => 16,
+                    'Wood Glue 250ml' => 1,
+                    'Sandpaper 80 Grit' => 2,
+                    'Sandpaper 120 Grit' => 3,
+                    'Sandpaper 220 Grit' => 2,
+                    'Wood Stain Walnut 500ml' => 0.6,
+                    'Lacquer Spray Clear' => 2,
+                    'Felt Pads Small' => 2,
+                    
+                    // 1 Bench materials
+                    'Mahogany Hardwood 2x4x8ft' => 1, // Bench seat
+                    'Mahogany Hardwood 1x4x6ft' => 1, // Bench frame
+                    'Steel Tubing 2x2x6ft' => 2, // Bench legs
+                    'Wood Screws 3 inch' => 12,
+                    'Wood Glue 500ml' => 0.3,
+                    'Sandpaper 80 Grit' => 1,
+                    'Sandpaper 120 Grit' => 2,
+                    'Sandpaper 220 Grit' => 1,
+                    'Wood Stain Walnut 1 Liter' => 0.2,
+                    'Polyurethane Gloss 1 Liter' => 0.3,
+                    'Felt Pads Large' => 2
+                ])
             ]
         );
 
-        // Create Wooden Chair product
+        // Create Wooden Chair product (individual curved chair)
         $woodenChair = Product::updateOrCreate(
             ['product_code' => 'WC001'],
             [
                 'product_name' => 'Curved Back High Chair',
                 'name' => 'Wooden Chair',
-                'description' => 'Comfortable mahogany wooden chair with curved back',
-                'price' => rand(8000, 15000), // Random price for made-to-order product
+                'description' => 'Comfortable mahogany wooden chair with curved back and upholstered seat',
+                'price' => rand(8000, 12000), // Price for individual chair
                 'stock' => 0, // Made to order
                 'image' => 'storage/products/CurvedBackHighChair.png',
                 'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
-            ]
-        );
-
-        // Create additional products based on provided images
-        $centerTable = Product::updateOrCreate(
-            ['product_code' => 'CT001'],
-            [
-                'product_name' => 'Center Table',
-                'name' => 'Center Table',
-                'description' => 'Modern mahogany center table with metal legs',
-                'price' => rand(12000, 20000), // Random price for made-to-order product
-                'stock' => 0, // Made to order
-                'image' => 'storage/products/CenterTable.png',
-                'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
-            ]
-        );
-
-        $benchChair = Product::updateOrCreate(
-            ['product_code' => 'BC001'],
-            [
-                'product_name' => 'Bench Chair',
-                'name' => 'Bench Chair',
-                'description' => 'Mahogany wood bench chair with modern design',
-                'price' => rand(10000, 18000), // Random price for made-to-order product
-                'stock' => 0, // Made to order
-                'image' => 'storage/products/BenchChair.png',
-                'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
-            ]
-        );
-
-        $computerTable = Product::updateOrCreate(
-            ['product_code' => 'CPT001'],
-            [
-                'product_name' => 'Computer Table',
-                'name' => 'Computer Table',
-                'description' => 'Mahogany computer table with modern design',
-                'price' => rand(15000, 25000), // Random price for made-to-order product
-                'stock' => 0, // Made to order
-                'image' => 'storage/products/ComputerTable.png',
-                'category_name' => 'Made to Order',
-                'raw_materials' => json_encode([]) // No predefined BOM for made-to-order
+                'raw_materials' => json_encode([
+                    'Mahogany Hardwood 2x2x6ft' => 1, // Chair frame
+                    'Mahogany Hardwood 1x4x6ft' => 0.5, // Chair back
+                    'Plywood 12mm 2x2ft' => 0.5, // Chair seat
+                    'Foam Cushion 2 inch' => 1, // Seat cushion
+                    'Upholstery Fabric' => 1, // Seat cover
+                    'Upholstery Staples' => 50, // Staples for upholstery
+                    'Wood Screws 2.5 inch' => 16, // Assembly screws
+                    'Wood Dowels 8mm' => 8, // Joinery dowels
+                    'Wood Glue 250ml' => 0.5, // Wood glue
+                    'Sandpaper 80 Grit' => 1, // Coarse sanding
+                    'Sandpaper 120 Grit' => 1.5, // Medium sanding
+                    'Sandpaper 220 Grit' => 1, // Fine sanding
+                    'Wood Stain Walnut 500ml' => 0.3, // Wood stain
+                    'Lacquer Spray Clear' => 1, // Clear finish
+                    'Felt Pads Small' => 1 // Floor protection
+                ])
             ]
         );
 
@@ -207,10 +225,11 @@ class AccurateMaterialsSeeder extends Seeder
         $this->createInventoryRecords();
 
         // Create raw materials entries for each product
-        $this->createRawMaterials($alkansya, $diningTable, $woodenChair);
+        $this->createRawMaterials($alkansya, $diningTableSet, $woodenChair);
 
-        // Create BOM entries for all Alkansya products (made-to-order products don't have predefined BOM)
+        // Create BOM entries for all Alkansya products and made-to-order products
         $this->createBomEntriesForAllAlkansya();
+        $this->createBomEntriesForMadeToOrderProducts($diningTableSet, $woodenChair);
 
         $this->command->info('Accurate materials data seeded successfully!');
     }
@@ -233,11 +252,12 @@ class AccurateMaterialsSeeder extends Seeder
             ['material_code' => 'BW-40IN-100M', 'material_name' => 'Bubble Wrap 40 inch x 100m', 'unit_of_measure' => 'pcs', 'standard_cost' => 500.00],
             ['material_code' => 'INS-8MM-40IN-100M', 'material_name' => 'Insulation 8mm 40 inch x 100m', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
 
-            // Dining Table materials
+            // Dining Table Set materials
             ['material_code' => 'HW-MAHOG-2X4X8', 'material_name' => 'Mahogany Hardwood 2x4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1200.00],
-            ['material_code' => 'HW-MAHOG-1X6X10', 'material_name' => 'Mahogany Hardwood 1x6x10ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1500.00],
-            ['material_code' => 'PLY-18-4X8', 'material_name' => 'Plywood 18mm 4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 2000.00],
-            ['material_code' => 'TBRACKET-METAL', 'material_name' => 'Metal Table Brackets', 'unit_of_measure' => 'pcs', 'standard_cost' => 500.00],
+            ['material_code' => 'HW-MAHOG-1X6X8', 'material_name' => 'Mahogany Hardwood 1x6x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1200.00],
+            ['material_code' => 'ST-TUBE-2X2X8', 'material_name' => 'Steel Tubing 2x2x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
+            ['material_code' => 'ST-TUBE-1X1X8', 'material_name' => 'Steel Tubing 1x1x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
+            ['material_code' => 'ST-TUBE-2X2X6', 'material_name' => 'Steel Tubing 2x2x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 600.00],
             ['material_code' => 'WS-3', 'material_name' => 'Wood Screws 3 inch', 'unit_of_measure' => 'pcs', 'standard_cost' => 5.00],
             ['material_code' => 'WG-500', 'material_name' => 'Wood Glue 500ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 200.00],
             ['material_code' => 'SAND-80', 'material_name' => 'Sandpaper 80 Grit', 'unit_of_measure' => 'pcs', 'standard_cost' => 15.00],
@@ -335,6 +355,8 @@ class AccurateMaterialsSeeder extends Seeder
         // Determine supplier based on material type
         if (strpos($materialCode, 'PW-') === 0 || strpos($materialCode, 'PLY-') === 0 || strpos($materialCode, 'HW-') === 0) {
             return 'Timber Supply Co.';
+        } elseif (strpos($materialCode, 'ST-TUBE-') === 0) {
+            return 'Metal Works Supply Co.';
         } elseif (strpos($materialCode, 'ACR-') === 0 || strpos($materialCode, 'FOAM-') === 0 || strpos($materialCode, 'FABRIC-') === 0) {
             return 'Plastic & Fabric Supply Inc.';
         } elseif (strpos($materialCode, 'PN-') === 0 || strpos($materialCode, 'BS-') === 0 || strpos($materialCode, 'WS-') === 0 || strpos($materialCode, 'WD-') === 0) {
@@ -355,6 +377,8 @@ class AccurateMaterialsSeeder extends Seeder
         // Determine lead time based on material type
         if (strpos($materialCode, 'PW-') === 0 || strpos($materialCode, 'PLY-') === 0 || strpos($materialCode, 'HW-') === 0) {
             return 14; // Wood materials - longer lead time
+        } elseif (strpos($materialCode, 'ST-TUBE-') === 0) {
+            return 10; // Steel tubing - moderate lead time
         } elseif (strpos($materialCode, 'ACR-') === 0 || strpos($materialCode, 'FOAM-') === 0 || strpos($materialCode, 'FABRIC-') === 0) {
             return 21; // Specialized materials - longer lead time
         } elseif (strpos($materialCode, 'PN-') === 0 || strpos($materialCode, 'BS-') === 0 || strpos($materialCode, 'WS-') === 0 || strpos($materialCode, 'WD-') === 0) {
@@ -375,6 +399,8 @@ class AccurateMaterialsSeeder extends Seeder
         // Determine critical stock based on material type and usage
         if (strpos($materialCode, 'PW-') === 0 || strpos($materialCode, 'PLY-') === 0 || strpos($materialCode, 'HW-') === 0) {
             return 50; // Wood materials - higher critical stock
+        } elseif (strpos($materialCode, 'ST-TUBE-') === 0) {
+            return 30; // Steel tubing - moderate critical stock
         } elseif (strpos($materialCode, 'ACR-') === 0 || strpos($materialCode, 'FOAM-') === 0 || strpos($materialCode, 'FABRIC-') === 0) {
             return 20; // Specialized materials - moderate critical stock
         } elseif (strpos($materialCode, 'PN-') === 0 || strpos($materialCode, 'BS-') === 0 || strpos($materialCode, 'WS-') === 0 || strpos($materialCode, 'WD-') === 0) {
@@ -395,6 +421,8 @@ class AccurateMaterialsSeeder extends Seeder
         // Determine max level based on material type and storage capacity
         if (strpos($materialCode, 'PW-') === 0 || strpos($materialCode, 'PLY-') === 0 || strpos($materialCode, 'HW-') === 0) {
             return 500; // Wood materials - higher max level
+        } elseif (strpos($materialCode, 'ST-TUBE-') === 0) {
+            return 200; // Steel tubing - moderate max level
         } elseif (strpos($materialCode, 'ACR-') === 0 || strpos($materialCode, 'FOAM-') === 0 || strpos($materialCode, 'FABRIC-') === 0) {
             return 200; // Specialized materials - moderate max level
         } elseif (strpos($materialCode, 'PN-') === 0 || strpos($materialCode, 'BS-') === 0 || strpos($materialCode, 'WS-') === 0 || strpos($materialCode, 'WD-') === 0) {
@@ -410,8 +438,11 @@ class AccurateMaterialsSeeder extends Seeder
         }
     }
 
-    private function createRawMaterials($alkansya, $diningTable, $woodenChair)
+    private function createRawMaterials($alkansya, $diningTableSet, $woodenChair)
     {
+        // Clear ALL existing raw materials to avoid conflicts
+        RawMaterial::truncate();
+        
         // Alkansya raw materials - quantities per Alkansya based on production capacity
         $alkansyaMaterials = [
             ['material_name' => 'Pinewood 1x4x8ft', 'material_code' => 'PW-1X4X8', 'quantity_needed' => 1/350, 'unit_of_measure' => 'pcs', 'unit_cost' => 150.00], // 1 piece produces 350 Alkansya
@@ -446,73 +477,88 @@ class AccurateMaterialsSeeder extends Seeder
             );
         }
 
-        // Dining Table raw materials
-        $diningTableMaterials = [
-            ['material_name' => 'Mahogany Hardwood 2x4x8ft', 'material_code' => 'HW-MAHOG-2X4X8', 'quantity_needed' => 4, 'unit_of_measure' => 'pcs', 'unit_cost' => 1200.00],
-            ['material_name' => 'Mahogany Hardwood 1x6x10ft', 'material_code' => 'HW-MAHOG-1X6X10', 'quantity_needed' => 6, 'unit_of_measure' => 'pcs', 'unit_cost' => 1500.00],
-            ['material_name' => 'Plywood 18mm 4x8ft', 'material_code' => 'PLY-18-4X8', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 2000.00],
-            ['material_name' => 'Metal Table Brackets', 'material_code' => 'TBRACKET-METAL', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 500.00],
-            ['material_name' => 'Wood Screws 3 inch', 'material_code' => 'WS-3', 'quantity_needed' => 32, 'unit_of_measure' => 'pcs', 'unit_cost' => 5.00],
-            ['material_name' => 'Wood Glue 500ml', 'material_code' => 'WG-500', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 200.00],
-            ['material_name' => 'Sandpaper 80 Grit', 'material_code' => 'SAND-80-DT', 'quantity_needed' => 4, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
-            ['material_name' => 'Sandpaper 120 Grit', 'material_code' => 'SAND-120-DT', 'quantity_needed' => 6, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
-            ['material_name' => 'Sandpaper 220 Grit', 'material_code' => 'SAND-220-DT', 'quantity_needed' => 4, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
-            ['material_name' => 'Wood Stain Walnut 1 Liter', 'material_code' => 'STAIN-WALNUT-1L', 'quantity_needed' => 0.3, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00],
-            ['material_name' => 'Polyurethane Gloss 1 Liter', 'material_code' => 'POLY-GLOSS-1L', 'quantity_needed' => 0.4, 'unit_of_measure' => 'pcs', 'unit_cost' => 1000.00],
-            ['material_name' => 'Felt Pads Large', 'material_code' => 'FELT-PAD-LG', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 50.00],
+        // Dining Table Set raw materials (table + 2 chairs + 1 bench) - combined to avoid duplicates
+        $diningTableSetMaterials = [
+            // Table + Bench materials (combined)
+            ['material_name' => 'Mahogany Hardwood 2x4x8ft', 'material_code' => 'HW-MAHOG-2X4X8', 'quantity_needed' => 3, 'unit_of_measure' => 'pcs', 'unit_cost' => 1200.00], // 2 (table) + 1 (bench)
+            ['material_name' => 'Mahogany Hardwood 1x6x8ft', 'material_code' => 'HW-MAHOG-1X6X8', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 1200.00],
+            ['material_name' => 'Mahogany Hardwood 1x4x6ft', 'material_code' => 'HW-MAHOG-1X4X6', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 900.00], // 1 (chairs) + 1 (bench)
+            ['material_name' => 'Steel Tubing 2x2x8ft', 'material_code' => 'ST-TUBE-2X2X8', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00],
+            ['material_name' => 'Steel Tubing 1x1x8ft', 'material_code' => 'ST-TUBE-1X1X8', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
+            ['material_name' => 'Steel Tubing 2x2x6ft', 'material_code' => 'ST-TUBE-2X2X6', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 600.00],
+            ['material_name' => 'Wood Screws 3 inch', 'material_code' => 'WS-3', 'quantity_needed' => 28, 'unit_of_measure' => 'pcs', 'unit_cost' => 5.00], // 16 (table) + 12 (bench)
+            ['material_name' => 'Wood Screws 2.5 inch', 'material_code' => 'WS-2.5', 'quantity_needed' => 32, 'unit_of_measure' => 'pcs', 'unit_cost' => 4.00],
+            ['material_name' => 'Wood Dowels 8mm', 'material_code' => 'WD-8MM', 'quantity_needed' => 16, 'unit_of_measure' => 'pcs', 'unit_cost' => 2.00],
+            ['material_name' => 'Wood Glue 500ml', 'material_code' => 'WG-500', 'quantity_needed' => 1.3, 'unit_of_measure' => 'pcs', 'unit_cost' => 200.00], // 0.5 (table) + 0.3 (bench) + 0.5 (overflow)
+            ['material_name' => 'Wood Glue 250ml', 'material_code' => 'WG-250', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 100.00],
+            ['material_name' => 'Plywood 12mm 2x2ft', 'material_code' => 'PLY-12-2X4', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 500.00],
+            ['material_name' => 'Foam Cushion 2 inch', 'material_code' => 'FOAM-CUSHION-2', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 300.00],
+            ['material_name' => 'Upholstery Fabric', 'material_code' => 'FABRIC-UPHOLSTERY', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
+            ['material_name' => 'Upholstery Staples', 'material_code' => 'STAPLES-UPHOLSTERY', 'quantity_needed' => 100, 'unit_of_measure' => 'pcs', 'unit_cost' => 0.10],
+            ['material_name' => 'Sandpaper 80 Grit', 'material_code' => 'SAND-80', 'quantity_needed' => 5, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00], // 2 (table) + 2 (chairs) + 1 (bench)
+            ['material_name' => 'Sandpaper 120 Grit', 'material_code' => 'SAND-120', 'quantity_needed' => 8, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00], // 3 (table) + 3 (chairs) + 2 (bench)
+            ['material_name' => 'Sandpaper 220 Grit', 'material_code' => 'SAND-220', 'quantity_needed' => 5, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00], // 2 (table) + 2 (chairs) + 1 (bench)
+            ['material_name' => 'Wood Stain Walnut 1 Liter', 'material_code' => 'STAIN-WALNUT-1L', 'quantity_needed' => 0.6, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00], // 0.4 (table) + 0.2 (bench)
+            ['material_name' => 'Wood Stain Walnut 500ml', 'material_code' => 'STAIN-WALNUT-500', 'quantity_needed' => 0.6, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
+            ['material_name' => 'Polyurethane Gloss 1 Liter', 'material_code' => 'POLY-GLOSS-1L', 'quantity_needed' => 0.8, 'unit_of_measure' => 'pcs', 'unit_cost' => 1000.00], // 0.5 (table) + 0.3 (bench)
+            ['material_name' => 'Lacquer Spray Clear', 'material_code' => 'LACQUER-SPRAY', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 200.00],
+            ['material_name' => 'Felt Pads Large', 'material_code' => 'FELT-PAD-LG', 'quantity_needed' => 6, 'unit_of_measure' => 'pcs', 'unit_cost' => 50.00], // 4 (table) + 2 (bench)
+            ['material_name' => 'Felt Pads Small', 'material_code' => 'FELT-PAD-SM', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 25.00],
+            ['material_name' => 'Mahogany Hardwood 2x2x6ft', 'material_code' => 'HW-MAHOG-2X2X6', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00],
         ];
 
-        foreach ($diningTableMaterials as $material) {
-            RawMaterial::updateOrCreate(
-                [
-                    'product_id' => $diningTable->id,
-                    'material_name' => $material['material_name']
-                ],
-                [
-                    'material_code' => $material['material_code'],
-                    'quantity_needed' => $material['quantity_needed'],
-                    'unit_of_measure' => $material['unit_of_measure'],
-                    'unit_cost' => $material['unit_cost'],
-                    'total_cost' => $material['quantity_needed'] * $material['unit_cost'],
-                    'description' => 'Raw material for Dining Table production'
-                ]
-            );
+        // Get materials for reference
+        $materials = Material::all()->keyBy('material_code');
+        
+        foreach ($diningTableSetMaterials as $material) {
+            if (isset($materials[$material['material_code']])) {
+                $rawMaterial = new RawMaterial();
+                $rawMaterial->product_id = $diningTableSet->id;
+                $rawMaterial->material_name = $material['material_name'];
+                // Append product ID to make material_code unique per product
+                $rawMaterial->material_code = $material['material_code'] . '-P' . $diningTableSet->id;
+                $rawMaterial->quantity_needed = $material['quantity_needed'];
+                $rawMaterial->unit_of_measure = $material['unit_of_measure'];
+                $rawMaterial->unit_cost = $material['unit_cost'];
+                $rawMaterial->total_cost = $material['quantity_needed'] * $material['unit_cost'];
+                $rawMaterial->description = 'Raw material for Dining Table Set production';
+                $rawMaterial->save();
+            }
         }
 
-        // Wooden Chair raw materials
+        // Wooden Chair raw materials (individual curved chair)
         $woodenChairMaterials = [
-            ['material_name' => 'Mahogany Hardwood 2x2x6ft', 'material_code' => 'HW-MAHOG-2X2X6', 'quantity_needed' => 4, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00],
-            ['material_name' => 'Mahogany Hardwood 1x4x6ft', 'material_code' => 'HW-MAHOG-1X4X6', 'quantity_needed' => 3, 'unit_of_measure' => 'pcs', 'unit_cost' => 900.00],
-            ['material_name' => 'Plywood 12mm 2x4ft', 'material_code' => 'PLY-12-2X4', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 500.00],
-            ['material_name' => 'Wood Screws 2.5 inch', 'material_code' => 'WS-2.5', 'quantity_needed' => 24, 'unit_of_measure' => 'pcs', 'unit_cost' => 4.00],
+            ['material_name' => 'Mahogany Hardwood 2x2x6ft', 'material_code' => 'HW-MAHOG-2X2X6', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 800.00],
+            ['material_name' => 'Mahogany Hardwood 1x4x6ft', 'material_code' => 'HW-MAHOG-1X4X6', 'quantity_needed' => 0.5, 'unit_of_measure' => 'pcs', 'unit_cost' => 900.00],
+            ['material_name' => 'Plywood 12mm 2x2ft', 'material_code' => 'PLY-12-2X4', 'quantity_needed' => 0.5, 'unit_of_measure' => 'pcs', 'unit_cost' => 500.00],
+            ['material_name' => 'Wood Screws 2.5 inch', 'material_code' => 'WS-2.5', 'quantity_needed' => 16, 'unit_of_measure' => 'pcs', 'unit_cost' => 4.00],
             ['material_name' => 'Wood Dowels 8mm', 'material_code' => 'WD-8MM', 'quantity_needed' => 8, 'unit_of_measure' => 'pcs', 'unit_cost' => 2.00],
-            ['material_name' => 'Wood Glue 250ml', 'material_code' => 'WG-250', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 100.00],
+            ['material_name' => 'Wood Glue 250ml', 'material_code' => 'WG-250', 'quantity_needed' => 0.5, 'unit_of_measure' => 'pcs', 'unit_cost' => 100.00],
             ['material_name' => 'Foam Cushion 2 inch', 'material_code' => 'FOAM-CUSHION-2', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 300.00],
-            ['material_name' => 'Upholstery Fabric', 'material_code' => 'FABRIC-UPHOLSTERY', 'quantity_needed' => 1.5, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
+            ['material_name' => 'Upholstery Fabric', 'material_code' => 'FABRIC-UPHOLSTERY', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
             ['material_name' => 'Upholstery Staples', 'material_code' => 'STAPLES-UPHOLSTERY', 'quantity_needed' => 50, 'unit_of_measure' => 'pcs', 'unit_cost' => 0.10],
-            ['material_name' => 'Sandpaper 80 Grit', 'material_code' => 'SAND-80-WC', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
-            ['material_name' => 'Sandpaper 120 Grit', 'material_code' => 'SAND-120-WC', 'quantity_needed' => 3, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
-            ['material_name' => 'Sandpaper 220 Grit', 'material_code' => 'SAND-220-WC', 'quantity_needed' => 2, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
+            ['material_name' => 'Sandpaper 80 Grit', 'material_code' => 'SAND-80', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
+            ['material_name' => 'Sandpaper 120 Grit', 'material_code' => 'SAND-120', 'quantity_needed' => 1.5, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
+            ['material_name' => 'Sandpaper 220 Grit', 'material_code' => 'SAND-220', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 15.00],
             ['material_name' => 'Wood Stain Walnut 500ml', 'material_code' => 'STAIN-WALNUT-500', 'quantity_needed' => 0.3, 'unit_of_measure' => 'pcs', 'unit_cost' => 400.00],
             ['material_name' => 'Lacquer Spray Clear', 'material_code' => 'LACQUER-SPRAY', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 200.00],
             ['material_name' => 'Felt Pads Small', 'material_code' => 'FELT-PAD-SM', 'quantity_needed' => 1, 'unit_of_measure' => 'pcs', 'unit_cost' => 25.00],
         ];
 
         foreach ($woodenChairMaterials as $material) {
-            RawMaterial::updateOrCreate(
-                [
-                    'product_id' => $woodenChair->id,
-                    'material_name' => $material['material_name']
-                ],
-                [
-                    'material_code' => $material['material_code'],
-                    'quantity_needed' => $material['quantity_needed'],
-                    'unit_of_measure' => $material['unit_of_measure'],
-                    'unit_cost' => $material['unit_cost'],
-                    'total_cost' => $material['quantity_needed'] * $material['unit_cost'],
-                    'description' => 'Raw material for Wooden Chair production'
-                ]
-            );
+            if (isset($materials[$material['material_code']])) {
+                $rawMaterial = new RawMaterial();
+                $rawMaterial->product_id = $woodenChair->id;
+                $rawMaterial->material_name = $material['material_name'];
+                // Append product ID to make material_code unique per product
+                $rawMaterial->material_code = $material['material_code'] . '-P' . $woodenChair->id;
+                $rawMaterial->quantity_needed = $material['quantity_needed'];
+                $rawMaterial->unit_of_measure = $material['unit_of_measure'];
+                $rawMaterial->unit_cost = $material['unit_cost'];
+                $rawMaterial->total_cost = $material['quantity_needed'] * $material['unit_cost'];
+                $rawMaterial->description = 'Raw material for Wooden Chair production';
+                $rawMaterial->save();
+            }
         }
     }
 
@@ -567,6 +613,109 @@ class AccurateMaterialsSeeder extends Seeder
         }
 
         $this->command->info('BOM entries created for all Alkansya products!');
+    }
+
+    private function createBomEntriesForMadeToOrderProducts($diningTableSet, $woodenChair)
+    {
+        // Get materials for BOM entries
+        $materials = Material::all()->keyBy('material_code');
+
+        $this->command->info('Creating BOM entries for made-to-order products...');
+
+        // Dining Table Set BOM entries
+        $diningTableSetBomMaterials = [
+            // Table materials
+            'HW-MAHOG-2X4X8' => 2,
+            'HW-MAHOG-1X6X8' => 1,
+            'ST-TUBE-2X2X8' => 2,
+            'ST-TUBE-1X1X8' => 1,
+            'WS-3' => 16,
+            'WG-500' => 0.5,
+            'SAND-80' => 2,
+            'SAND-120' => 3,
+            'SAND-220' => 2,
+            'STAIN-WALNUT-1L' => 0.4,
+            'POLY-GLOSS-1L' => 0.5,
+            'FELT-PAD-LG' => 4,
+            
+            // 2 Curved Chairs materials
+            'HW-MAHOG-2X2X6' => 2,
+            'HW-MAHOG-1X4X6' => 1,
+            'PLY-12-2X4' => 1,
+            'FOAM-CUSHION-2' => 2,
+            'FABRIC-UPHOLSTERY' => 2,
+            'STAPLES-UPHOLSTERY' => 100,
+            'WS-2.5' => 32,
+            'WD-8MM' => 16,
+            'WG-250' => 1,
+            'STAIN-WALNUT-500' => 0.6,
+            'LACQUER-SPRAY' => 2,
+            'FELT-PAD-SM' => 2,
+            
+            // 1 Bench materials
+            'ST-TUBE-2X2X6' => 2,
+            'WS-3' => 12,
+            'WG-500' => 0.3,
+            'STAIN-WALNUT-1L' => 0.2,
+            'POLY-GLOSS-1L' => 0.3,
+        ];
+
+        // Create BOM entries for Dining Table Set
+        $this->command->info("Creating BOM entries for {$diningTableSet->product_name} (ID: {$diningTableSet->id})");
+        foreach ($diningTableSetBomMaterials as $materialCode => $quantity) {
+            if (isset($materials[$materialCode])) {
+                Bom::updateOrCreate(
+                    [
+                        'product_id' => $diningTableSet->id,
+                        'material_id' => $materials[$materialCode]->material_id
+                    ],
+                    [
+                        'material_name' => $materials[$materialCode]->material_name,
+                        'quantity_per_product' => $quantity,
+                        'unit_of_measure' => $materials[$materialCode]->unit_of_measure
+                    ]
+                );
+            }
+        }
+
+        // Wooden Chair BOM entries
+        $woodenChairBomMaterials = [
+            'HW-MAHOG-2X2X6' => 1,
+            'HW-MAHOG-1X4X6' => 0.5,
+            'PLY-12-2X4' => 0.5,
+            'FOAM-CUSHION-2' => 1,
+            'FABRIC-UPHOLSTERY' => 1,
+            'STAPLES-UPHOLSTERY' => 50,
+            'WS-2.5' => 16,
+            'WD-8MM' => 8,
+            'WG-250' => 0.5,
+            'SAND-80' => 1,
+            'SAND-120' => 1.5,
+            'SAND-220' => 1,
+            'STAIN-WALNUT-500' => 0.3,
+            'LACQUER-SPRAY' => 1,
+            'FELT-PAD-SM' => 1,
+        ];
+
+        // Create BOM entries for Wooden Chair
+        $this->command->info("Creating BOM entries for {$woodenChair->product_name} (ID: {$woodenChair->id})");
+        foreach ($woodenChairBomMaterials as $materialCode => $quantity) {
+            if (isset($materials[$materialCode])) {
+                Bom::updateOrCreate(
+                    [
+                        'product_id' => $woodenChair->id,
+                        'material_id' => $materials[$materialCode]->material_id
+                    ],
+                    [
+                        'material_name' => $materials[$materialCode]->material_name,
+                        'quantity_per_product' => $quantity,
+                        'unit_of_measure' => $materials[$materialCode]->unit_of_measure
+                    ]
+                );
+            }
+        }
+
+        $this->command->info('BOM entries created for made-to-order products!');
     }
 
 }
