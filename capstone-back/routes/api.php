@@ -139,6 +139,10 @@ Route::get('/production/overview', [\App\Http\Controllers\EnhancedInventoryRepor
 Route::get('/production/alkansya-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getAlkansyaProductionData']);
 Route::get('/production/made-to-order-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getMadeToOrderProductionData']);
 Route::get('/production/output-analytics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionOutputAnalytics']);
+Route::get('/production/analytics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionAnalytics']);
+Route::get('/production/efficiency-metrics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getEfficiencyMetrics']);
+Route::get('/production/resource-utilization', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getResourceUtilization']);
+Route::get('/production/stage-breakdown', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getStageBreakdown']);
 
 // Public product routes for customer dashboard
 Route::get('/products', [ProductController::class, 'index']);
@@ -187,6 +191,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/products/{id}/bom/export', [ProductController::class, 'exportBOMCsv']);
     Route::post('/products/{id}/bom/import', [ProductController::class, 'importBOMCsv']);
     Route::post('/products/{id}/toggle-availability', [ProductController::class, 'toggleAvailability']);
+    
+    // BOM Routes
+    Route::get('/bom', [ProductController::class, 'getAllBOMs']);
 
     // Cart Routes
     Route::post('/cart', [CartController::class, 'addToCart']);

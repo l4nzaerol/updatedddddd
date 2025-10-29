@@ -6,9 +6,8 @@ import ProductCatalog from "./ProductCatalog";
 import "./CustomerDashboard.css";
 import bannerImage from "../../assets/images/unick_banner.png";
 
-const CustomerDashboard = () => {
+const CustomerDashboard = ({ searchTerm = "" }) => {
     const [products, setProducts] = useState([]);
-    const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(false);
 
     const fetchProducts = useCallback(async () => {
@@ -85,61 +84,7 @@ const CustomerDashboard = () => {
         >
           <div className="banner-background"></div>
           <div className="banner-content">
-            <div className="banner-layout">
-              {/* Left Side - Logo and Brand */}
-              <motion.div
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 1 }}
-                className="banner-left"
-              >
-                <div className="banner-logo-container">
-                  <div className="banner-logo">
-                    <div className="logo-circle">
-                      <span className="logo-text">UNICK</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="banner-brand">
-                </div>
-              </motion.div>
-
-              {/* Right Side - Description & Search */}
-              <motion.div
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 1, delay: 0.3 }}
-                className="banner-right"
-              >
-                <div className="banner-description">
-                  
-                </div>
-                
-                {/* Search Filter */}
-                <div className="banner-search-container">
-                  <motion.div
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.8, duration: 0.6 }}
-                    className="banner-search-wrapper"
-                  >
-                    <div className="banner-search-input-container">
-                      <input
-                        type="text"
-                        className="banner-search-input"
-                        placeholder="Search for chairs, tables, alkansya..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                      />
-                      <button className="banner-search-button">
-                        <i className="fas fa-search"></i>
-                      </button>
-                    </div>
-                  </motion.div>
-                </div>
-              </motion.div>
-            </div>
+            {/* Empty banner content - just for background */}
           </div>
         </div>
 

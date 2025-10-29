@@ -93,7 +93,20 @@ const SalesAnalytics = () => {
                     conversion_rate: 0
                 },
                 revenue_trends: [],
-                top_products: []
+                top_products: [],
+                sales_by_status: [],
+                payment_method_analysis: [],
+                customer_analysis: {
+                    new_customers: 0,
+                    returning_customers: 0,
+                    total_customers: 0,
+                    avg_lifetime_value: 0
+                },
+                monthly_comparison: {
+                    current_month: { revenue: 0, orders: 0 },
+                    last_month: { revenue: 0, orders: 0 },
+                    growth: { revenue_growth: 0, orders_growth: 0 }
+                }
             };
             
             setDashboardData(analyticsData);
@@ -370,52 +383,252 @@ const SalesAnalytics = () => {
                         </div>
                     </div>
 
+                    {/* Additional Metrics Row */}
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.danger}15, ${colors.warning}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.danger}20` }}>
+                                        <FaUsers style={{ color: colors.danger }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.danger }}>
+                                            {dashboardData?.customer_analysis?.total_customers || 0}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Total Customers</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    {dashboardData?.customer_analysis?.new_customers || 0} new, {dashboardData?.customer_analysis?.returning_customers || 0} returning
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.info}15, ${colors.primary}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.info}20` }}>
+                                        <FaCreditCard style={{ color: colors.info }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.info }}>
+                                            {dashboardData?.overview?.paid_orders || 0}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Paid Orders</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    {dashboardData?.overview?.pending_orders || 0} pending
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.accent}15, ${colors.secondary}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.accent}20` }}>
+                                        <FaArrowUp style={{ color: colors.accent }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.accent }}>
+                                            {dashboardData?.monthly_comparison?.growth?.revenue_growth || 0}%
+                                        </h3>
+                                        <small className="text-muted fw-medium">Revenue Growth</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    vs last month
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-lg-3 col-md-6 mb-4">
+                        <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.dark}15, ${colors.primary}15)` }}>
+                            <div className="card-body text-center p-4">
+                                <div className="d-flex align-items-center justify-content-center mb-3">
+                                    <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.dark}20` }}>
+                                        <FaDollarSign style={{ color: colors.dark }} className="fs-4" />
+                                    </div>
+                                    <div>
+                                        <h3 className="mb-0 fw-bold" style={{ color: colors.dark }}>
+                                            ₱{dashboardData?.customer_analysis?.avg_lifetime_value?.toLocaleString() || '0'}
+                                        </h3>
+                                        <small className="text-muted fw-medium">Avg Customer Value</small>
+                                    </div>
+                                </div>
+                                <p className="text-muted small mb-0">
+                                    Lifetime value
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Charts Row */}
-                    <div className="col-12 mb-4">
+                    <div className="col-lg-8 mb-4">
                         <div className="card border-0 shadow-sm">
-                        <div className="card-header bg-white border-0">
+                            <div className="card-header bg-white border-0">
                                 <h5 className="mb-0 d-flex align-items-center">
                                     <FaChartLine className="me-2" style={{ color: colors.primary }} />
                                     Revenue Trends Overview
                                 </h5>
-                        </div>
-                        <div className="card-body">
+                            </div>
+                            <div className="card-body">
                                 <ResponsiveContainer width="100%" height={300}>
                                     <LineChart data={dashboardData?.revenue_trends || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="date" />
-                                    <YAxis />
-                                    <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
-                                    <Legend />
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" />
+                                        <YAxis />
+                                        <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
+                                        <Legend />
                                         <Line type="monotone" dataKey="revenue" stroke={colors.success} name="Daily Revenue" />
                                         <Line type="monotone" dataKey="orders" stroke={colors.primary} name="Orders" />
-                                </LineChart>
-                            </ResponsiveContainer>
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Sales Status Chart */}
+                    <div className="col-lg-4 mb-4">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaChartBar className="me-2" style={{ color: colors.secondary }} />
+                                    Sales by Status
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <PieChart>
+                                        <Pie
+                                            data={dashboardData?.sales_by_status || []}
+                                            cx="50%"
+                                            cy="50%"
+                                            labelLine={false}
+                                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                            outerRadius={80}
+                                            fill="#8884d8"
+                                            dataKey="count"
+                                        >
+                                            {(dashboardData?.sales_by_status || []).map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Payment Method Analysis */}
+                    <div className="col-lg-6 mb-4">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaCreditCard className="me-2" style={{ color: colors.warning }} />
+                                    Payment Methods
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <BarChart data={dashboardData?.payment_method_analysis || []}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="payment_method" />
+                                        <YAxis />
+                                        <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
+                                        <Legend />
+                                        <Bar dataKey="revenue" fill={colors.warning} name="Revenue" />
+                                        <Bar dataKey="count" fill={colors.accent} name="Order Count" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Monthly Comparison */}
+                    <div className="col-lg-6 mb-4">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
+                                <h5 className="mb-0 d-flex align-items-center">
+                                    <FaArrowUp className="me-2" style={{ color: colors.danger }} />
+                                    Monthly Comparison
+                                </h5>
+                            </div>
+                            <div className="card-body">
+                                <div className="row">
+                                    <div className="col-6 text-center">
+                                        <h6 className="text-muted mb-2">Current Month</h6>
+                                        <h4 className="text-success mb-1">
+                                            ₱{dashboardData?.monthly_comparison?.current_month?.revenue?.toLocaleString() || '0'}
+                                        </h4>
+                                        <small className="text-muted">
+                                            {dashboardData?.monthly_comparison?.current_month?.orders || 0} orders
+                                        </small>
+                                    </div>
+                                    <div className="col-6 text-center">
+                                        <h6 className="text-muted mb-2">Last Month</h6>
+                                        <h4 className="text-primary mb-1">
+                                            ₱{dashboardData?.monthly_comparison?.last_month?.revenue?.toLocaleString() || '0'}
+                                        </h4>
+                                        <small className="text-muted">
+                                            {dashboardData?.monthly_comparison?.last_month?.orders || 0} orders
+                                        </small>
+                                    </div>
+                                </div>
+                                <hr />
+                                <div className="row">
+                                    <div className="col-6 text-center">
+                                        <h6 className="text-muted mb-2">Revenue Growth</h6>
+                                        <h4 className={`mb-0 ${(dashboardData?.monthly_comparison?.growth?.revenue_growth || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                                            {dashboardData?.monthly_comparison?.growth?.revenue_growth || 0}%
+                                        </h4>
+                                    </div>
+                                    <div className="col-6 text-center">
+                                        <h6 className="text-muted mb-2">Order Growth</h6>
+                                        <h4 className={`mb-0 ${(dashboardData?.monthly_comparison?.growth?.orders_growth || 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                                            {dashboardData?.monthly_comparison?.growth?.orders_growth || 0}%
+                                        </h4>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Top Products */}
                     <div className="col-12">
-                    <div className="card border-0 shadow-sm">
-                        <div className="card-header bg-white border-0">
+                        <div className="card border-0 shadow-sm">
+                            <div className="card-header bg-white border-0">
                                 <h5 className="mb-0 d-flex align-items-center">
                                     <FaBoxes className="me-2" style={{ color: colors.secondary }} />
                                     Top Performing Products
                                 </h5>
-                        </div>
-                        <div className="card-body">
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={dashboardData?.top_products || []}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="name" />
-                                    <YAxis />
-                                        <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
-                                    <Legend />
-                                        <Bar dataKey="total_revenue" fill={colors.primary} name="Revenue" />
-                                        <Bar dataKey="total_quantity" fill={colors.accent} name="Quantity Sold" />
-                                </BarChart>
-                            </ResponsiveContainer>
+                            </div>
+                            <div className="card-body">
+                                {dashboardData?.top_products && dashboardData.top_products.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={dashboardData.top_products}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="name" />
+                                            <YAxis />
+                                            <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
+                                            <Legend />
+                                            <Bar dataKey="total_revenue" fill={colors.primary} name="Revenue" />
+                                            <Bar dataKey="total_quantity" fill={colors.accent} name="Quantity Sold" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="text-center py-5">
+                                        <FaBoxes className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                        <h5 className="text-muted">No Product Sales Data</h5>
+                                        <p className="text-muted">Product performance data will appear here when orders are placed</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

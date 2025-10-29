@@ -1152,7 +1152,8 @@ const NormalizedInventoryPage = () => {
   const [transactions, setTransactions] = useState([]);
   const [dailyOutputs, setDailyOutputs] = useState([]);
   const [summary, setSummary] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Use false to show page structure immediately
+  const [dataLoading, setDataLoading] = useState(true); // Separate loading for data
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("materials");
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -1164,7 +1165,53 @@ const NormalizedInventoryPage = () => {
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productFilter, setProductFilter] = useState("all"); // "all", "made_to_order", "stocked"
-  const [materialFilter, setMaterialFilter] = useState("all"); // "all", "raw", "packaging"
+  const [materialFilter, setMaterialFilter] = useState("all"); // "all", "alkansya", or product ID
+  const [boms, setBoms] = useState([]); // Store BOM data
+
+  // Generate filter options for dropdown
+  const materialFilterOptions = useMemo(() => {
+    const options = [
+      { value: "all", label: "All Materials" }
+    ];
+    
+    // Add Alkansya option
+    options.push({ 
+      value: "alkansya", 
+      label: "Alkansya Materials (Stocked)" 
+    });
+    
+    // Add product-specific BOM filters for made-to-order products only
+    const madeToOrderProducts = products.filter(product => 
+      product.category_name === "Made to Order" || 
+      product.category_name === "made_to_order"
+    );
+    
+    console.log('Generating filter options:', {
+      totalProducts: products.length,
+      madeToOrderProducts: madeToOrderProducts.length,
+      totalBoms: boms.length
+    });
+    
+    madeToOrderProducts.forEach(product => {
+      // Check if this product has BOM entries
+      const hasBOM = boms.some(bom => bom.product_id === product.id);
+      
+      if (hasBOM) {
+        // Use product_name if available, otherwise use name
+        const productName = product.product_name || product.name || 'Product';
+        console.log('Adding filter option for product:', productName, 'ID:', product.id);
+        options.push({
+          value: product.id.toString(),
+          label: `${productName} Materials`
+        });
+      }
+    });
+    
+    console.log('Total filter options generated:', options.length);
+    console.log('Filter options:', options);
+    
+    return options;
+  }, [products, boms]);
 
   // Filter products based on category
   const filteredProducts = useMemo(() => {
@@ -1184,71 +1231,126 @@ const NormalizedInventoryPage = () => {
     return products;
   }, [products, productFilter]);
 
-  // Filter materials based on category
+  // Get Alkansya product IDs from products
+  const alkansyaProductIds = useMemo(() => {
+    return products
+      .filter(product => 
+        product.category_name === 'Stocked Products' && 
+        product.name === 'Alkansya'
+      )
+      .map(product => product.id);
+  }, [products]);
+
+  // Get Alkansya material IDs from BOM entries
+  const alkansyaMaterialIds = useMemo(() => {
+    if (alkansyaProductIds.length === 0) return [];
+    
+    return boms
+      .filter(bom => alkansyaProductIds.includes(bom.product_id))
+      .map(bom => bom.material_id)
+      .filter((id, index, self) => self.indexOf(id) === index); // Remove duplicates
+  }, [boms, alkansyaProductIds]);
+
+  // Filter materials based on filter selection
   const filteredMaterials = useMemo(() => {
+    console.log('Filtering materials:', {
+      filterValue: materialFilter,
+      totalMaterials: materials.length,
+      alkansyaMaterialIdsCount: alkansyaMaterialIds.length,
+      bomEntriesCount: boms.length
+    });
+    
     if (materialFilter === "all") {
+      // Return all materials when "All Materials" is selected
+      console.log('Returning ALL materials:', materials.length);
       return materials;
-    } else if (materialFilter === "raw") {
-      return materials.filter(material => 
-        material.category === "raw"
-      );
     } else if (materialFilter === "alkansya") {
-      return materials.filter(material => 
-        material.material_name.toLowerCase().includes('alkansya') ||
-        material.material_code.toLowerCase().includes('alkansya') ||
-        material.material_code.includes('PW-') || 
-        material.material_code.includes('PLY-') || 
-        material.material_code.includes('ACR-') || 
-        material.material_code.includes('PN-') ||
-        material.material_code.includes('BS-') || 
-        material.material_code.includes('STKW-')
+      // Filter alkansya materials based on BOM entries
+      const filtered = materials.filter(material => 
+        alkansyaMaterialIds.includes(material.material_id)
       );
-    } else if (materialFilter === "made_to_order") {
-      return materials.filter(material => 
-        material.material_name.toLowerCase().includes('table') ||
-        material.material_name.toLowerCase().includes('chair') ||
-        material.material_code.toLowerCase().includes('table') ||
-        material.material_code.toLowerCase().includes('chair') ||
-        material.material_code.includes('HW-MAHOG-') || 
-        material.material_code.includes('PLY-18-') ||
-        material.material_code.includes('WS-3') || 
-        material.material_code.includes('WG-500') ||
-        material.material_code.includes('WS-2.5') || 
-        material.material_code.includes('WD-8MM')
+      console.log('Returning Alkansya materials:', filtered.length);
+      return filtered;
+    } else if (materialFilter && !isNaN(materialFilter)) {
+      // Filter by product ID (BOM-based filtering)
+      const productMaterials = boms
+        .filter(bom => bom.product_id === parseInt(materialFilter))
+        .map(bom => bom.material_id);
+      
+      const filtered = materials.filter(material => 
+        productMaterials.includes(material.material_id)
       );
+      console.log('Returning product materials:', filtered.length);
+      return filtered;
     }
     return materials;
-  }, [materials, materialFilter]);
+  }, [materials, materialFilter, boms, alkansyaMaterialIds]);
 
   // API helper function
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    setDataLoading(true);
     setError("");
     try {
-      const [materialsRes, productsRes, summaryRes, transactionsRes, dailyOutputsRes] = await Promise.allSettled([
+      const [materialsRes, productsRes, summaryRes, transactionsRes, dailyOutputsRes, bomsRes] = await Promise.allSettled([
         api.get("/normalized-inventory/materials"),
         api.get("/normalized-inventory/products"),
         api.get("/normalized-inventory/summary"),
         api.get("/normalized-inventory/transactions"),
-        api.get("/normalized-inventory/daily-output")
+        api.get("/normalized-inventory/daily-output"),
+        api.get("/bom") // Fetch BOM data
       ]);
 
-      if (materialsRes.status === "fulfilled") setMaterials(materialsRes.value?.data || []);
-      if (productsRes.status === "fulfilled") setProducts(productsRes.value?.data || []);
+      if (materialsRes.status === "fulfilled") {
+        const materialData = materialsRes.value?.data || [];
+        setMaterials(materialData);
+        console.log('Materials data loaded:', materialData.length, 'materials');
+        console.log('Material codes:', materialData.map(m => m.material_code));
+      } else {
+        console.warn('Materials fetch failed:', materialsRes.reason);
+      }
+      if (productsRes.status === "fulfilled") {
+        const productData = productsRes.value?.data || [];
+        setProducts(productData);
+        console.log('Products data loaded:', productData.length);
+        console.log('Made to Order products:', productData.filter(p => p.category_name === 'Made to Order' || p.category_name === 'made_to_order'));
+      } else {
+        console.warn('Products fetch failed:', productsRes.reason);
+      }
       if (summaryRes.status === "fulfilled") setSummary(summaryRes.value?.data || {});
       if (transactionsRes.status === "fulfilled") setTransactions(transactionsRes.value?.data?.data || []);
       if (dailyOutputsRes.status === "fulfilled") setDailyOutputs(dailyOutputsRes.value?.data?.daily_outputs || []);
+      if (bomsRes.status === "fulfilled") {
+        const bomData = bomsRes.value?.data || [];
+        setBoms(bomData);
+        console.log('BOM data loaded:', bomData.length, 'entries');
+        console.log('Sample BOM entry:', bomData[0]);
+        
+        // Log unique product IDs in BOM
+        const uniqueProductIds = [...new Set(bomData.map(b => b.product_id))];
+        console.log('Unique product IDs in BOM:', uniqueProductIds);
+        console.log('BOM entries count by product ID:', uniqueProductIds.map(pid => ({
+          productId: pid,
+          bomCount: bomData.filter(b => b.product_id === pid).length
+        })));
+      } else {
+        console.warn('BOM fetch failed:', bomsRes.reason);
+      }
     } catch (err) {
       console.error(err);
       setError("Failed to fetch data. Check API settings.");
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
+    // Load data lazily after page structure loads
+    const timer = setTimeout(() => {
+      fetchData();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   // Material CRUD operations
@@ -1360,62 +1462,106 @@ const NormalizedInventoryPage = () => {
     <AppLayout>
       <style>{customStyles}</style>
       <div className="container-fluid py-4" role="region" aria-labelledby="inv-heading">
-        {/* Navigation Buttons */}
-        <div className="d-flex gap-2 mb-3">
-          <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
-            ← Back to Dashboard
-          </button>
-        </div>
-
-        <div className="container-fluid py-4">
-          {/* Header */}
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <h2 id="inv-heading" className="mb-0">Normalized Inventory Management</h2>
-            <div className="d-flex gap-2 flex-wrap">
-              <button className="btn btn-info" onClick={handleAlkansyaOutput}>
-                <i className="fas fa-piggy-bank me-2"></i>
-                + Daily Alkansya Output
-              </button>
-              <button className="btn btn-success" onClick={handleAddMaterial}>
-                + Add Material
-              </button>
+        {/* Header */}
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+              <div className="card-body p-4">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h2 className="mb-1 fw-bold" id="inv-heading">Unick Inventory </h2>
+                    <p className="text-muted mb-0">Manage materials, products, and inventory transactions</p>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button className="btn btn-light" onClick={() => navigate("/dashboard")} style={{ borderRadius: '8px' }}>
+                      <i className="fas fa-arrow-left me-2"></i>
+                      Dashboard
+                    </button>
+                    <button className="btn btn-info" onClick={handleAlkansyaOutput} style={{ borderRadius: '8px' }}>
+                      <i className="fas fa-piggy-bank me-2"></i>
+                      Daily Alkansya Output
+                    </button>
+                    <button className="btn btn-success" onClick={handleAddMaterial} style={{ borderRadius: '8px' }}>
+                      <i className="fas fa-plus me-2"></i>
+                      Add Material
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
           {/* Summary Cards */}
           <div className="row mb-4">
             <div className="col-md-3">
-              <div className="card border-0 shadow-sm h-100">
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.transform = 'translateY(-4px)';
+                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.transform = 'translateY(0)';
+                     e.currentTarget.style.boxShadow = '';
+                   }}>
                 <div className="card-body">
                   <div className="text-muted small mb-1">Total Materials</div>
-                  <div className="h3 mb-1 text-primary fw-bold">{summary.total_materials || 0}</div>
+                  <div className="h3 mb-1 text-primary fw-bold">{materials.length}</div>
                   <div className="small text-muted">Raw materials</div>
                 </div>
               </div>
             </div>
             <div className="col-md-3">
-              <div className="card border-0 shadow-sm h-100">
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.transform = 'translateY(-4px)';
+                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.transform = 'translateY(0)';
+                     e.currentTarget.style.boxShadow = '';
+                   }}>
                 <div className="card-body">
                   <div className="text-muted small mb-1">Total Products</div>
-                  <div className="h3 mb-1 text-success fw-bold">{summary.total_products || 0}</div>
+                  <div className="h3 mb-1 text-success fw-bold">{products.length}</div>
                   <div className="small text-muted">Finished products</div>
                 </div>
               </div>
             </div>
             <div className="col-md-3">
-              <div className="card border-0 shadow-sm h-100">
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.transform = 'translateY(-4px)';
+                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.transform = 'translateY(0)';
+                     e.currentTarget.style.boxShadow = '';
+                   }}>
                 <div className="card-body">
                   <div className="text-muted small mb-1">Low Stock</div>
-                  <div className="h3 mb-1 text-warning fw-bold">{summary.low_stock_materials || 0}</div>
+                  <div className="h3 mb-1 text-warning fw-bold">{materials.filter(m => m.status === 'low_stock').length}</div>
                   <div className="small text-muted">Need reordering</div>
                 </div>
               </div>
             </div>
             <div className="col-md-3">
-              <div className="card border-0 shadow-sm h-100">
+              <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.transform = 'translateY(-4px)';
+                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.transform = 'translateY(0)';
+                     e.currentTarget.style.boxShadow = '';
+                   }}>
                 <div className="card-body">
                   <div className="text-muted small mb-1">Inventory Value</div>
-                  <div className="h3 mb-1 text-info fw-bold">₱{(summary.total_inventory_value || 0).toLocaleString()}</div>
+                  <div className="h3 mb-1 text-info fw-bold">₱{materials.reduce((total, material) => {
+                    const availableQty = material.available_quantity || 0;
+                    const cost = material.standard_cost || 0;
+                    return total + (availableQty * cost);
+                  }, 0).toLocaleString()}</div>
                   <div className="small text-muted">Total value</div>
                 </div>
               </div>
@@ -1423,76 +1569,68 @@ const NormalizedInventoryPage = () => {
           </div>
 
           {/* Tab Navigation */}
-          <div className="mb-4">
-            <div className="d-flex border-bottom bg-white rounded-top">
-              <button 
-                className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
-                  activeTab === 'materials' 
-                    ? 'text-primary border-bottom border-primary border-2 bg-light' 
-                    : 'text-muted'
-                }`}
-                onClick={() => setActiveTab('materials')}
-                style={{
-                  fontWeight: activeTab === 'materials' ? '600' : '400'
-                }}
-              >
-                <i className="fas fa-boxes me-2"></i>
-                Materials 
-                <span className="badge bg-primary ms-2">{materials.length}</span>
-              </button>
-              <button 
-                className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
-                  activeTab === 'products' 
-                    ? 'text-primary border-bottom border-primary border-2 bg-light' 
-                    : 'text-muted'
-                }`}
-                onClick={() => setActiveTab('products')}
-                style={{
-                  fontWeight: activeTab === 'products' ? '600' : '400'
-                }}
-              >
-                <i className="fas fa-check-circle me-2"></i>
-                Products 
-                <span className="badge bg-success ms-2">{products.length}</span>
-              </button>
-              <button 
-                className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
-                  activeTab === 'transactions' 
-                    ? 'text-primary border-bottom border-primary border-2 bg-light' 
-                    : 'text-muted'
-                }`}
-                onClick={() => setActiveTab('transactions')}
-                style={{
-                  fontWeight: activeTab === 'transactions' ? '600' : '400'
-                }}
-              >
-                <i className="fas fa-history me-2"></i>
-                Transactions
-              </button>
-              <button 
-                className={`btn btn-link text-decoration-none px-4 py-3 border-0 rounded-0 ${
-                  activeTab === 'daily-output' 
-                    ? 'text-primary border-bottom border-primary border-2 bg-light' 
-                    : 'text-muted'
-                }`}
-                onClick={() => setActiveTab('daily-output')}
-                style={{
-                  fontWeight: activeTab === 'daily-output' ? '600' : '400'
-                }}
-              >
-                <i className="fas fa-chart-line me-2"></i>
-                Daily Output
-                <span className="badge bg-info ms-2">{dailyOutputs.length}</span>
-              </button>
+          <div className="row mb-4">
+            <div className="col-12">
+              <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                <div className="card-body p-0">
+                  <div className="d-flex" style={{ borderBottom: '2px solid #dee2e6' }}>
+                    <button 
+                      className={`btn btn-lg ${activeTab === 'materials' ? 'text-primary fw-bold' : 'text-dark'} border-0 py-3 px-4`}
+                      onClick={() => setActiveTab('materials')}
+                      style={{ 
+                        borderBottom: activeTab === 'materials' ? '3px solid #0d6efd' : 'none',
+                        marginBottom: activeTab === 'materials' ? '-2px' : '0',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <i className="fas fa-boxes me-2" style={{ color: activeTab === 'materials' ? '#0d6efd' : '#6c757d', fontSize: '20px' }}></i>
+                      Materials 
+                      <span className="badge bg-primary ms-2">{materials.length}</span>
+                    </button>
+                    <button 
+                      className={`btn btn-lg ${activeTab === 'products' ? 'text-success fw-bold' : 'text-dark'} border-0 py-3 px-4`}
+                      onClick={() => setActiveTab('products')}
+                      style={{ 
+                        borderBottom: activeTab === 'products' ? '3px solid #198754' : 'none',
+                        marginBottom: activeTab === 'products' ? '-2px' : '0',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <i className="fas fa-check-circle me-2" style={{ color: activeTab === 'products' ? '#198754' : '#6c757d', fontSize: '20px' }}></i>
+                      Products 
+                      <span className="badge bg-success ms-2">{products.length}</span>
+                    </button>
+                    <button 
+                      className={`btn btn-lg ${activeTab === 'transactions' ? 'text-info fw-bold' : 'text-dark'} border-0 py-3 px-4`}
+                      onClick={() => setActiveTab('transactions')}
+                      style={{ 
+                        borderBottom: activeTab === 'transactions' ? '3px solid #0dcaf0' : 'none',
+                        marginBottom: activeTab === 'transactions' ? '-2px' : '0',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <i className="fas fa-history me-2" style={{ color: activeTab === 'transactions' ? '#0dcaf0' : '#6c757d', fontSize: '20px' }}></i>
+                      Transactions
+                    </button>
+                    <button 
+                      className={`btn btn-lg ${activeTab === 'daily-output' ? 'text-warning fw-bold' : 'text-dark'} border-0 py-3 px-4`}
+                      onClick={() => setActiveTab('daily-output')}
+                      style={{ 
+                        borderBottom: activeTab === 'daily-output' ? '3px solid #ffc107' : 'none',
+                        marginBottom: activeTab === 'daily-output' ? '-2px' : '0',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      <i className="fas fa-chart-line me-2" style={{ color: activeTab === 'daily-output' ? '#ffc107' : '#6c757d', fontSize: '20px' }}></i>
+                      Daily Output
+                      <span className="badge bg-info ms-2">{dailyOutputs.length}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {loading && (
-            <div className="alert alert-info">Loading inventory data…</div>
-          )}
-          {error && (
-            <div className="alert alert-danger">{error}</div>
-          )}
 
           {/* Materials Tab */}
           {activeTab === 'materials' && (
@@ -1507,57 +1645,57 @@ const NormalizedInventoryPage = () => {
                     {filteredMaterials.length} of {materials.length} materials
                   </small>
                 </div>
-                <div className="d-flex gap-2">
-                  <button 
-                    className={`btn btn-sm ${materialFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
-                    onClick={() => setMaterialFilter('all')}
+                <div className="d-flex gap-2 align-items-center">
+                  <select
+                    className="form-select form-select-sm"
+                    value={materialFilter}
+                    onChange={(e) => {
+                      console.log('Filter changed to:', e.target.value);
+                      setMaterialFilter(e.target.value);
+                    }}
+                    style={{ 
+                      minWidth: '280px',
+                      borderRadius: '8px',
+                      border: '2px solid #0d6efd',
+                      padding: '0.5rem 1rem'
+                    }}
                   >
-                    <i className="fas fa-list me-1"></i>
-                    All Materials
-                  </button>
-                  <button 
-                    className={`btn btn-sm ${materialFilter === 'raw' ? 'btn-warning' : 'btn-outline-warning'}`}
-                    onClick={() => setMaterialFilter('raw')}
-                  >
-                    <i className="fas fa-tree me-1"></i>
-                    Raw Materials
-                  </button>
-                  <button 
-                    className={`btn btn-sm ${materialFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
-                    onClick={() => setMaterialFilter('alkansya')}
-                  >
-                    <i className="fas fa-piggy-bank me-1"></i>
-                    Alkansya Materials
-                  </button>
-                  <button 
-                    className={`btn btn-sm ${materialFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
-                    onClick={() => setMaterialFilter('made_to_order')}
-                  >
-                    <i className="fas fa-tools me-1"></i>
-                    Made to Order Materials
-                  </button>
+                    {materialFilterOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               
-              <div className="card border-0 shadow-sm">
-                <div className="table-responsive">
-                  <table className="table table-hover mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th className="py-3 px-3 fw-semibold">Code</th>
-                        <th className="py-3 px-3 fw-semibold">Name</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Available Qty</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Reorder Level</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Unit Cost</th>
-                        <th className="py-3 px-3 fw-semibold">Location</th>
-                        <th className="py-3 px-3 fw-semibold">Category</th>
-                        <th className="py-3 px-3 fw-semibold">Supplier</th>
-                        <th className="py-3 px-3 fw-semibold">Status</th>
-                        <th className="py-3 px-3 fw-semibold">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredMaterials.length === 0 ? (
+              <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                {dataLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary mb-3" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="text-muted">Loading materials...</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th className="py-3 px-3 fw-semibold">Code</th>
+                          <th className="py-3 px-3 fw-semibold">Name</th>
+                          <th className="py-3 px-3 fw-semibold text-end">Available Qty</th>
+                          <th className="py-3 px-3 fw-semibold text-end">Reorder Level</th>
+                          <th className="py-3 px-3 fw-semibold text-end">Unit Cost</th>
+                          <th className="py-3 px-3 fw-semibold">Location</th>
+                          <th className="py-3 px-3 fw-semibold">Category</th>
+                          <th className="py-3 px-3 fw-semibold">Supplier</th>
+                          <th className="py-3 px-3 fw-semibold">Status</th>
+                          <th className="py-3 px-3 fw-semibold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredMaterials.length === 0 ? (
                         <tr>
                           <td colSpan="10" className="text-center py-5">
                             <div className="text-muted">
@@ -1644,9 +1782,10 @@ const NormalizedInventoryPage = () => {
                           </tr>
                         ))
                       )}
-                    </tbody>
-                  </table>
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1689,19 +1828,19 @@ const NormalizedInventoryPage = () => {
                 </div>
               </div>
               
-              <div className="card border-0 shadow-sm">
+              <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                 <div className="table-responsive">
                   <table className="table table-hover mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th className="py-3 px-3 fw-semibold">Code</th>
-                        <th className="py-3 px-3 fw-semibold">Name</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Standard Cost</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Selling Price</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Stock</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Materials Count</th>
-                        <th className="py-3 px-3 fw-semibold text-end">BOM Cost</th>
-                        <th className="py-3 px-3 fw-semibold">Actions</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Code</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Name</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Standard Cost</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Selling Price</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Stock</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Materials Count</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>BOM Cost</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1717,23 +1856,32 @@ const NormalizedInventoryPage = () => {
                         </tr>
                       ) : (
                         filteredProducts.map((product) => (
-                          <tr key={product.product_id}>
-                            <td className="py-3 px-3">
+                          <tr 
+                            key={product.product_id}
+                            style={{ transition: 'all 0.2s ease' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '';
+                            }}
+                          >
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <code className="small bg-light px-2 py-1 rounded">{product.product_code}</code>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="fw-semibold text-dark">{product.product_name}</div>
                               {product.description && (
                                 <small className="text-muted">{product.description.substring(0, 50)}...</small>
                               )}
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="fw-bold text-dark">₱{product.standard_cost.toLocaleString()}</div>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="fw-bold text-success">₱{product.price.toLocaleString()}</div>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="d-flex flex-column align-items-end">
                                 <div className="fw-bold text-dark">{product.current_stock || 0}</div>
                                 <small className={`badge badge-sm ${
@@ -1750,19 +1898,19 @@ const NormalizedInventoryPage = () => {
                                 </small>
                               </div>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="fw-semibold">{product.materials_count}</div>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="fw-semibold text-info">₱{product.total_material_cost.toLocaleString()}</div>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="d-flex gap-1 align-items-center">
                                 <button 
                                   className="btn btn-sm btn-action"
                                   onClick={() => handleViewProductDetails(product)}
                                   title="View Details"
-                                  style={{ minWidth: '32px', height: '32px', padding: '6px' }}
+                                  style={{ minWidth: '32px', height: '32px', padding: '6px', borderRadius: '6px' }}
                                 >
                                   <i className="fas fa-eye"></i>
                                 </button>
@@ -1770,7 +1918,7 @@ const NormalizedInventoryPage = () => {
                                   className="btn btn-sm btn-action"
                                   onClick={() => handleEditBOM(product)}
                                   title="Edit BOM"
-                                  style={{ minWidth: '32px', height: '32px', padding: '6px' }}
+                                  style={{ minWidth: '32px', height: '32px', padding: '6px', borderRadius: '6px' }}
                                 >
                                   <i className="fas fa-list-alt"></i>
                                 </button>
@@ -1778,7 +1926,7 @@ const NormalizedInventoryPage = () => {
                                   className="btn btn-sm btn-action"
                                   onClick={() => handleEditProduct(product)}
                                   title="Edit Product"
-                                  style={{ minWidth: '32px', height: '32px', padding: '6px' }}
+                                  style={{ minWidth: '32px', height: '32px', padding: '6px', borderRadius: '6px' }}
                                 >
                                   <i className="fas fa-edit"></i>
                                 </button>
@@ -1809,17 +1957,17 @@ const NormalizedInventoryPage = () => {
                 </div>
               </div>
               
-              <div className="card border-0 shadow-sm">
+              <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                 <div className="table-responsive">
                   <table className="table table-hover mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th className="py-3 px-3 fw-semibold">Date</th>
-                        <th className="py-3 px-3 fw-semibold">Material</th>
-                        <th className="py-3 px-3 fw-semibold">Type</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Quantity</th>
-                        <th className="py-3 px-3 fw-semibold">Reference</th>
-                        <th className="py-3 px-3 fw-semibold">Remarks</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Date</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Material</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Type</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Quantity</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Reference</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Remarks</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1835,15 +1983,24 @@ const NormalizedInventoryPage = () => {
                         </tr>
                       ) : (
                         transactions.map((transaction) => (
-                          <tr key={transaction.transaction_id}>
-                            <td className="py-3 px-3">
+                          <tr 
+                            key={transaction.transaction_id}
+                            style={{ transition: 'all 0.2s ease' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '';
+                            }}
+                          >
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <small>{new Date(transaction.timestamp).toLocaleDateString()}</small>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="fw-semibold text-dark">{transaction.material?.material_name}</div>
                               <small className="text-muted">{transaction.material?.material_code}</small>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <span className={`badge bg-${
                                 transaction.transaction_type === 'PURCHASE' ? 'success' :
                                 transaction.transaction_type === 'CONSUMPTION' ? 'warning' :
@@ -1853,15 +2010,15 @@ const NormalizedInventoryPage = () => {
                                 {transaction.transaction_type}
                               </span>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className={`fw-bold ${transaction.quantity > 0 ? 'text-success' : 'text-danger'}`}>
                                 {transaction.quantity > 0 ? '+' : ''}{transaction.quantity}
                               </div>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <small>{transaction.reference}</small>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <small className="text-muted">{transaction.remarks}</small>
                             </td>
                           </tr>
@@ -1896,16 +2053,16 @@ const NormalizedInventoryPage = () => {
                 </button>
               </div>
               
-              <div className="card border-0 shadow-sm">
+              <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                 <div className="card-body p-0">
                   <table className="table table-hover mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th className="py-3 px-3 fw-semibold">Date</th>
-                        <th className="py-3 px-3 fw-semibold text-end">Quantity Produced</th>
-                        <th className="py-3 px-3 fw-semibold">Produced By</th>
-                        <th className="py-3 px-3 fw-semibold">Materials Used</th>
-                        <th className="py-3 px-3 fw-semibold">Actions</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Date</th>
+                        <th className="py-3 px-3 fw-semibold text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Quantity Produced</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Produced By</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Materials Used</th>
+                        <th className="py-3 px-3 fw-semibold" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1921,8 +2078,17 @@ const NormalizedInventoryPage = () => {
                         </tr>
                       ) : (
                         dailyOutputs.map((output) => (
-                          <tr key={output.id}>
-                            <td className="py-3 px-3">
+                          <tr 
+                            key={output.id}
+                            style={{ transition: 'all 0.2s ease' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = '';
+                            }}
+                          >
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="fw-semibold text-dark">
                                 {new Date(output.date).toLocaleDateString()}
                               </div>
@@ -1930,17 +2096,17 @@ const NormalizedInventoryPage = () => {
                                 {new Date(output.date).toLocaleTimeString()}
                               </small>
                             </td>
-                            <td className="py-3 px-3 text-end">
+                            <td className="py-3 px-3 text-end" style={{ padding: '1rem' }}>
                               <div className="fw-bold text-success">
                                 {output.quantity_produced} units
                               </div>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="fw-semibold text-dark">
                                 {output.produced_by || 'System'}
                               </div>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="small text-muted">
                                 {output.materials_used && Array.isArray(output.materials_used) 
                                   ? `${output.materials_used.length} materials consumed`
@@ -1948,7 +2114,7 @@ const NormalizedInventoryPage = () => {
                                 }
                               </div>
                             </td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-3" style={{ padding: '1rem' }}>
                               <div className="d-flex gap-1">
                                 <button 
                                   className="btn btn-sm btn-outline-primary"
@@ -1957,6 +2123,7 @@ const NormalizedInventoryPage = () => {
                                     console.log('View output details:', output);
                                   }}
                                   title="View Details"
+                                  style={{ borderRadius: '6px' }}
                                 >
                                   <i className="fas fa-eye"></i>
                                 </button>
@@ -2005,7 +2172,6 @@ const NormalizedInventoryPage = () => {
             material={selectedMaterial}
             onSuccess={fetchData}
           />
-        </div>
       </div>
     </AppLayout>
   );

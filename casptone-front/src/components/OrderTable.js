@@ -4,6 +4,7 @@ import axios from "axios";
 import { Spinner, Badge, Collapse, Card, ProgressBar, Button } from "react-bootstrap";
 import { FaBox, FaClock, FaTruck, FaCheckCircle, FaHammer, FaTools, FaPaintBrush, FaCut, FaTimes } from "react-icons/fa";
 import { toast } from "sonner";
+import "./OrderTable.css";
 
 const API = "http://localhost:8000/api";
 
@@ -204,7 +205,7 @@ const OrderTable = () => {
   if (error) return <p className="text-danger text-center fw-bold">{error}</p>;
 
   return (
-    <div className="order-container">
+    <div className="order-container" style={{ padding: '0 0.5rem' }}>
       {orders.length > 0 ? (
         orders.map((order) => {
           const track = tracking[order.id] || {};
@@ -216,8 +217,15 @@ const OrderTable = () => {
                 style={{ cursor: "pointer" }}
               >
                 <div>
-                  <FaBox className="me-2 text-primary" />
-                  <span className="fw-bold">Order #{order.id}</span>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <FaBox className="text-primary" />
+                    <span className="fw-bold">Order #{order.id}</span>
+                    {order.tracking_number && (
+                      <span className="badge bg-info" style={{ fontSize: '0.85rem' }}>
+                        📦 {order.tracking_number}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="d-flex align-items-center gap-2">
                   <Badge bg={getStatusVariant(order.status)} className="me-2">{order.status}</Badge>
@@ -235,6 +243,18 @@ const OrderTable = () => {
                         cancelOrder(order.id);
                       }}
                       title="Cancel this order"
+                      style={{
+                        borderRadius: '8px',
+                        borderWidth: '1px',
+                        borderColor: '#dc3545',
+                        backgroundColor: 'white',
+                        color: '#dc3545',
+                        padding: '0.375rem 0.75rem',
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        transition: 'all 0.2s ease',
+                        minWidth: '120px'
+                      }}
                     >
                       <FaTimes className="me-1" />
                       Cancel Order
@@ -249,7 +269,7 @@ const OrderTable = () => {
                     {/* === STATUS TRACKER === */}
                     <div className="mb-3">
                       <strong>Status Tracker:</strong>
-                      <div className="d-flex align-items-center mt-2 status-tracker">
+                      <div className="d-flex align-items-center mt-2 status-tracker" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
                         {renderStatusSteps(order.status)}
                       </div>
                     </div>
@@ -282,7 +302,7 @@ const OrderTable = () => {
                         Placed on: {new Date(order.created_at).toLocaleString()}
                       </p>
                       <p>
-                        Payment: <strong>{(order.payment_method || 'cod').toUpperCase()}</strong> · Status: <strong>{order.payment_status || 'unpaid'}</strong>
+                        Payment: <strong>{(order.payment_method || 'cod').toUpperCase()}</strong>
                         {order.transaction_ref && (<span className="ms-2">Ref: {order.transaction_ref}</span>)}
                       </p>
                       <p>
@@ -486,22 +506,38 @@ const renderStatusSteps = (status) => {
     (s) => s.toLowerCase() === status.toLowerCase().replace('_', ' ')
   );
 
-  return steps.map((step, idx) => (
-    <div key={step} className="me-3 d-flex align-items-center">
-      {idx < statusIndex ? (
-        <FaCheckCircle className="text-success me-1" />
-      ) : idx === statusIndex ? (
-        <FaClock className="text-warning me-1" />
-      ) : (
-        <FaBox className="text-muted me-1" />
-      )}
-      <small
-        className={idx <= statusIndex ? "fw-bold text-dark" : "text-muted"}
-      >
-        {step}
-      </small>
+  // Use shorter labels on mobile
+  const getStepLabel = (step) => {
+    if (window.innerWidth <= 768) {
+      return step === "Ready for Delivery" ? "Ready" : 
+             step === "Delivered" ? "Delivered" : 
+             step === "Processing" ? "Processing" : 
+             step;
+    }
+    return step;
+  };
+
+  return (
+    <div className="d-flex flex-wrap gap-2 align-items-center">
+      {steps.map((step, idx) => (
+        <div key={step} className="d-flex align-items-center flex-wrap">
+          {idx < statusIndex ? (
+            <FaCheckCircle className="text-success me-1" style={{ fontSize: '1rem' }} />
+          ) : idx === statusIndex ? (
+            <FaClock className="text-warning me-1" style={{ fontSize: '1rem' }} />
+          ) : (
+            <FaBox className="text-muted me-1" style={{ fontSize: '1rem' }} />
+          )}
+          <small
+            className={`${idx <= statusIndex ? "fw-bold text-dark" : "text-muted"} text-nowrap`}
+            style={{ fontSize: '0.75rem' }}
+          >
+            {getStepLabel(step)}
+          </small>
+        </div>
+      ))}
     </div>
-  ));
+  );
 };
 
 export default OrderTable;

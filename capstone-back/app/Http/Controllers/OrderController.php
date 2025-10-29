@@ -79,19 +79,23 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'payment_method' => 'nullable|in:cod,maya',
+            'payment_method' => 'nullable|in:cod',
             'shipping_address' => 'nullable|string|max:500',
             'contact_phone' => 'nullable|string|max:64',
             'transaction_ref' => 'nullable|string|max:128',
         ]);
 
         $paymentMethod = $validated['payment_method'] ?? 'cod';
-        $paymentStatus = $paymentMethod === 'cod' ? 'cod_pending' : 'unpaid';
+        $paymentStatus = 'cod_pending';
 
         return DB::transaction(function () use ($user, $cartItems, $totalPrice, $paymentMethod, $paymentStatus, $validated) {
+            // Generate unique tracking number
+            $trackingNumber = $this->generateTrackingNumber();
+            
             // Create order with checkout_date
             $order = Order::create([
                 'user_id' => $user->id,
+                'tracking_number' => $trackingNumber,
                 'total_price' => $totalPrice,
                 'status' => 'pending',
                 'checkout_date' => now(),
@@ -136,6 +140,30 @@ class OrderController extends Controller
 
             return response()->json(['message' => 'Checkout successful', 'order_id' => $order->id, 'order' => $order]);
         });
+    }
+
+    /**
+     * Generate unique tracking number for orders
+     */
+    private function generateTrackingNumber()
+    {
+        $prefix = 'UNICK-';
+        $unique = false;
+        $trackingNumber = '';
+        
+        while (!$unique) {
+            // Generate a random alphanumeric string (8 characters)
+            $randomString = strtoupper(substr(md5(uniqid(rand(), true)), 0, 8));
+            $trackingNumber = $prefix . $randomString;
+            
+            // Check if this tracking number already exists
+            $exists = Order::where('tracking_number', $trackingNumber)->exists();
+            if (!$exists) {
+                $unique = true;
+            }
+        }
+        
+        return $trackingNumber;
     }
 
     /**

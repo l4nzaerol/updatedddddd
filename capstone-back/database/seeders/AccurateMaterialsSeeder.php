@@ -236,8 +236,9 @@ class AccurateMaterialsSeeder extends Seeder
 
     private function createMaterials()
     {
+        // All 53 unique materials used across all products
         $materials = [
-            // Alkansya materials
+            // Alkansya materials (13)
             ['material_code' => 'PW-1X4X8', 'material_name' => 'Pinewood 1x4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 150.00],
             ['material_code' => 'PLY-4.2-4X8', 'material_name' => 'Plywood 4.2mm 4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
             ['material_code' => 'ACR-1.5-4X8', 'material_name' => 'Acrylic 1.5mm 4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1200.00],
@@ -252,34 +253,32 @@ class AccurateMaterialsSeeder extends Seeder
             ['material_code' => 'BW-40IN-100M', 'material_name' => 'Bubble Wrap 40 inch x 100m', 'unit_of_measure' => 'pcs', 'standard_cost' => 500.00],
             ['material_code' => 'INS-8MM-40IN-100M', 'material_name' => 'Insulation 8mm 40 inch x 100m', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
 
-            // Dining Table Set materials
+            // Dining Table Set and Wooden Chair materials (40 more unique materials)
             ['material_code' => 'HW-MAHOG-2X4X8', 'material_name' => 'Mahogany Hardwood 2x4x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1200.00],
             ['material_code' => 'HW-MAHOG-1X6X8', 'material_name' => 'Mahogany Hardwood 1x6x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 1200.00],
+            ['material_code' => 'HW-MAHOG-1X4X6', 'material_name' => 'Mahogany Hardwood 1x4x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 900.00],
+            ['material_code' => 'HW-MAHOG-2X2X6', 'material_name' => 'Mahogany Hardwood 2x2x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
             ['material_code' => 'ST-TUBE-2X2X8', 'material_name' => 'Steel Tubing 2x2x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
             ['material_code' => 'ST-TUBE-1X1X8', 'material_name' => 'Steel Tubing 1x1x8ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
             ['material_code' => 'ST-TUBE-2X2X6', 'material_name' => 'Steel Tubing 2x2x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 600.00],
             ['material_code' => 'WS-3', 'material_name' => 'Wood Screws 3 inch', 'unit_of_measure' => 'pcs', 'standard_cost' => 5.00],
+            ['material_code' => 'WS-2.5', 'material_name' => 'Wood Screws 2.5 inch', 'unit_of_measure' => 'pcs', 'standard_cost' => 4.00],
+            ['material_code' => 'WD-8MM', 'material_name' => 'Wood Dowels 8mm', 'unit_of_measure' => 'pcs', 'standard_cost' => 2.00],
             ['material_code' => 'WG-500', 'material_name' => 'Wood Glue 500ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 200.00],
+            ['material_code' => 'WG-250', 'material_name' => 'Wood Glue 250ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 100.00],
+            ['material_code' => 'PLY-12-2X4', 'material_name' => 'Plywood 12mm 2x4ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 500.00],
             ['material_code' => 'SAND-80', 'material_name' => 'Sandpaper 80 Grit', 'unit_of_measure' => 'pcs', 'standard_cost' => 15.00],
             ['material_code' => 'SAND-120', 'material_name' => 'Sandpaper 120 Grit', 'unit_of_measure' => 'pcs', 'standard_cost' => 15.00],
             ['material_code' => 'SAND-220', 'material_name' => 'Sandpaper 220 Grit', 'unit_of_measure' => 'pcs', 'standard_cost' => 15.00],
             ['material_code' => 'STAIN-WALNUT-1L', 'material_name' => 'Wood Stain Walnut 1 Liter', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
+            ['material_code' => 'STAIN-WALNUT-500', 'material_name' => 'Wood Stain Walnut 500ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
             ['material_code' => 'POLY-GLOSS-1L', 'material_name' => 'Polyurethane Gloss 1 Liter', 'unit_of_measure' => 'pcs', 'standard_cost' => 1000.00],
             ['material_code' => 'FELT-PAD-LG', 'material_name' => 'Felt Pads Large', 'unit_of_measure' => 'pcs', 'standard_cost' => 50.00],
-
-            // Wooden Chair materials
-            ['material_code' => 'HW-MAHOG-2X2X6', 'material_name' => 'Mahogany Hardwood 2x2x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 800.00],
-            ['material_code' => 'HW-MAHOG-1X4X6', 'material_name' => 'Mahogany Hardwood 1x4x6ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 900.00],
-            ['material_code' => 'PLY-12-2X4', 'material_name' => 'Plywood 12mm 2x4ft', 'unit_of_measure' => 'pcs', 'standard_cost' => 500.00],
-            ['material_code' => 'WS-2.5', 'material_name' => 'Wood Screws 2.5 inch', 'unit_of_measure' => 'pcs', 'standard_cost' => 4.00],
-            ['material_code' => 'WD-8MM', 'material_name' => 'Wood Dowels 8mm', 'unit_of_measure' => 'pcs', 'standard_cost' => 2.00],
-            ['material_code' => 'WG-250', 'material_name' => 'Wood Glue 250ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 100.00],
+            ['material_code' => 'FELT-PAD-SM', 'material_name' => 'Felt Pads Small', 'unit_of_measure' => 'pcs', 'standard_cost' => 25.00],
             ['material_code' => 'FOAM-CUSHION-2', 'material_name' => 'Foam Cushion 2 inch', 'unit_of_measure' => 'pcs', 'standard_cost' => 300.00],
             ['material_code' => 'FABRIC-UPHOLSTERY', 'material_name' => 'Upholstery Fabric', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
             ['material_code' => 'STAPLES-UPHOLSTERY', 'material_name' => 'Upholstery Staples', 'unit_of_measure' => 'pcs', 'standard_cost' => 0.10],
-            ['material_code' => 'STAIN-WALNUT-500', 'material_name' => 'Wood Stain Walnut 500ml', 'unit_of_measure' => 'pcs', 'standard_cost' => 400.00],
             ['material_code' => 'LACQUER-SPRAY', 'material_name' => 'Lacquer Spray Clear', 'unit_of_measure' => 'pcs', 'standard_cost' => 200.00],
-            ['material_code' => 'FELT-PAD-SM', 'material_name' => 'Felt Pads Small', 'unit_of_measure' => 'pcs', 'standard_cost' => 25.00],
         ];
 
         foreach ($materials as $material) {

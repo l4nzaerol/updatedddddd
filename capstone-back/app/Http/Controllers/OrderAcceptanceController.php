@@ -520,23 +520,28 @@ class OrderAcceptanceController extends Controller
                 if ($inventoryItem) {
                     \Log::info("Found inventory item: {$inventoryItem->name} for product: {$product->name}");
                     
-                    // Calculate total production count for this specific product
-                    $totalProductionCount = DB::table('orders')
-                        ->join('order_items', 'orders.id', '=', 'order_items.order_id')
-                        ->join('products', 'order_items.product_id', '=', 'products.id')
-                        ->whereIn('orders.status', ['processing', 'in_production'])
-                        ->where('products.id', $product->id) // Use product ID for exact matching
-                        ->sum('order_items.quantity');
-                    
-                    \Log::info("Total production count for {$product->name}: {$totalProductionCount}");
-                    
-                    // Update inventory status - use direct assignment to ensure save
-                    $inventoryItem->status = 'in_production';
-                    $inventoryItem->production_status = 'in_production';
-                    $inventoryItem->production_count = $totalProductionCount;
-                    $inventoryItem->save();
-                    
-                    \Log::info("Updated inventory status for {$inventoryItem->name}: in_production, count: {$totalProductionCount}");
+                    try {
+                        // Calculate total production count for this specific product
+                        $totalProductionCount = DB::table('orders')
+                            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+                            ->join('products', 'order_items.product_id', '=', 'products.id')
+                            ->whereIn('orders.status', ['processing', 'in_production'])
+                            ->where('products.id', $product->id) // Use product ID for exact matching
+                            ->sum('order_items.quantity');
+                        
+                        \Log::info("Total production count for {$product->name}: {$totalProductionCount}");
+                        
+                        // Update inventory status - use direct assignment to ensure save
+                        $inventoryItem->status = 'in_production';
+                        $inventoryItem->production_status = 'in_production';
+                        $inventoryItem->production_count = $totalProductionCount;
+                        $inventoryItem->save();
+                        
+                        \Log::info("Updated inventory status for {$inventoryItem->name}: in_production, count: {$totalProductionCount}");
+                    } catch (\Exception $e) {
+                        \Log::error("Failed to update inventory status for {$inventoryItem->name}: " . $e->getMessage());
+                        // Don't throw - this is just inventory tracking
+                    }
                 } else {
                     \Log::warning("No inventory item found for made-to-order product: {$product->name}");
                 }

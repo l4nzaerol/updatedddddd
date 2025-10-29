@@ -11,6 +11,6 @@ class InventoryUsage extends Model
 
     public function inventoryItem()
     {
-        return $this->belongsTo(InventoryItem::class);
+        return $this->belongsTo(InventoryItem::class, 'inventory_item_id', 'id');
     }
 }

@@ -1181,111 +1181,132 @@ const ProductPage = () => {
     <AppLayout>
       <style>{customStyles}</style>
       <div className="container-fluid py-4">
-        {/* Navigation */}
-        <div className="d-flex gap-2 mb-3">
-          <button className="btn btn-outline-secondary" onClick={() => navigate("/dashboard")}>
-            ← Back to Dashboard
-          </button>
-        </div>
-
         {/* Header */}
-        <div className="d-flex align-items-center justify-content-between mb-4">
-          <div>
-            <h2 className="mb-1 text-dark">
-              Unick Products
-            </h2>
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card border-0 shadow-sm">
+              <div className="card-body p-4">
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h2 className="mb-1 fw-bold">Unick Products</h2>
+                    <p className="text-muted mb-0">Manage your woodcraft products inventory</p>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button className="btn btn-light" onClick={() => navigate("/dashboard")}>
+                      <i className="fas fa-arrow-left me-2"></i>
+                      Dashboard
+                    </button>
+                    <button className="btn btn-primary" onClick={handleAddProduct}>
+                      <i className="fas fa-plus me-2"></i>
+                      Add Product
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <button className="btn btn-primary" onClick={handleAddProduct}>
-            <i className="fas fa-plus me-2"></i>
-            Add Product
-          </button>
         </div>
 
-        {/* Filters and Search */}
+        {/* Search and Filters */}
         <div className="row mb-4">
-          <div className="col-md-6">
-            <div style={{ 
-              display: 'flex',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              backgroundColor: 'white',
-              border: '1px solid #e5e7eb'
-            }}>
-              <input
-                type="text"
-                placeholder="Search woodcraft products"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ 
-                  flex: 1,
-                  height: '45px', 
-                  fontSize: '16px',
-                  border: 'none',
-                  outline: 'none',
-                  backgroundColor: 'white',
-                  color: '#374151',
-                  padding: '0 16px',
-                  borderRadius: '8px 0 0 8px'
-                }}
-              />
-              <button 
-                type="button"
-                style={{
-                  backgroundColor: '#8B4513',
-                  border: 'none',
-                  height: '45px',
-                  padding: '0 20px',
-                  minWidth: '60px',
-                  borderRadius: '0 8px 8px 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                <i className="fas fa-search text-white" style={{ fontSize: '16px' }}></i>
-              </button>
-            </div>
-          </div>
-          <div className="col-md-4">
-            <div className="btn-group w-100" role="group">
-              <button
-                className={`btn filter-button ${categoryFilter === "all" ? "active" : ""}`}
-                onClick={() => setCategoryFilter("all")}
-              >
-                All Products
-              </button>
-              <button
-                className={`btn filter-button ${categoryFilter === "stocked" ? "active" : ""}`}
-                onClick={() => setCategoryFilter("stocked")}
-              >
-                Stocked
-              </button>
-              <button
-                className={`btn filter-button ${categoryFilter === "made_to_order" ? "active" : ""}`}
-                onClick={() => setCategoryFilter("made_to_order")}
-              >
-                Made to Order
-              </button>
-            </div>
-          </div>
-          <div className="col-md-2">
-            <div className="btn-group w-100" role="group">
-              <button
-                className={`btn ${viewMode === "grid" ? "btn-primary" : "btn-outline-primary"}`}
-                onClick={() => setViewMode("grid")}
-                title="Grid View"
-              >
-                <i className="fas fa-th"></i>
-              </button>
-              <button
-                className={`btn ${viewMode === "table" ? "btn-primary" : "btn-outline-primary"}`}
-                onClick={() => setViewMode("table")}
-                title="Table View"
-              >
-                <i className="fas fa-list"></i>
-              </button>
+          <div className="col-12">
+            <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+              <div className="card-body p-4">
+                <div className="d-flex align-items-center gap-4">
+                  {/* Search Bar */}
+                  <div style={{ 
+                    display: 'flex',
+                    flex: '1',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb'
+                  }}>
+                    <input
+                      type="text"
+                      placeholder="Search woodcraft products"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{ 
+                        flex: 1,
+                        height: '45px', 
+                        fontSize: '16px',
+                        border: 'none',
+                        outline: 'none',
+                        backgroundColor: 'white',
+                        color: '#374151',
+                        padding: '0 16px',
+                        borderRadius: '8px 0 0 8px'
+                      }}
+                    />
+                    <button 
+                      type="button"
+                      style={{
+                        backgroundColor: '#0d6efd',
+                        border: 'none',
+                        height: '45px',
+                        padding: '0 20px',
+                        minWidth: '60px',
+                        borderRadius: '0 8px 8px 0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <i className="fas fa-search text-white" style={{ fontSize: '16px' }}></i>
+                    </button>
+                  </div>
+
+                  {/* Filter Buttons */}
+                  <div className="d-flex align-items-center gap-2">
+                    <button
+                      className={`btn ${categoryFilter === "all" ? "btn-primary" : "btn-light"}`}
+                      onClick={() => setCategoryFilter("all")}
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <i className="fas fa-box me-2" style={{ fontSize: '16px' }}></i>
+                      All Products
+                    </button>
+                    <button
+                      className={`btn ${categoryFilter === "stocked" ? "btn-success" : "btn-light"}`}
+                      onClick={() => setCategoryFilter("stocked")}
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <i className="fas fa-warehouse me-2" style={{ fontSize: '16px' }}></i>
+                      Stocked
+                    </button>
+                    <button
+                      className={`btn ${categoryFilter === "made_to_order" ? "btn-info text-white" : "btn-light"}`}
+                      onClick={() => setCategoryFilter("made_to_order")}
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <i className="fas fa-tools me-2" style={{ fontSize: '16px' }}></i>
+                      Made to Order
+                    </button>
+                  </div>
+
+                  {/* View Mode Buttons */}
+                  <div className="d-flex gap-2">
+                    <button
+                      className={`btn btn-sm ${viewMode === "grid" ? "btn-primary" : "btn-outline-primary border-0"}`}
+                      onClick={() => setViewMode("grid")}
+                      title="Grid View"
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <i className="fas fa-th"></i>
+                    </button>
+                    <button
+                      className={`btn btn-sm ${viewMode === "table" ? "btn-primary" : "btn-outline-primary border-0"}`}
+                      onClick={() => setViewMode("table")}
+                      title="Table View"
+                      style={{ borderRadius: '8px' }}
+                    >
+                      <i className="fas fa-list"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

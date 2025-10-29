@@ -310,14 +310,21 @@ const ProductionTracking = () => {
                 <div className="col-12">
                   <div className="card border-0 shadow-sm production-card">
                     <div className="card-body">
-                      {/* Order Header */}
-                      <div className="row align-items-center mb-4">
-                        <div className="col-md-6">
-                          <h4 className="text-primary mb-1">Order #{order.id}</h4>
-                          <p className="text-muted mb-0">
-                            Placed on {new Date(order.checkout_date).toLocaleDateString()}
-                          </p>
-                        </div>
+                  {/* Order Header */}
+                  <div className="row align-items-center mb-4">
+                    <div className="col-md-6">
+                      <div className="d-flex align-items-center gap-2 mb-1">
+                        <h4 className="text-primary mb-0">Order #{order.id}</h4>
+                        {order.tracking_number && (
+                          <span className="badge bg-info" style={{ fontSize: '0.9rem' }}>
+                            📦 {order.tracking_number}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-muted mb-0">
+                        Placed on {new Date(order.checkout_date).toLocaleDateString()}
+                      </p>
+                    </div>
                         <div className="col-md-6 text-end">
                           <div className="d-flex flex-column align-items-end gap-2">
                           <span className={`badge bg-${getStatusColor(orderStatus.status)} fs-6 px-3 py-2`}>
@@ -331,6 +338,28 @@ const ProductionTracking = () => {
                                 className="btn btn-outline-danger btn-sm"
                                 onClick={() => cancelOrder(order.id)}
                                 title="Cancel this order"
+                                style={{
+                                  borderRadius: '8px',
+                                  borderWidth: '1px',
+                                  borderColor: '#dc3545',
+                                  backgroundColor: 'white',
+                                  color: '#dc3545',
+                                  padding: '0.375rem 0.75rem',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500',
+                                  transition: 'all 0.2s ease',
+                                  minWidth: '120px'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.target.style.backgroundColor = '#dc3545';
+                                  e.target.style.color = 'white';
+                                  e.target.style.transform = 'translateY(-1px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.backgroundColor = 'white';
+                                  e.target.style.color = '#dc3545';
+                                  e.target.style.transform = 'translateY(0)';
+                                }}
                               >
                                 <FaTimes className="me-1" />
                                 Cancel Order

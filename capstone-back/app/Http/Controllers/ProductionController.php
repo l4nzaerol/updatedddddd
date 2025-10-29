@@ -413,6 +413,8 @@ class ProductionController extends Controller
                 'delay_reason' => 'nullable|string',
                 'is_delayed' => 'nullable|boolean',
                 'actual_completion_date' => 'nullable|date',
+                'remarks' => 'nullable|string',
+                'notes' => 'nullable|string',
             ]);
 
             $production = Production::findOrFail($productionId);
@@ -450,6 +452,13 @@ class ProductionController extends Controller
                     $updateData['actual_completion_date'] = $data['actual_completion_date'];
                 }
                 
+                // Add remarks/notes if provided
+                if (isset($data['remarks'])) {
+                    $updateData['notes'] = $data['remarks'];
+                } elseif (isset($data['notes'])) {
+                    $updateData['notes'] = $data['notes'];
+                }
+                
                 // Add completed by user name
                 if ($request->user()) {
                     $updateData['completed_by_name'] = $request->user()->name;
@@ -461,7 +470,8 @@ class ProductionController extends Controller
                     'process_id' => $processId,
                     'started_at' => $updateData['started_at'] ?? $process->started_at,
                     'completed_at' => $updateData['completed_at'],
-                    'completed_by' => $updateData['completed_by_name'] ?? 'Unknown'
+                    'completed_by' => $updateData['completed_by_name'] ?? 'Unknown',
+                    'remarks' => $updateData['notes'] ?? ''
                 ]);
             }
 

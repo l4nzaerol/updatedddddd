@@ -1354,23 +1354,6 @@ const CartTable = () => {
                         </div>
                       </div>
                     </label>
-                    
-                    <label className={`payment-option-card ${paymentMethod === 'maya' ? 'selected' : ''}`}>
-                      <input 
-                        type="radio" 
-                        name="payment" 
-                        value="maya" 
-                        checked={paymentMethod === 'maya'} 
-                        onChange={() => setPaymentMethod('maya')} 
-                      />
-                      <div className="payment-content">
-                        <div className="payment-icon">💳</div>
-                        <div className="payment-text">
-                          <span className="payment-title">Maya</span>
-                          <span className="payment-desc">Pay with Maya wallet</span>
-                        </div>
-                      </div>
-                    </label>
                   </div>
                 </div>
               </div>

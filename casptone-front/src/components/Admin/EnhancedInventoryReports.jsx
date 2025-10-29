@@ -18,13 +18,12 @@ const EnhancedInventoryReports = () => {
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
     const [materialFilter, setMaterialFilter] = useState('all');
-    const [consumptionFilter, setConsumptionFilter] = useState('all');
+    const [stockFilter, setStockFilter] = useState('all'); // Filter for stock tab: 'all', 'alkansya', 'made_to_order'
     const [refreshKey, setRefreshKey] = useState(0);
     
     // Enhanced data states
     const [dashboardData, setDashboardData] = useState(null);
     const [inventoryReport, setInventoryReport] = useState(null);
-    const [consumptionTrends, setConsumptionTrends] = useState(null);
     const [replenishmentSchedule, setReplenishmentSchedule] = useState(null);
     const [forecastReport, setForecastReport] = useState(null);
     const [turnoverReport, setTurnoverReport] = useState(null);
@@ -35,6 +34,7 @@ const EnhancedInventoryReports = () => {
     
     // Enhanced forecasting states
     const [forecastType, setForecastType] = useState('alkansya');
+    const [forecastFilter, setForecastFilter] = useState('all'); // Filter for forecast tab
     const [alkansyaForecast, setAlkansyaForecast] = useState(null);
     const [madeToOrderForecast, setMadeToOrderForecast] = useState(null);
     const [overallForecast, setOverallForecast] = useState(null);
@@ -42,11 +42,17 @@ const EnhancedInventoryReports = () => {
     // Enhanced replenishment states
     const [enhancedReplenishment, setEnhancedReplenishment] = useState(null);
     const [replenishmentView, setReplenishmentView] = useState('summary'); // summary, schedule, analytics
+    const [replenishmentFilter, setReplenishmentFilter] = useState('all'); // all, alkansya, made_to_order
     
     // Enhanced transactions states
     const [enhancedTransactions, setEnhancedTransactions] = useState(null);
     const [transactionView, setTransactionView] = useState('list'); // list, summary, analytics
     const [transactionFilter, setTransactionFilter] = useState('all'); // all, alkansya, made_to_order, other
+    
+    // Modal states for report preview
+    const [showPreviewModal, setShowPreviewModal] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [previewTitle, setPreviewTitle] = useState('');
     
     // Filtered data
     const [filteredInventoryData, setFilteredInventoryData] = useState(null);
@@ -55,7 +61,6 @@ const EnhancedInventoryReports = () => {
     const [tabLoadingStates, setTabLoadingStates] = useState({
         overview: false,
         stock: false,
-        consumption: false,
         forecast: false,
         replenishment: false,
         transactions: false,
@@ -99,11 +104,185 @@ const EnhancedInventoryReports = () => {
                 }
             };
 
-            // Only load overview data initially for fast loading
-            const normalizedInventoryData = await safeFetch('/inventory/normalized-inventory');
+            // Fetch materials, products, alkansya output, BOM data, and accepted orders for accurate stock calculation
+            const [normalizedInventoryData, productsData, dailyOutputData, bomsData, acceptedOrdersData] = await Promise.all([
+                safeFetch('/normalized-inventory/materials'),
+                safeFetch('/normalized-inventory/products'),
+                safeFetch('/normalized-inventory/daily-output'),
+                safeFetch('/bom'),
+                safeFetch('/orders/accepted') // Fetch accepted orders for Made-to-Order consumption calculation
+            ]);
 
-            // Set data with proper fallbacks
-            const inventoryData = normalizedInventoryData || { summary: { total_items: 0, items_needing_reorder: 0, critical_items: 0, total_usage: 0 }, items: [] };
+            // Process materials with MRP calculations
+            let inventoryData = { items: [], summary: { total_items: 0, items_needing_reorder: 0, critical_items: 0, total_usage: 0 } };
+            
+            if (normalizedInventoryData && Array.isArray(normalizedInventoryData)) {
+                const materials = normalizedInventoryData;
+                const products = productsData || [];
+                const alkansyaOutput = dailyOutputData?.daily_outputs || [];
+                const boms = bomsData || [];
+                const acceptedOrders = acceptedOrdersData?.orders || [];
+                
+                // Get Alkansya product IDs
+                const alkansyaProductIds = products
+                    .filter(p => p.category_name === 'Stocked Products' && p.name?.toLowerCase().includes('alkansya'))
+                    .map(p => p.id);
+                
+                // Get Made to Order product IDs
+                const madeToOrderProductIds = products
+                    .filter(p => p.category_name === 'Made to Order')
+                    .map(p => p.id);
+                
+                // Get Alkansya material IDs from BOM
+                const alkansyaMaterialIds = boms
+                    .filter(bom => alkansyaProductIds.includes(bom.product_id))
+                    .map(bom => bom.material_id);
+                
+                // Get Made to Order material IDs from BOM
+                const madeToOrderMaterialIds = boms
+                    .filter(bom => madeToOrderProductIds.includes(bom.product_id))
+                    .map(bom => bom.material_id);
+                
+                // Process each material with MRP calculations
+                const processedItems = materials.map(material => {
+                    // Check if material is used in Alkansya
+                    const isAlkansyaMaterial = alkansyaMaterialIds.includes(material.material_id);
+                    
+                    // Check if material is used in Made to Order products
+                    const isMadeToOrderMaterial = madeToOrderMaterialIds.includes(material.material_id);
+                    
+                    // Calculate average daily consumption from Alkansya output (last 30 days)
+                    const recentOutput = alkansyaOutput.filter(o => {
+                        const outputDate = new Date(o.output_date);
+                        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+                        return outputDate >= thirtyDaysAgo;
+                    });
+                    
+                    // Find BOM entry for this material in Alkansya
+                    const alkansyaBomEntry = boms.find(b => 
+                        b.material_id === material.material_id && 
+                        alkansyaProductIds.includes(b.product_id)
+                    );
+                    
+                    // Calculate Alkansya consumption
+                    let alkansyaConsumption = 0;
+                    if (alkansyaBomEntry && recentOutput.length > 0) {
+                        const totalQuantity = recentOutput.reduce((sum, o) => sum + (o.quantity_produced || 0), 0);
+                        const avgDailyOutput = totalQuantity / 30; // average per day
+                        alkansyaConsumption = avgDailyOutput * (alkansyaBomEntry.quantity_per_product || 0);
+                    }
+                    
+                    // Calculate Made-to-Order consumption from accepted orders (last 30 days)
+                    let madeToOrderConsumption = 0;
+                    if (isMadeToOrderMaterial && acceptedOrders.length > 0) {
+                        const recentOrders = acceptedOrders.filter(order => {
+                            const orderDate = new Date(order.accepted_at || order.created_at);
+                            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+                            return orderDate >= thirtyDaysAgo;
+                        });
+                        
+                        // Calculate average daily consumption from orders
+                        const totalQuantityOrdered = recentOrders.reduce((sum, order) => {
+                            const orderProducts = order.order_items || order.products || [];
+                            const materialQuantity = orderProducts.reduce((prodSum, item) => {
+                                const orderBomEntry = boms.find(b => 
+                                    b.product_id === item.product_id && 
+                                    b.material_id === material.material_id &&
+                                    madeToOrderProductIds.includes(b.product_id)
+                                );
+                                if (orderBomEntry) {
+                                    return prodSum + (item.quantity * orderBomEntry.quantity_per_product);
+                                }
+                                return prodSum;
+                            }, 0);
+                            return sum + materialQuantity;
+                        }, 0);
+                        
+                        madeToOrderConsumption = totalQuantityOrdered / 30; // average per day
+                    }
+                    
+                    // Total average daily consumption
+                    let avgDailyConsumption = alkansyaConsumption + madeToOrderConsumption;
+                    
+                    // Calculate safety stock (typically 2 weeks of average consumption)
+                    const safetyStock = Math.ceil(avgDailyConsumption * 14);
+                    
+                    // Calculate reorder point (safety stock + lead time consumption)
+                    const leadTimeDays = material.lead_time_days || 7;
+                    const reorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
+                    
+                    // Calculate max level (typically 30 days of consumption or max_level if set)
+                    const maxLevel = material.max_level || Math.ceil(avgDailyConsumption * 30);
+                    
+                    // Determine stock status based on current available quantity
+                    const availableQty = material.available_quantity || 0;
+                    let stockStatus = 'in_stock';
+                    if (availableQty <= 0) {
+                        stockStatus = 'out_of_stock';
+                    } else if (availableQty <= reorderPoint) {
+                        stockStatus = 'low';
+                    } else if (availableQty <= safetyStock) {
+                        stockStatus = 'critical';
+                    }
+                    
+                    // Calculate days until stockout
+                    const daysUntilStockout = avgDailyConsumption > 0 
+                        ? Math.floor(availableQty / avgDailyConsumption) 
+                        : 999;
+                    
+                    // Calculate total value
+                    const totalValue = (material.available_quantity || 0) * (material.standard_cost || 0);
+                    
+                    return {
+                        material_id: material.material_id,
+                        name: material.material_name,
+                        material_code: material.material_code,
+                        sku: material.material_code,
+                        category: material.category || 'raw',
+                        current_stock: material.available_quantity || 0,
+                        available_quantity: material.available_quantity || 0,
+                        quantity_on_hand: material.total_quantity_on_hand || 0,
+                        quantity_reserved: material.total_quantity_reserved || 0,
+                        unit: material.unit_of_measure || 'pcs',
+                        unit_cost: material.standard_cost || 0,
+                        value: totalValue,
+                        reorder_point: reorderPoint,
+                        safety_stock: safetyStock,
+                        max_level: maxLevel,
+                        critical_stock: material.critical_stock || 0,
+                        lead_time_days: leadTimeDays,
+                        supplier: material.supplier || 'N/A',
+                        location: material.location || 'Windfield 2',
+                        stock_status: stockStatus,
+                        is_alkansya_material: isAlkansyaMaterial,
+                        is_made_to_order_material: isMadeToOrderMaterial,
+                        avg_daily_consumption: avgDailyConsumption,
+                        days_until_stockout: daysUntilStockout,
+                        needs_reorder: availableQty <= reorderPoint,
+                        stock_variant: material.status_variant || 'success',
+                        status_label: material.status_label || 'In Stock'
+                    };
+                });
+                
+                inventoryData = {
+                    items: processedItems,
+                    summary: {
+                        total_items: processedItems.length,
+                        items_needing_reorder: processedItems.filter(i => i.needs_reorder).length,
+                        critical_items: processedItems.filter(i => i.stock_status === 'critical' || i.stock_status === 'out_of_stock').length,
+                        total_usage: processedItems.reduce((sum, item) => sum + item.avg_daily_consumption, 0),
+                        total_value: processedItems.reduce((sum, item) => sum + item.value, 0),
+                        alkansya_materials: processedItems.filter(i => i.is_alkansya_material).length,
+                        made_to_order_materials: processedItems.filter(i => i.is_made_to_order_material).length,
+                        low_stock_items: processedItems.filter(i => i.stock_status === 'low').length,
+                        out_of_stock_items: processedItems.filter(i => i.stock_status === 'out_of_stock').length,
+                        alkansya_out_of_stock: processedItems.filter(i => i.is_alkansya_material && i.stock_status === 'out_of_stock').length,
+                        alkansya_needs_reorder: processedItems.filter(i => i.is_alkansya_material && i.needs_reorder).length,
+                        made_to_order_out_of_stock: processedItems.filter(i => i.is_made_to_order_material && i.stock_status === 'out_of_stock').length,
+                        made_to_order_needs_reorder: processedItems.filter(i => i.is_made_to_order_material && i.needs_reorder).length
+                    }
+                };
+            }
             
             setDashboardData({
                 summary: {
@@ -111,10 +290,16 @@ const EnhancedInventoryReports = () => {
                     low_stock_items: inventoryData.summary.items_needing_reorder,
                     out_of_stock_items: inventoryData.summary.critical_items,
                     recent_usage: inventoryData.summary.total_usage,
-                    total_value: inventoryData.items.reduce((sum, item) => sum + (item.value || 0), 0),
-                    critical_items: inventoryData.summary.critical_items
+                    total_value: inventoryData.summary.total_value || 0,
+                    critical_items: inventoryData.summary.critical_items,
+                    alkansya_materials: inventoryData.summary.alkansya_materials,
+                    made_to_order_materials: inventoryData.summary.made_to_order_materials,
+                    alkansya_out_of_stock: inventoryData.summary.alkansya_out_of_stock,
+                    alkansya_needs_reorder: inventoryData.summary.alkansya_needs_reorder,
+                    made_to_order_out_of_stock: inventoryData.summary.made_to_order_out_of_stock,
+                    made_to_order_needs_reorder: inventoryData.summary.made_to_order_needs_reorder
                 },
-                critical_items: inventoryData.items.filter(item => item.stock_status === 'out_of_stock' || item.stock_status === 'low'),
+                critical_items: inventoryData.items.filter(item => item.stock_status === 'out_of_stock' || item.stock_status === 'critical'),
                 recent_activities: []
             });
             
@@ -137,22 +322,306 @@ const EnhancedInventoryReports = () => {
         } finally {
             setLoading(false);
         }
-    }, [windowDays, refreshKey]);
+    }, [windowDays, refreshKey, materialFilter]);
 
     useEffect(() => {
         fetchAllReports();
     }, [fetchAllReports]);
 
-    // Reload consumption data when filter changes
-    useEffect(() => {
-        if (activeTab === 'consumption') {
-            loadTabData('consumption');
-        }
-    }, [consumptionFilter, windowDays]);
 
     const handleGlobalRefresh = () => {
         setRefreshKey(prev => prev + 1);
         toast.success("Reports refreshed successfully!");
+    };
+
+    // Preview Report Function
+    const previewReport = (reportType) => {
+        try {
+            let data = null;
+            let title = '';
+
+            switch(reportType) {
+                case 'stock':
+                    title = 'Stock Levels Report';
+                    data = generateStockReportData(filteredInventoryData || inventoryReport);
+                    break;
+                case 'usage':
+                    title = 'Material Usage Trends Report';
+                    data = generateUsageReportData(filteredInventoryData, alkansyaForecast, madeToOrderForecast);
+                    break;
+                case 'replenishment':
+                    title = 'Replenishment Schedule Report';
+                    data = generateReplenishmentReportData(enhancedReplenishment);
+                    break;
+                case 'full':
+                    title = 'Complete Inventory Report';
+                    data = generateFullReportData(filteredInventoryData || inventoryReport, enhancedReplenishment);
+                    break;
+                default:
+                    return;
+            }
+
+            setPreviewData(data);
+            setPreviewTitle(title);
+            setShowPreviewModal(true);
+        } catch (error) {
+            console.error('Error generating preview:', error);
+            toast.error('Failed to generate report preview. Please try again.');
+        }
+    };
+
+    // Download Report Function
+    const downloadReport = (reportType) => {
+        try {
+            let data = [];
+            let filename = '';
+            let content = '';
+
+            switch(reportType) {
+                case 'stock':
+                    filename = `Stock_Levels_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateStockReportCSV(filteredInventoryData || inventoryReport);
+                    break;
+                case 'usage':
+                    filename = `Material_Usage_Trends_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateUsageReportCSV(filteredInventoryData, alkansyaForecast, madeToOrderForecast);
+                    break;
+                case 'replenishment':
+                    filename = `Replenishment_Schedule_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateReplenishmentReportCSV(enhancedReplenishment);
+                    break;
+                case 'full':
+                    filename = `Complete_Inventory_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateFullReportCSV(filteredInventoryData || inventoryReport, enhancedReplenishment);
+                    break;
+                default:
+                    return;
+            }
+
+            // Create and download file
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast.success(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} report downloaded successfully!`);
+        } catch (error) {
+            console.error('Error downloading report:', error);
+            toast.error('Failed to generate report. Please try again.');
+        }
+    };
+
+    // Generate Stock Levels Report CSV
+    const generateStockReportCSV = (data) => {
+        if (!data || !data.items) return '';
+        
+        const headers = 'Material Name,SKU,Available Quantity,Safety Stock,Reorder Point,Days Until Stockout,Status,Category,Unit Cost\n';
+        const rows = data.items.map(item => 
+            `"${item.name}",${item.material_code},${item.current_stock},${item.safety_stock},${item.reorder_point},${item.days_until_stockout},"${item.stock_status}",${item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other'},₱${item.unit_cost}`
+        ).join('\n');
+        
+        return headers + rows;
+    };
+
+    // Generate Usage Trends Report CSV
+    const generateUsageReportCSV = (inventoryData, alkansyaForecast, madeToOrderForecast) => {
+        let content = 'Material Name,Category,Average Daily Consumption,Current Stock,Days Until Stockout,Projected Usage,Status\n';
+        
+        if (inventoryData && inventoryData.items) {
+            inventoryData.items.forEach(item => {
+                content += `"${item.name}",${item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other'},${item.avg_daily_consumption.toFixed(2)},${item.current_stock},${item.days_until_stockout},${(item.avg_daily_consumption * 30).toFixed(2)} (30-day projection),${item.stock_status}\n`;
+            });
+        }
+        
+        return content;
+    };
+
+    // Generate Replenishment Report CSV
+    const generateReplenishmentReportCSV = (replenishmentData) => {
+        let content = 'Material Name,Current Stock,Reorder Point,Recommended Quantity,Priority,Status,Category\n';
+        
+        if (replenishmentData && replenishmentData.alkansya_replenishment && replenishmentData.alkansya_replenishment.schedule) {
+            replenishmentData.alkansya_replenishment.schedule.forEach(item => {
+                content += `"${item.material_name}",${item.current_stock},${item.reorder_point},${item.recommended_quantity},"${item.priority}","${item.needs_reorder ? 'Need Reorder' : 'OK'}",Alkansya\n`;
+            });
+        }
+        
+        if (replenishmentData && replenishmentData.made_to_order_replenishment && replenishmentData.made_to_order_replenishment.schedule) {
+            replenishmentData.made_to_order_replenishment.schedule.forEach(item => {
+                content += `"${item.material_name}",${item.current_stock},${item.reorder_point},${item.recommended_quantity},"${item.priority}","${item.needs_reorder ? 'Need Reorder' : 'OK'}",Made to Order\n`;
+            });
+        }
+        
+        return content;
+    };
+
+    // Generate Full Report CSV
+    const generateFullReportCSV = (inventoryData, replenishmentData) => {
+        let content = 'INVENTORY REPORT SUMMARY\n';
+        content += `Generated: ${new Date().toLocaleString()}\n`;
+        content += `Total Materials: ${inventoryData?.summary?.total_items || 0}\n`;
+        content += `Materials Needing Reorder: ${inventoryData?.summary?.items_needing_reorder || 0}\n`;
+        content += `Critical Items: ${inventoryData?.summary?.critical_items || 0}\n\n`;
+        
+        content += '\nMATERIAL DETAILS\n';
+        content += 'Material Name,SKU,Category,Available Qty,Safety Stock,Reorder Point,Days Left,Status,Unit Cost,Total Value\n';
+        
+        if (inventoryData && inventoryData.items) {
+            inventoryData.items.forEach(item => {
+                content += `"${item.name}",${item.material_code},${item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other'},${item.current_stock},${item.safety_stock},${item.reorder_point},${item.days_until_stockout},"${item.stock_status}",₱${item.unit_cost},₱${(item.current_stock * item.unit_cost).toFixed(2)}\n`;
+            });
+        }
+        
+        return content;
+    };
+
+    // Generate Stock Levels Report Data for Preview
+    const generateStockReportData = (data) => {
+        if (!data || !data.items) return { sections: [] };
+        
+        return {
+            sections: [
+                {
+                    title: 'Stock Summary',
+                    data: [
+                        { label: 'Total Materials', value: data.summary?.total_items || 0 },
+                        { label: 'Materials Needing Reorder', value: data.summary?.items_needing_reorder || 0 },
+                        { label: 'Critical Items', value: data.summary?.critical_items || 0 },
+                        { label: 'Low Stock Items', value: data.summary?.low_stock_items || 0 }
+                    ]
+                },
+                {
+                    title: 'Material Details',
+                    type: 'table',
+                    headers: ['Material Name', 'SKU', 'Available Qty', 'Safety Stock', 'Reorder Point', 'Days Left', 'Status', 'Unit Cost'],
+                    data: data.items.map(item => [
+                        item.name,
+                        item.material_code,
+                        item.current_stock,
+                        item.safety_stock,
+                        item.reorder_point,
+                        item.days_until_stockout,
+                        item.stock_status,
+                        `₱${item.unit_cost}`
+                    ])
+                }
+            ]
+        };
+    };
+
+    // Generate Usage Trends Report Data for Preview
+    const generateUsageReportData = (inventoryData, alkansyaForecast, madeToOrderForecast) => {
+        return {
+            sections: [
+                {
+                    title: 'Usage Summary',
+                    data: [
+                        { label: 'Total Consumption', value: inventoryData?.summary?.total_consumption || 0 },
+                        { label: 'Alkansya Consumption', value: inventoryData?.summary?.alkansya_consumption || 0 },
+                        { label: 'Made-to-Order Consumption', value: inventoryData?.summary?.made_to_order_consumption || 0 },
+                        { label: 'Materials Consumed', value: inventoryData?.summary?.materials_consumed || 0 }
+                    ]
+                },
+                {
+                    title: 'Top Materials by Usage',
+                    type: 'table',
+                    headers: ['Material Name', 'Category', 'Avg Daily Usage', 'Current Stock', 'Days Until Stockout', 'Projected Usage', 'Status'],
+                    data: inventoryData?.top_materials?.map(material => [
+                        material.material_name,
+                        material.category,
+                        material.avg_daily_usage.toFixed(2),
+                        material.current_stock,
+                        material.days_until_stockout,
+                        `${(material.avg_daily_usage * 30).toFixed(2)} (30-day projection)`,
+                        material.status
+                    ]) || []
+                }
+            ]
+        };
+    };
+
+    // Generate Replenishment Report Data for Preview
+    const generateReplenishmentReportData = (data) => {
+        if (!data || !data.items) return { sections: [] };
+        
+        return {
+            sections: [
+                {
+                    title: 'Replenishment Summary',
+                    data: [
+                        { label: 'Total Items', value: data.summary?.total_items || 0 },
+                        { label: 'Critical Items', value: data.summary?.critical_items || 0 },
+                        { label: 'High Priority Items', value: data.summary?.high_priority_items || 0 },
+                        { label: 'Total Estimated Cost', value: `₱${data.summary?.total_estimated_cost || 0}` }
+                    ]
+                },
+                {
+                    title: 'Replenishment Schedule',
+                    type: 'table',
+                    headers: ['Material Name', 'SKU', 'Current Stock', 'Reorder Qty', 'Priority', 'Estimated Cost', 'Days Until Stockout'],
+                    data: data.items.map(item => [
+                        item.name,
+                        item.sku,
+                        item.current_stock,
+                        item.reorder_quantity,
+                        item.priority,
+                        `₱${item.estimated_cost}`,
+                        item.days_until_stockout
+                    ])
+                }
+            ]
+        };
+    };
+
+    // Generate Full Report Data for Preview
+    const generateFullReportData = (inventoryData, replenishmentData) => {
+        return {
+            sections: [
+                {
+                    title: 'Inventory Overview',
+                    data: [
+                        { label: 'Total Materials', value: inventoryData?.summary?.total_items || 0 },
+                        { label: 'Materials Needing Reorder', value: inventoryData?.summary?.items_needing_reorder || 0 },
+                        { label: 'Critical Items', value: inventoryData?.summary?.critical_items || 0 },
+                        { label: 'Low Stock Items', value: inventoryData?.summary?.low_stock_items || 0 }
+                    ]
+                },
+                {
+                    title: 'Material Details',
+                    type: 'table',
+                    headers: ['Material Name', 'SKU', 'Category', 'Available Qty', 'Safety Stock', 'Reorder Point', 'Days Left', 'Status', 'Unit Cost'],
+                    data: inventoryData?.items?.map(item => [
+                        item.name,
+                        item.material_code,
+                        item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other',
+                        item.current_stock,
+                        item.safety_stock,
+                        item.reorder_point,
+                        item.days_until_stockout,
+                        item.stock_status,
+                        `₱${item.unit_cost}`
+                    ]) || []
+                },
+                {
+                    title: 'Replenishment Recommendations',
+                    type: 'table',
+                    headers: ['Material Name', 'SKU', 'Priority', 'Reorder Qty', 'Estimated Cost', 'Days Until Stockout'],
+                    data: replenishmentData?.items?.map(item => [
+                        item.name,
+                        item.sku,
+                        item.priority,
+                        item.reorder_quantity,
+                        `₱${item.estimated_cost}`,
+                        item.days_until_stockout
+                    ]) || []
+                }
+            ]
+        };
     };
 
     // Filter function with accurate BOM-based filtering
@@ -250,22 +719,122 @@ const EnhancedInventoryReports = () => {
                     break;
                     
                 case 'stock':
-                    // Always refresh stock data when tab is clicked
-                    const stockResponse = await api.get('/inventory/normalized-inventory');
-                    const data = stockResponse.data;
+                    // Always refresh stock data when tab is clicked with MRP calculations
+                    const [materialsRes, productsRes, outputRes, bomsRes] = await Promise.allSettled([
+                        api.get('/normalized-inventory/materials'),
+                        api.get('/normalized-inventory/products'),
+                        api.get('/normalized-inventory/daily-output'),
+                        api.get('/bom')
+                    ]);
+                    
+                    const materials = materialsRes.status === 'fulfilled' ? materialsRes.value?.data : [];
+                    const products = productsRes.status === 'fulfilled' ? productsRes.value?.data : [];
+                    const alkansyaOutput = outputRes.status === 'fulfilled' ? outputRes.value?.data?.daily_outputs : [];
+                    const boms = bomsRes.status === 'fulfilled' ? bomsRes.value?.data : [];
+                    
+                    // Reapply MRP processing
+                    const alkansyaProductIds = products
+                        .filter(p => p.category_name === 'Stocked Products' && p.name?.toLowerCase().includes('alkansya'))
+                        .map(p => p.id);
+                    
+                    const madeToOrderProductIds = products
+                        .filter(p => p.category_name === 'Made to Order')
+                        .map(p => p.id);
+                    
+                    const alkansyaMaterialIds = boms
+                        .filter(bom => alkansyaProductIds.includes(bom.product_id))
+                        .map(bom => bom.material_id);
+                    
+                    const madeToOrderMaterialIds = boms
+                        .filter(bom => madeToOrderProductIds.includes(bom.product_id))
+                        .map(bom => bom.material_id);
+                    
+                    const processedItems = materials.map(material => {
+                        const isAlkansyaMaterial = alkansyaMaterialIds.includes(material.material_id);
+                        const isMadeToOrderMaterial = madeToOrderMaterialIds.includes(material.material_id);
+                        const recentOutput = alkansyaOutput.filter(o => {
+                            const outputDate = new Date(o.output_date);
+                            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+                            return outputDate >= thirtyDaysAgo;
+                        });
+                        
+                        const bomEntry = boms.find(b => 
+                            b.material_id === material.material_id && 
+                            alkansyaProductIds.includes(b.product_id)
+                        );
+                        
+                        let avgDailyConsumption = 0;
+                        if (bomEntry && recentOutput.length > 0) {
+                            const totalQuantity = recentOutput.reduce((sum, o) => sum + (o.quantity_produced || 0), 0);
+                            const avgDailyOutput = totalQuantity / 30;
+                            avgDailyConsumption = avgDailyOutput * (bomEntry.quantity_per_product || 0);
+                        }
+                        
+                        const safetyStock = Math.ceil(avgDailyConsumption * 14);
+                        const leadTimeDays = material.lead_time_days || 7;
+                        const reorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
+                        const maxLevel = material.max_level || Math.ceil(avgDailyConsumption * 30);
+                        const availableQty = material.available_quantity || 0;
+                        let stockStatus = 'in_stock';
+                        if (availableQty <= 0) {
+                            stockStatus = 'out_of_stock';
+                        } else if (availableQty <= reorderPoint) {
+                            stockStatus = 'low';
+                        } else if (availableQty <= safetyStock) {
+                            stockStatus = 'critical';
+                        }
+                        
+                        const daysUntilStockout = avgDailyConsumption > 0 
+                            ? Math.floor(availableQty / avgDailyConsumption) 
+                            : 999;
+                        const totalValue = availableQty * (material.standard_cost || 0);
+                        
+                        return {
+                            material_id: material.material_id,
+                            name: material.material_name,
+                            material_code: material.material_code,
+                            sku: material.material_code,
+                            category: material.category || 'raw',
+                            current_stock: availableQty,
+                            available_quantity: availableQty,
+                            quantity_on_hand: material.total_quantity_on_hand || 0,
+                            quantity_reserved: material.total_quantity_reserved || 0,
+                            unit: material.unit_of_measure || 'pcs',
+                            unit_cost: material.standard_cost || 0,
+                            value: totalValue,
+                            reorder_point: reorderPoint,
+                            safety_stock: safetyStock,
+                            max_level: maxLevel,
+                            lead_time_days: leadTimeDays,
+                            supplier: material.supplier || 'N/A',
+                            location: material.location || 'Windfield 2',
+                            stock_status: stockStatus,
+                            is_alkansya_material: isAlkansyaMaterial,
+                            is_made_to_order_material: isMadeToOrderMaterial,
+                            avg_daily_consumption: avgDailyConsumption,
+                            days_until_stockout: daysUntilStockout,
+                            needs_reorder: availableQty <= reorderPoint
+                        };
+                    });
+                    
+                    const data = {
+                        items: processedItems,
+                        summary: {
+                            total_items: processedItems.length,
+                            items_needing_reorder: processedItems.filter(i => i.needs_reorder).length,
+                            critical_items: processedItems.filter(i => i.stock_status === 'critical' || i.stock_status === 'out_of_stock').length,
+                            total_usage: processedItems.reduce((sum, item) => sum + item.avg_daily_consumption, 0),
+                            total_value: processedItems.reduce((sum, item) => sum + item.value, 0),
+                            alkansya_materials: processedItems.filter(i => i.is_alkansya_material).length,
+                            made_to_order_materials: processedItems.filter(i => i.is_made_to_order_material).length,
+                            low_stock_items: processedItems.filter(i => i.stock_status === 'low').length,
+                            out_of_stock_items: processedItems.filter(i => i.stock_status === 'out_of_stock').length
+                        }
+                    };
+                    
                     setInventoryReport(data);
                     applyFilter(data, materialFilter);
-                    break;
-                    
-                case 'consumption':
-                    const consumptionResponse = await api.get('/inventory/consumption-trends', { 
-                        params: { 
-                            days: windowDays,
-                            product_type: consumptionFilter
-                        } 
-                    });
-                    console.log('Consumption trends response:', consumptionResponse.data);
-                    setConsumptionTrends(consumptionResponse.data);
+                    setFilteredInventoryData(data);
                     break;
                     
                 case 'forecast':
@@ -284,9 +853,64 @@ const EnhancedInventoryReports = () => {
                     break;
                     
                 case 'alerts':
+                    // Generate alerts from inventory data
+                    const inventoryData = filteredInventoryData || inventoryReport;
+                    
+                    if (inventoryData && inventoryData.items) {
+                        const alerts = [];
+                        
+                        inventoryData.items.forEach(item => {
+                            if (item.stock_status === 'out_of_stock') {
+                                alerts.push({
+                                    id: item.material_id,
+                                    material: item.name,
+                                    message: `Material is out of stock and needs immediate reorder`,
+                                    severity: 'critical',
+                                    current_stock: item.current_stock,
+                                    reorder_point: item.reorder_point,
+                                    safety_stock: item.safety_stock,
+                                    timestamp: new Date().toISOString(),
+                                    category: item.is_alkansya_material ? 'alkansya' : item.is_made_to_order_material ? 'made_to_order' : 'other'
+                                });
+                            } else if (item.needs_reorder) {
+                                alerts.push({
+                                    id: item.material_id,
+                                    material: item.name,
+                                    message: `Material stock is below reorder point (${item.current_stock} left, reorder point: ${item.reorder_point})`,
+                                    severity: 'high',
+                                    current_stock: item.current_stock,
+                                    reorder_point: item.reorder_point,
+                                    safety_stock: item.safety_stock,
+                                    timestamp: new Date().toISOString(),
+                                    category: item.is_alkansya_material ? 'alkansya' : item.is_made_to_order_material ? 'made_to_order' : 'other'
+                                });
+                            } else if (item.stock_status === 'critical') {
+                                alerts.push({
+                                    id: item.material_id,
+                                    material: item.name,
+                                    message: `Material stock is critically low (${item.current_stock} left, safety stock: ${item.safety_stock})`,
+                                    severity: 'medium',
+                                    current_stock: item.current_stock,
+                                    reorder_point: item.reorder_point,
+                                    safety_stock: item.safety_stock,
+                                    timestamp: new Date().toISOString(),
+                                    category: item.is_alkansya_material ? 'alkansya' : item.is_made_to_order_material ? 'made_to_order' : 'other'
+                                });
+                            }
+                        });
+                        
+                        setRealTimeAlerts({ alerts, summary: inventoryData.summary });
+                    } else {
+                        // Fallback to API endpoint
                     if (!realTimeAlerts) {
+                            try {
                         const response = await api.get('/inventory/alerts');
                         setRealTimeAlerts(response.data);
+                            } catch (error) {
+                                console.error('Error fetching alerts from API:', error);
+                                setRealTimeAlerts({ alerts: [], summary: { total_alerts: 0 } });
+                            }
+                        }
                     }
                     break;
             }
@@ -407,45 +1031,12 @@ const EnhancedInventoryReports = () => {
 
     return (
         <div className="enhanced-inventory-reports">
-            {/* Enhanced Header */}
-            <div className="d-flex justify-content-between align-items-center mb-4 p-4 bg-gradient text-white rounded-3" 
-                 style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)` }}>
-                <div>
-                    <h2 className="mb-2 d-flex align-items-center">
-                        <FaBox className="me-3" />
-                        Enhanced Inventory Analytics
-                    </h2>
-                    <p className="mb-0 opacity-90">Comprehensive inventory management and production tracking</p>
-                </div>
-                <div className="d-flex gap-2">
-                    <select 
-                        value={windowDays} 
-                        onChange={(e) => setWindowDays(Number(e.target.value))}
-                        className="form-select form-select-sm"
-                        style={{ width: 'auto' }}
-                    >
-                        <option value={7}>Last 7 days</option>
-                        <option value={30}>Last 30 days</option>
-                        <option value={90}>Last 90 days</option>
-                        <option value={365}>Last year</option>
-                    </select>
-                    <button 
-                        onClick={handleGlobalRefresh}
-                        className="btn btn-light btn-sm"
-                    >
-                        <FaSync className="me-1" />
-                        Refresh
-                    </button>
-                </div>
-            </div>
-
             {/* Enhanced Navigation Tabs */}
             <div className="mb-4">
                 <ul className="nav nav-pills nav-fill" role="tablist">
                     {[
                         { id: 'overview', name: 'Overview', icon: FaChartLine, color: colors.primary },
                         { id: 'stock', name: 'Stock Levels', icon: FaBox, color: colors.secondary },
-                        { id: 'consumption', name: 'Consumption', icon: FaChartLine, color: colors.accent },
                         { id: 'forecast', name: 'Forecasting', icon: FaChartLine, color: colors.info },
                         { id: 'replenishment', name: 'Replenishment', icon: FaTruck, color: colors.warning },
                         { id: 'transactions', name: 'Transactions', icon: FaHistory, color: colors.dark },
@@ -474,25 +1065,6 @@ const EnhancedInventoryReports = () => {
                         </li>
                     ))}
                 </ul>
-            </div>
-
-            {/* Material Filter */}
-            <div className="mb-4">
-                <div className="d-flex align-items-center gap-3">
-                    <FaFilter className="text-muted" />
-                    <label className="form-label mb-0 fw-medium">Filter by Product:</label>
-                    <select 
-                        value={materialFilter} 
-                        onChange={(e) => handleFilterChange(e.target.value)}
-                        className="form-select form-select-sm"
-                        style={{ width: 'auto' }}
-                    >
-                        <option value="all">All Materials</option>
-                        <option value="alkansya">Alkansya Materials</option>
-                        <option value="dining-table">Dining Table Materials</option>
-                        <option value="wooden-chair">Wooden Chair Materials</option>
-                    </select>
-                </div>
             </div>
 
             {/* Content based on active tab */}
@@ -583,303 +1155,402 @@ const EnhancedInventoryReports = () => {
                         </div>
                     </div>
 
-                    {/* Charts Row */}
+                    {/* Automated Reports Section - White Theme */}
                     <div className="col-12 mb-4">
-                        <div className="card border-0 shadow-sm">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', background: 'white' }}>
+                            <div className="card-body p-4">
+                                <div className="row align-items-center">
+                                    <div className="col-md-8">
+                                        <div className="d-flex align-items-center mb-3">
+                                            <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3">
+                                                <i className="fas fa-file-export text-primary" style={{ fontSize: '24px' }}></i>
+                            </div>
+                                            <div>
+                                                <h5 className="mb-0 fw-bold">Automated Reports & Analytics</h5>
+                                                <small className="text-muted">Download comprehensive inventory reports</small>
+                                    </div>
+                            </div>
+                                        <p className="text-muted mb-3">Generate detailed reports for stock levels, material usage trends, and replenishment schedules</p>
+                                        <div className="d-flex gap-2 flex-wrap">
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className="btn btn-outline-primary"
+                                                    onClick={() => previewReport('stock')}
+                                                    style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#8B4513';
+                                                        e.currentTarget.style.color = 'white';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                                        e.currentTarget.style.color = '#8B4513';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-eye me-2"></i>
+                                                    Preview
+                                                </button>
+                                                <button 
+                                                    className="btn btn-primary"
+                                                    onClick={() => downloadReport('stock')}
+                                                    style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#6B3410';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#8B4513';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-download me-2"></i>
+                                                    Download
+                                                </button>
+                                            </div>
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className="btn btn-outline-info"
+                                                    onClick={() => previewReport('usage')}
+                                                    style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                        e.currentTarget.style.color = 'white';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                                        e.currentTarget.style.color = '#17a2b8';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-eye me-2"></i>
+                                                    Preview
+                                                </button>
+                                                <button 
+                                                    className="btn btn-info"
+                                                    onClick={() => downloadReport('usage')}
+                                                    style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#138496';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-download me-2"></i>
+                                                    Download
+                                                </button>
+                                            </div>
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className="btn btn-outline-warning"
+                                                    onClick={() => previewReport('replenishment')}
+                                                    style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#ffc107';
+                                                        e.currentTarget.style.color = 'white';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                                        e.currentTarget.style.color = '#ffc107';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-eye me-2"></i>
+                                                    Preview
+                                                </button>
+                                                <button 
+                                                    className="btn btn-warning"
+                                                    onClick={() => downloadReport('replenishment')}
+                                                    style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#e0a800';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#ffc107';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-download me-2"></i>
+                                                    Download
+                                                </button>
+                                            </div>
+                                            <div className="btn-group" role="group">
+                                                <button 
+                                                    className="btn btn-outline-success"
+                                                    onClick={() => previewReport('full')}
+                                                    style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#28a745';
+                                                        e.currentTarget.style.color = 'white';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = 'transparent';
+                                                        e.currentTarget.style.color = '#28a745';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-eye me-2"></i>
+                                                    Preview
+                                                </button>
+                                                <button 
+                                                    className="btn btn-success"
+                                                    onClick={() => downloadReport('full')}
+                                                    style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                    onMouseEnter={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#1e7e34';
+                                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        e.currentTarget.style.backgroundColor = '#28a745';
+                                                        e.currentTarget.style.transform = 'translateY(0)';
+                                                    }}
+                                                >
+                                                    <i className="fas fa-download me-2"></i>
+                                                    Download
+                                                </button>
+                                            </div>
+                                        </div>
+                                        </div>
+                                    <div className="col-md-4 text-center">
+                                        <div className="position-relative">
+                                            <div className="rounded-circle bg-primary bg-opacity-10 p-4 d-inline-block">
+                                                <i className="fas fa-download fa-3x text-primary"></i>
+                                    </div>
+                                        </div>
+                                    </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                    </div>
+
+                    {/* Inventory Summary Details */}
+                    <div className="col-12 mb-4">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                             <div className="card-header bg-white border-0">
                                 <h5 className="mb-0 d-flex align-items-center">
-                                    <FaChartLine className="me-2" style={{ color: colors.primary }} />
-                                    Consumption Trends
+                                    <FaBox className="me-2" style={{ color: colors.primary }} />
+                                    Inventory Report Summary
                                 </h5>
                             </div>
                             <div className="card-body">
-                                {consumptionTrends && consumptionTrends.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height={300}>
-                                        <AreaChart data={consumptionTrends}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="date" />
-                                            <YAxis />
-                                            <Tooltip />
-                                            <Legend />
-                                            <Area type="monotone" dataKey="plywood" stackId="1" stroke={colors.primary} fill={colors.primary} fillOpacity={0.6} />
-                                            <Area type="monotone" dataKey="hardwood" stackId="1" stroke={colors.secondary} fill={colors.secondary} fillOpacity={0.6} />
-                                            <Area type="monotone" dataKey="acrylic" stackId="1" stroke={colors.accent} fill={colors.accent} fillOpacity={0.6} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No consumption data available</h5>
-                                        <p className="text-muted">Data will appear here once consumption trends are recorded</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                                {/* Overview Stats Row */}
+                                <div className="row mb-4">
+                                    <div className="col-md-4">
+                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                                             onMouseEnter={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(-4px)';
+                                                 e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                                             }}
+                                             onMouseLeave={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(0)';
+                                                 e.currentTarget.style.boxShadow = '';
+                                             }}>
+                                                    <div className="card-body text-center">
+                                                <div className="mb-3">
+                                                    <div className="rounded-circle d-flex align-items-center justify-content-center mx-auto" style={{ width: '60px', height: '60px', backgroundColor: '#e3f2fd' }}>
+                                                        <i className="fas fa-box text-primary" style={{ fontSize: '28px' }}></i>
+                                                    </div>
+                                                </div>
+                                                <h3 className="text-primary mb-1">{dashboardData?.summary?.alkansya_materials || 0}</h3>
+                                                <h6 className="text-muted mb-2">Alkansya Materials</h6>
+                                                <small className="text-muted">Materials for Alkansya production</small>
+                                            </div>
                     </div>
                 </div>
-            )}
-
-            {/* Consumption Tab */}
-            {activeTab === 'consumption' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <div className="d-flex justify-content-between align-items-center">
-                                    <h5 className="mb-0 d-flex align-items-center">
-                                        <FaChartLine className="me-2" style={{ color: colors.accent }} />
-                                        Material Consumption Analysis
-                                        {tabLoadingStates.consumption && (
-                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                                <span className="visually-hidden">Loading...</span>
-                                            </div>
-                                        )}
-                                    </h5>
-                                </div>
-                            </div>
-                            <div className="card-body">
-
-                                {/* Filter Controls */}
-                                <div className="mb-4">
-                                    <div className="row align-items-center">
-                                        <div className="col-md-6">
-                                            <h6 className="mb-2">Filter by Product Type:</h6>
-                                            <div className="btn-group" role="group">
-                                                <button 
-                                                    className={`btn ${consumptionFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
-                                                    onClick={() => setConsumptionFilter('all')}
-                                                >
-                                                    All Products
-                                                </button>
-                                                <button 
-                                                    className={`btn ${consumptionFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
-                                                    onClick={() => setConsumptionFilter('alkansya')}
-                                                >
-                                                    Alkansya Only
-                                                </button>
-                                                <button 
-                                                    className={`btn ${consumptionFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
-                                                    onClick={() => setConsumptionFilter('made_to_order')}
-                                                >
-                                                    Made-to-Order Only
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div className="col-md-6">
-                                            <h6 className="mb-2">Time Period:</h6>
-                                            <div className="btn-group" role="group">
-                                                <button 
-                                                    className={`btn ${windowDays === 7 ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                                                    onClick={() => setWindowDays(7)}
-                                                >
-                                                    7 Days
-                                                </button>
-                                                <button 
-                                                    className={`btn ${windowDays === 30 ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                                                    onClick={() => setWindowDays(30)}
-                                                >
-                                                    30 Days
-                                                </button>
-                                                <button 
-                                                    className={`btn ${windowDays === 90 ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                                                    onClick={() => setWindowDays(90)}
-                                                >
-                                                    90 Days
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {tabLoadingStates.consumption ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-accent mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Consumption Data...</h5>
-                                        <p className="text-muted">Analyzing material usage from orders and Alkansya production</p>
-                                    </div>
-                                ) : consumptionTrends && Object.keys(consumptionTrends).length > 0 ? (
-                                    <div>
-                                        {/* Summary Cards */}
-                                        <div className="row mb-4">
-                                            <div className="col-md-3">
-                                                <div className="card bg-light">
+                                    <div className="col-md-4">
+                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                                             onMouseEnter={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(-4px)';
+                                                 e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                                             }}
+                                             onMouseLeave={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(0)';
+                                                 e.currentTarget.style.boxShadow = '';
+                                             }}>
                                                     <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Total Consumption</h6>
-                                                        <h3 className="text-primary">{consumptionTrends.summary?.total_consumption ? Number(consumptionTrends.summary.total_consumption).toLocaleString() : 0}</h3>
-                                                        <small className="text-muted">units</small>
+                                                <div className="mb-3">
+                                                    <div className="rounded-circle d-flex align-items-center justify-content-center mx-auto" style={{ width: '60px', height: '60px', backgroundColor: '#e1f5fe' }}>
+                                                        <i className="fas fa-tools text-info" style={{ fontSize: '28px' }}></i>
                                                     </div>
                                                 </div>
+                                                <h3 className="text-info mb-1">{dashboardData?.summary?.made_to_order_materials || 0}</h3>
+                                                <h6 className="text-muted mb-2">Made to Order Materials</h6>
+                                                <small className="text-muted">Materials for made to order products</small>
                                             </div>
-                                            <div className="col-md-3">
-                                                <div className="card bg-light">
-                                                    <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Alkansya Production</h6>
-                                                        <h3 className="text-success">{consumptionTrends.summary?.alkansya_consumption ? Number(consumptionTrends.summary.alkansya_consumption).toLocaleString() : 0}</h3>
-                                                        <small className="text-muted">units</small>
-                                                    </div>
-                                                </div>
                                             </div>
-                                            <div className="col-md-3">
-                                                <div className="card bg-light">
+                                        </div>
+                                    <div className="col-md-4">
+                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', transition: 'all 0.3s ease' }}
+                                             onMouseEnter={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(-4px)';
+                                                 e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                                             }}
+                                             onMouseLeave={(e) => {
+                                                 e.currentTarget.style.transform = 'translateY(0)';
+                                                 e.currentTarget.style.boxShadow = '';
+                                             }}>
                                                     <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Order Consumption</h6>
-                                                        <h3 className="text-info">{consumptionTrends.summary?.order_consumption ? Number(consumptionTrends.summary.order_consumption).toLocaleString() : 0}</h3>
-                                                        <small className="text-muted">units</small>
-                                                    </div>
-                                                </div>
+                                                <div className="mb-3">
+                                                    <div className="rounded-circle d-flex align-items-center justify-content-center mx-auto" style={{ width: '60px', height: '60px', backgroundColor: '#fff3e0' }}>
+                                                        <i className="fas fa-peso-sign text-warning" style={{ fontSize: '28px' }}></i>
                                             </div>
-                                            <div className="col-md-3">
-                                                <div className="card bg-light">
-                                                    <div className="card-body text-center">
-                                                        <h6 className="card-title text-muted">Total Cost</h6>
-                                                        <h3 className="text-warning">₱{consumptionTrends.summary?.total_cost ? Number(consumptionTrends.summary.total_cost).toLocaleString() : 0}</h3>
-                                                        <small className="text-muted">material cost</small>
+                                        </div>
+                                                <h3 className="text-warning mb-1">₱{dashboardData?.summary?.total_value?.toLocaleString() || '0'}</h3>
+                                                <h6 className="text-muted mb-2">Total Inventory Value</h6>
+                                                <small className="text-muted">Total value of all materials</small>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Consumption Chart */}
-                                        <div className="mb-4">
-                                            <h6 className="mb-3">Daily Consumption Trends</h6>
-                                            <ResponsiveContainer width="100%" height={400}>
-                                                <AreaChart data={consumptionTrends?.chart_data || []}>
-                                                    <CartesianGrid strokeDasharray="3 3" />
-                                                    <XAxis dataKey="date" />
-                                                    <YAxis />
-                                                    <Tooltip />
-                                                    <Legend />
-                                                    <Area 
-                                                        type="monotone" 
-                                                        dataKey="alkansya_consumption" 
-                                                        stackId="1" 
-                                                        stroke={colors.success} 
-                                                        fill={colors.success} 
-                                                        fillOpacity={0.6}
-                                                        name="Alkansya Production"
-                                                    />
-                                                    <Area 
-                                                        type="monotone" 
-                                                        dataKey="order_consumption" 
-                                                        stackId="1" 
-                                                        stroke={colors.info} 
-                                                        fill={colors.info} 
-                                                        fillOpacity={0.6}
-                                                        name="Order Consumption"
-                                                    />
-                                                </AreaChart>
-                                            </ResponsiveContainer>
+                                {/* Status Breakdown */}
+                                <div className="row">
+                                    <div className="col-md-6 mb-4">
+                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                            <div className="card-header bg-white border-0 pb-2">
+                                                <h5 className="mb-0 d-flex align-items-center">
+                                                    <i className="fas fa-box text-primary me-2" style={{ fontSize: '20px' }}></i>
+                                                    Alkansya Materials Status
+                                                </h5>
+                                                    </div>
+                                            <div className="card-body">
+                                                <div className="row text-center">
+                                                    <div className="col-6 mb-3">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#ffebee' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-times-circle text-danger" style={{ fontSize: '32px' }}></i>
+                                                </div>
+                                                            <h3 className="text-danger mb-1">{dashboardData?.summary?.alkansya_out_of_stock || 0}</h3>
+                                                            <small className="text-muted">Out of Stock</small>
+                                            </div>
+                                                    </div>
+                                                    <div className="col-6 mb-3">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-exclamation-circle text-warning" style={{ fontSize: '32px' }}></i>
+                                                </div>
+                                                            <h3 className="text-warning mb-1">{dashboardData?.summary?.alkansya_needs_reorder || 0}</h3>
+                                                            <small className="text-muted">Need Reorder</small>
+                                            </div>
+                                                    </div>
+                                                    <div className="col-12">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-check-circle text-success" style={{ fontSize: '32px' }}></i>
+                                                </div>
+                                                            <h4 className="text-success mb-1">
+                                                                {((dashboardData?.summary?.alkansya_materials || 0) - (dashboardData?.summary?.alkansya_out_of_stock || 0) - (dashboardData?.summary?.alkansya_needs_reorder || 0))}
+                                                            </h4>
+                                                            <small className="text-muted">Items in Good Condition</small>
+                                            </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                         </div>
 
-                                        {/* Top Materials Table */}
-                                        <div>
-                                            <div>
-                                                <h6 className="mb-3">Top Consumed Materials</h6>
-                                                <div className="table-responsive">
-                                                    <table className="table table-hover">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Material</th>
-                                                                <th>Total Consumption</th>
-                                                                <th>Alkansya Usage</th>
-                                                                <th>Order Usage</th>
-                                                                <th>Total Cost</th>
-                                                                <th>Usage Days</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {(consumptionTrends.top_materials && consumptionTrends.top_materials.length > 0) ? consumptionTrends.top_materials.map((material, index) => (
-                                                                <tr key={material.material_id}>
-                                                                    <td>
-                                                                        <div className="d-flex align-items-center">
-                                                                            <div className="me-3">
-                                                                                <div className="rounded-circle d-flex align-items-center justify-content-center" 
-                                                                                     style={{ 
-                                                                                         width: '40px', 
-                                                                                         height: '40px', 
-                                                                                         backgroundColor: `${colors.accent}20`,
-                                                                                         color: colors.accent
-                                                                                     }}>
-                                                                                    <FaBox />
+                                    <div className="col-md-6 mb-4">
+                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                            <div className="card-header bg-white border-0 pb-2">
+                                                <h5 className="mb-0 d-flex align-items-center">
+                                                    <i className="fas fa-tools text-info me-2" style={{ fontSize: '20px' }}></i>
+                                                    Made to Order Materials Status
+                                                </h5>
                                                                                 </div>
+                                            <div className="card-body">
+                                                <div className="row text-center">
+                                                    <div className="col-6 mb-3">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#ffebee' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-times-circle text-danger" style={{ fontSize: '32px' }}></i>
                                                                             </div>
-                                                                            <div>
-                                                                                <h6 className="mb-0">{material.material_name}</h6>
-                                                                                <small className="text-muted">ID: {material.material_id}</small>
+                                                            <h3 className="text-danger mb-1">{dashboardData?.summary?.made_to_order_out_of_stock || 0}</h3>
+                                                            <small className="text-muted">Out of Stock</small>
                                                                             </div>
                                                                         </div>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="fw-bold text-primary">
-                                                                            {material.total_consumption ? Number(material.total_consumption).toLocaleString() : 0}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="text-success">
-                                                                            {material.alkansya_consumption ? Number(material.alkansya_consumption).toLocaleString() : 0}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="text-info">
-                                                                            {material.order_consumption ? Number(material.order_consumption).toLocaleString() : 0}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="fw-bold text-warning">
-                                                                            ₱{material.total_cost ? Number(material.total_cost).toLocaleString() : 0}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td>
-                                                                        <span className="text-muted">
-                                                                            {material.consumption_days} days
-                                                                        </span>
-                                                                    </td>
-                                                                </tr>
-                                                            )) : (
-                                                                <tr>
-                                                                    <td colSpan="6" className="text-center text-muted py-4">
-                                                                        <FaBox className="mb-2" style={{ fontSize: '2rem' }} />
-                                                                        <div>No consumption data available</div>
-                                                                        <small>Click "Load Test Data" to see sample data</small>
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </tbody>
-                                                    </table>
+                                                    <div className="col-6 mb-3">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-exclamation-circle text-warning" style={{ fontSize: '32px' }}></i>
+                                                </div>
+                                                            <h3 className="text-warning mb-1">{dashboardData?.summary?.made_to_order_needs_reorder || 0}</h3>
+                                                            <small className="text-muted">Need Reorder</small>
+                                            </div>
+                                        </div>
+                                                    <div className="col-12">
+                                                        <div className="p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                            <div className="mb-2">
+                                                                <i className="fas fa-check-circle text-success" style={{ fontSize: '32px' }}></i>
+                                    </div>
+                                                            <h4 className="text-success mb-1">
+                                                                {((dashboardData?.summary?.made_to_order_materials || 0) - (dashboardData?.summary?.made_to_order_out_of_stock || 0) - (dashboardData?.summary?.made_to_order_needs_reorder || 0))}
+                                                            </h4>
+                                                            <small className="text-muted">Items in Good Condition</small>
+                                    </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No consumption data available</h5>
-                                        <p className="text-muted">Consumption data will appear here once orders are processed and Alkansya production is recorded</p>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Stock Status Tab */}
+            {/* Stock Status Tab - MRP Enabled */}
             {activeTab === 'stock' && (
                 <div className="row">
                     <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <div className="card-header bg-white border-0" style={{ borderRadius: '12px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-3">
                                 <h5 className="mb-0 d-flex align-items-center">
                                     <FaBox className="me-2" style={{ color: colors.secondary }} />
-                                    Stock Status - Normalized Inventory
+                                        Stock Status 
                                     {tabLoadingStates.stock && (
                                         <div className="spinner-border spinner-border-sm ms-2" role="status">
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
                                     )}
                                 </h5>
+                                </div>
+                                
+                                {/* Filter Buttons */}
+                                        <div className="d-flex gap-2">
+                                    <button 
+                                        className={`btn ${stockFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                        onClick={() => setStockFilter('all')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-list me-2"></i>
+                                        All Materials
+                                    </button>
+                                    <button 
+                                        className={`btn ${stockFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                                        onClick={() => setStockFilter('alkansya')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-box me-2"></i>
+                                        Alkansya
+                                    </button>
+                                    <button 
+                                        className={`btn ${stockFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                                        onClick={() => setStockFilter('made_to_order')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-tools me-2"></i>
+                                        Made to Order
+                                    </button>
+                                </div>
                             </div>
                             <div className="card-body">
                                 {tabLoadingStates.stock ? (
@@ -888,100 +1559,139 @@ const EnhancedInventoryReports = () => {
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
                                         <h5>Loading Stock Data...</h5>
-                                        <p className="text-muted">Fetching materials from normalized inventory</p>
+                                        <p className="text-muted">Calculating MRP parameters and real-time stock levels</p>
                                     </div>
                                 ) : filteredInventoryData?.items && filteredInventoryData.items.length > 0 ? (
+                                    <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                     <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
+                                            <table className="table table-hover mb-0">
+                                            <thead className="table-light">
                                                 <tr>
-                                                    <th>Material Name</th>
-                                                    <th>SKU</th>
-                                                    <th>Current Stock</th>
-                                                    <th>Reorder Point</th>
-                                                    <th>Status</th>
-                                                    <th>Value</th>
-                                                    <th>Actions</th>
+                                                    <th style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Material Name</th>
+                                                    <th style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>SKU</th>
+                                                    <th className="text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Available Qty</th>
+                                                    <th className="text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Safety Stock</th>
+                                                    <th className="text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Reorder Point</th>
+                                                    <th className="text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>
+                                                        Days Left
+                                                        <i className="fas fa-question-circle ms-2 text-muted" 
+                                                           style={{ fontSize: '14px' }}
+                                                           title="Estimated days until stockout based on average daily consumption from Alkansya production and orders"></i>
+                                                    </th>
+                                                    <th className="text-end" style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Avg Daily</th>
+                                                    <th style={{ padding: '1rem', fontWeight: '600', color: '#495057' }}>Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {filteredInventoryData.items.map((item, index) => (
-                                                    <tr key={index}>
-                                                        <td>
+                                                {filteredInventoryData.items
+                                                    .filter(item => {
+                                                        if (stockFilter === 'all') return true;
+                                                        if (stockFilter === 'alkansya') return item.is_alkansya_material;
+                                                        if (stockFilter === 'made_to_order') return item.is_made_to_order_material;
+                                                        return true;
+                                                    })
+                                                    .map((item, index) => {
+                                                    // Determine status label
+                                                    let statusLabel = 'In Stock';
+                                                    let statusColor = 'success';
+                                                    if (item.available_quantity <= 0) {
+                                                        statusLabel = 'No Stock';
+                                                        statusColor = 'danger';
+                                                    } else if (item.needs_reorder && item.available_quantity <= item.reorder_point) {
+                                                        statusLabel = 'Need Reorder';
+                                                        statusColor = 'warning';
+                                                    } else if (item.available_quantity <= item.safety_stock) {
+                                                        statusLabel = 'Low Stock';
+                                                        statusColor = 'warning';
+                                                    }
+                                                    
+                                                    return (
+                                                    <tr 
+                                                        key={index}
+                                                        style={{ transition: 'all 0.2s ease' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#f8f9fa';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '';
+                                                        }}
+                                                    >
+                                                        <td style={{ padding: '1rem' }}>
                                                             <div className="d-flex align-items-center">
                                                                 <div className="me-3">
-                                                                    <div className="rounded-circle d-flex align-items-center justify-content-center" 
+                                                                        <div className={`rounded-circle d-flex align-items-center justify-content-center`}
                                                                          style={{ 
                                                                              width: '40px', 
                                                                              height: '40px', 
-                                                                             backgroundColor: `${colors.primary}20`,
-                                                                             color: colors.primary
+                                                                             backgroundColor: item.is_alkansya_material ? '#e8f5e9' : '#e1f5fe',
+                                                                             color: item.is_alkansya_material ? '#4caf50' : '#03a9f4'
                                                                          }}>
                                                                         <FaBox />
                                                                     </div>
                                                                 </div>
                                                                 <div>
-                                                                    <h6 className="mb-0">{item.name}</h6>
-                                                                    <small className="text-muted">{item.category || 'Material'}</small>
+                                                                    <h6 className="mb-0 fw-semibold">{item.name}</h6>
+                                                                        <small className="text-muted">{item.location || 'Windfield 2'}</small>
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        <td>
+                                                        <td style={{ padding: '1rem' }}>
                                                             <code className="bg-light px-2 py-1 rounded">{item.sku}</code>
                                                         </td>
-                                                        <td>
+                                                        <td className="text-end" style={{ padding: '1rem' }}>
                                                             <span className={`fw-bold ${
-                                                                item.current_stock <= 0 ? 'text-danger' :
-                                                                item.current_stock <= (item.reorder_point || 0) ? 'text-warning' :
+                                                                    item.available_quantity <= 0 ? 'text-danger' :
+                                                                    item.available_quantity <= item.reorder_point ? 'text-warning' :
+                                                                    item.available_quantity <= item.safety_stock ? 'text-warning' :
                                                                 'text-success'
                                                             }`}>
-                                                                {item.current_stock || 0}
+                                                                    {item.available_quantity || 0}
                                                             </span>
-                                                            <small className="text-muted d-block">{item.unit || 'units'}</small>
+                                                            <br/>
+                                                            <small className="text-muted">{item.unit}</small>
                                                         </td>
-                                                        <td>
-                                                            <span className="text-muted">{item.reorder_point || 'N/A'}</span>
+                                                        <td className="text-end" style={{ padding: '1rem' }}>
+                                                                <span className="text-muted fw-medium">{item.safety_stock || 0}</span>
+                                                            </td>
+                                                        <td className="text-end" style={{ padding: '1rem' }}>
+                                                                <span className="text-warning fw-medium">{item.reorder_point || 0}</span>
+                                                            </td>
+                                                        <td className="text-end" style={{ padding: '1rem' }}>
+                                                                <span className={`badge ${
+                                                                    item.days_until_stockout <= 7 ? 'bg-danger' :
+                                                                    item.days_until_stockout <= 14 ? 'bg-warning' :
+                                                                    'bg-success'
+                                                            }`} style={{ borderRadius: '6px' }}>
+                                                                {item.days_until_stockout >= 999 ? '∞' : item.days_until_stockout} days
+                                                                </span>
+                                                            </td>
+                                                        <td className="text-end" style={{ padding: '1rem' }}>
+                                                                <span className="text-info">
+                                                                    {item.avg_daily_consumption?.toFixed(2) || '0.00'}
+                                                                </span>
                                                         </td>
-                                                        <td>
+                                                        <td style={{ padding: '1rem' }}>
                                                             <span className={`badge ${
-                                                                item.stock_status === 'out_of_stock' ? 'bg-danger' :
-                                                                item.stock_status === 'low' ? 'bg-warning' :
-                                                                item.stock_status === 'critical' ? 'bg-danger' :
+                                                                statusColor === 'danger' ? 'bg-danger' :
+                                                                statusColor === 'warning' ? 'bg-warning' :
                                                                 'bg-success'
-                                                            }`}>
-                                                                {item.stock_status === 'out_of_stock' ? 'Out of Stock' :
-                                                                 item.stock_status === 'low' ? 'Low Stock' :
-                                                                 item.stock_status === 'critical' ? 'Critical' :
-                                                                 'In Stock'}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span className="fw-bold text-primary">
-                                                                ₱{item.value ? Number(item.value).toLocaleString() : '0'}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <div className="btn-group" role="group">
-                                                                <button className="btn btn-outline-primary btn-sm">
-                                                                    <FaEye className="me-1" />
-                                                                    View
-                                                                </button>
-                                                                <button className="btn btn-outline-secondary btn-sm">
-                                                                    <FaEdit className="me-1" />
-                                                                    Edit
-                                                                </button>
-                                                            </div>
+                                                            }`} style={{ borderRadius: '6px' }}>
+                                                                {statusLabel}
+                                                                </span>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                )})}
                                             </tbody>
                                         </table>
+                                        </div>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
+                                    <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                        <div className="card-body text-center py-5">
                                         <FaBox className="text-muted mb-3" style={{ fontSize: '3rem' }} />
                                         <h5 className="text-muted">No materials found</h5>
                                         <p className="text-muted">Materials will appear here once they are added to the normalized inventory</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -994,12 +1704,12 @@ const EnhancedInventoryReports = () => {
             {activeTab === 'forecast' && (
                 <div className="row">
                     <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <div className="d-flex justify-content-between align-items-center">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <div className="card-header bg-white border-0" style={{ borderRadius: '12px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h5 className="mb-0 d-flex align-items-center">
                                         <FaChartLine className="me-2" style={{ color: colors.info }} />
-                                        Enhanced Material Usage Forecasting
+                                        Material Usage Forecasting
                                         {tabLoadingStates.forecast && (
                                             <div className="spinner-border spinner-border-sm ms-2" role="status">
                                                 <span className="visually-hidden">Loading...</span>
@@ -1011,7 +1721,7 @@ const EnhancedInventoryReports = () => {
                                             className="form-select form-select-sm" 
                                             value={windowDays}
                                             onChange={(e) => setWindowDays(parseInt(e.target.value))}
-                                            style={{ width: '120px' }}
+                                            style={{ width: '120px', borderRadius: '8px' }}
                                         >
                                             <option value={7}>7 Days</option>
                                             <option value={14}>14 Days</option>
@@ -1022,11 +1732,40 @@ const EnhancedInventoryReports = () => {
                                         <button 
                                             className="btn btn-outline-primary btn-sm"
                                             onClick={() => fetchForecastData()}
+                                            style={{ borderRadius: '8px' }}
                                         >
                                             <FaSync className="me-1" />
                                             Refresh
                                         </button>
                                     </div>
+                                </div>
+                                
+                                {/* Filter Buttons */}
+                                <div className="d-flex gap-2 mb-3">
+                                    <button 
+                                        className={`btn ${forecastFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                        onClick={() => setForecastFilter('all')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-list me-2"></i>
+                                        All Materials
+                                    </button>
+                                    <button 
+                                        className={`btn ${forecastFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                                        onClick={() => setForecastFilter('alkansya')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-box me-2"></i>
+                                        Alkansya Materials
+                                    </button>
+                                    <button 
+                                        className={`btn ${forecastFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                                        onClick={() => setForecastFilter('made_to_order')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-tools me-2"></i>
+                                        Made to Order Materials
+                                    </button>
                                 </div>
                             </div>
                             <div className="card-body">
@@ -1040,38 +1779,13 @@ const EnhancedInventoryReports = () => {
                                     </div>
                                 ) : (
                                     <div>
-                                        {/* Forecast Type Tabs */}
-                                        <ul className="nav nav-tabs mb-4" id="forecastTabs" role="tablist">
-                                            <li className="nav-item" role="presentation">
-                                                <button 
-                                                    className={`nav-link ${forecastType === 'alkansya' ? 'active' : ''}`}
-                                                    onClick={() => setForecastType('alkansya')}
-                                                >
-                                                    Alkansya Materials
-                                                </button>
-                                            </li>
-                                            <li className="nav-item" role="presentation">
-                                                <button 
-                                                    className={`nav-link ${forecastType === 'made-to-order' ? 'active' : ''}`}
-                                                    onClick={() => setForecastType('made-to-order')}
-                                                >
-                                                    Made-to-Order
-                                                </button>
-                                            </li>
-                                            <li className="nav-item" role="presentation">
-                                                <button 
-                                                    className={`nav-link ${forecastType === 'overall' ? 'active' : ''}`}
-                                                    onClick={() => setForecastType('overall')}
-                                                >
-                                                    Overall Materials
-                                                </button>
-                                            </li>
-                                        </ul>
-
                                         {/* Alkansya Materials Forecast */}
-                                        {forecastType === 'alkansya' && (
-                                            <div>
-                                                {alkansyaForecast ? (
+                                        {(forecastFilter === 'all' || forecastFilter === 'alkansya') && alkansyaForecast && (
+                                            <div className="mb-5">
+                                                <h6 className="mb-3 d-flex align-items-center text-success">
+                                                    <i className="fas fa-box me-2"></i>
+                                                    Alkansya Materials Forecast (Based on Daily Output)
+                                                </h6>
                                                     <div>
                                                         <div className="row mb-4">
                                                             <div className="col-md-3">
@@ -1170,20 +1884,17 @@ const EnhancedInventoryReports = () => {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                ) : (
-                                                    <div className="text-center py-5">
-                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                                        <h5 className="text-muted">No Alkansya forecast data available</h5>
-                                                        <p className="text-muted">Alkansya production data is needed to generate material usage forecasts</p>
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
 
                                         {/* Made-to-Order Forecast */}
-                                        {forecastType === 'made-to-order' && (
-                                            <div>
-                                                {madeToOrderForecast ? (
+                                        {(forecastFilter === 'all' || forecastFilter === 'made_to_order') && madeToOrderForecast && (
+                                            <div className="mb-5">
+                                                <h6 className="mb-3 d-flex align-items-center text-info">
+                                                    <i className="fas fa-tools me-2"></i>
+                                                    Made-to-Order Materials Forecast (Based on Order History)
+                                                </h6>
+                                                {madeToOrderForecast && (
                                                     <div>
                                                         <div className="row mb-4">
                                                             <div className="col-md-3">
@@ -1299,77 +2010,99 @@ const EnhancedInventoryReports = () => {
                                                             </div>
                                                         </div>
                                                     </div>
-                                                ) : (
-                                                    <div className="text-center py-5">
-                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                                        <h5 className="text-muted">No made-to-order forecast data available</h5>
-                                                        <p className="text-muted">Order data for made-to-order products is needed to generate material usage forecasts</p>
-                                                    </div>
                                                 )}
                                             </div>
                                         )}
 
-                                        {/* Overall Materials Forecast */}
-                                        {forecastType === 'overall' && (
-                                            <div>
-                                                {overallForecast ? (
-                                                    <div>
+                                        {/* Empty state when no forecast data is available */}
+                                        {!alkansyaForecast && forecastFilter === 'alkansya' && (
+                                                    <div className="text-center py-5">
+                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body py-5">
+                                                        <i className="fas fa-box fa-3x text-muted mb-3"></i>
+                                                        <h5 className="text-muted">No Alkansya Forecast Data</h5>
+                                                        <p className="text-muted">Alkansya production data is needed to generate material usage forecasts</p>
+                                                    </div>
+                                                </div>
+                                                    </div>
+                                                )}
+
+                                        {!madeToOrderForecast && forecastFilter === 'made_to_order' && (
+                                            <div className="text-center py-5">
+                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body py-5">
+                                                        <i className="fas fa-tools fa-3x text-muted mb-3"></i>
+                                                        <h5 className="text-muted">No Made-to-Order Forecast Data</h5>
+                                                        <p className="text-muted">Order data for made-to-order products is needed to generate material usage forecasts</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Overall Forecast Summary - Only shown when viewing all */}
+                                        {forecastFilter === 'all' && overallForecast && (
+                                            <div className="mt-4">
+                                                <h6 className="mb-3 d-flex align-items-center text-primary">
+                                                    <i className="fas fa-chart-bar me-2"></i>
+                                                    Overall Forecast Summary
+                                                </h6>
                                                         <div className="row mb-4">
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Total Materials</h6>
-                                                                        <h4 className="text-primary">{overallForecast.summary.total_materials}</h4>
+                                                                <h6 className="card-title text-muted mb-2">Total Materials</h6>
+                                                                <h4 className="text-primary mb-0">{overallForecast.summary.total_materials}</h4>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Need Reorder</h6>
-                                                                        <h4 className="text-warning">{overallForecast.summary.materials_needing_reorder}</h4>
+                                                                <h6 className="card-title text-muted mb-2">Need Reorder</h6>
+                                                                <h4 className="text-warning mb-0">{overallForecast.summary.materials_needing_reorder}</h4>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Critical (≤7 days)</h6>
-                                                                        <h4 className="text-danger">{overallForecast.summary.critical_materials}</h4>
+                                                                <h6 className="card-title text-muted mb-2">Critical (≤7 days)</h6>
+                                                                <h4 className="text-danger mb-0">{overallForecast.summary.critical_materials}</h4>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">High Usage</h6>
-                                                                        <h4 className="text-info">{overallForecast.summary.high_usage_materials}</h4>
+                                                                <h6 className="card-title text-muted mb-2">High Usage</h6>
+                                                                <h4 className="text-info mb-0">{overallForecast.summary.high_usage_materials}</h4>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Total Value</h6>
-                                                                        <h4 className="text-success">₱{overallForecast.summary.total_inventory_value.toLocaleString()}</h4>
+                                                                <h6 className="card-title text-muted mb-2">Total Value</h6>
+                                                                <h6 className="text-success mb-0">₱{overallForecast.summary.total_inventory_value.toLocaleString()}</h6>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-2">
-                                                                <div className="card bg-light">
+                                                        <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Avg Days Left</h6>
-                                                                        <h4 className="text-secondary">{Math.round(overallForecast.summary.avg_days_until_stockout)}</h4>
+                                                                <h6 className="card-title text-muted mb-2">Avg Days Left</h6>
+                                                                <h4 className="text-secondary mb-0">{Math.round(overallForecast.summary.avg_days_until_stockout)}</h4>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         </div>
 
+                                                {/* Overall forecast chart and critical materials */}
                                                         <div className="row">
                                                             <div className="col-md-8">
-                                                                <div className="card">
-                                                                    <div className="card-header">
-                                                                        <h6 className="mb-0">Daily Usage Forecast</h6>
+                                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                            <div className="card-header bg-white border-0">
+                                                                <h6 className="mb-0">Daily Usage Forecast (Combined)</h6>
                                                                     </div>
                                                                     <div className="card-body">
                                                                         <ResponsiveContainer width="100%" height={300}>
@@ -1380,20 +2113,20 @@ const EnhancedInventoryReports = () => {
                                                                                 <Tooltip />
                                                                                 <Legend />
                                                                                 <Line type="monotone" dataKey="predicted_total_usage" stroke={colors.primary} strokeWidth={2} name="Predicted Total Usage" />
-                                                                                <Line type="monotone" dataKey="critical_materials_count" stroke={colors.danger} strokeWidth={2} name="Critical Materials Count" />
+                                                                        <Line type="monotone" dataKey="critical_materials_count" stroke={colors.danger} strokeWidth={2} name="Critical Materials" />
                                                                             </LineChart>
                                                                         </ResponsiveContainer>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="col-md-4">
-                                                                <div className="card">
-                                                                    <div className="card-header">
-                                                                        <h6 className="mb-0">Critical Materials</h6>
+                                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                            <div className="card-header bg-white border-0">
+                                                                <h6 className="mb-0">Critical Materials (≤14 days)</h6>
                                                                     </div>
                                                                     <div className="card-body">
                                                                         <div className="table-responsive" style={{ maxHeight: '300px' }}>
-                                                                            <table className="table table-sm">
+                                                                    <table className="table table-sm table-hover">
                                                                                 <thead>
                                                                                     <tr>
                                                                                         <th>Material</th>
@@ -1411,12 +2144,12 @@ const EnhancedInventoryReports = () => {
                                                                                                 {material.material_name}
                                                                                             </td>
                                                                                             <td>
-                                                                                                <span className={`badge ${material.days_until_stockout <= 7 ? 'bg-danger' : 'bg-warning'}`}>
+                                                                                        <span className={`badge ${material.days_until_stockout <= 7 ? 'bg-danger' : 'bg-warning'}`} style={{ borderRadius: '8px' }}>
                                                                                                     {material.days_until_stockout}
                                                                                                 </span>
                                                                                             </td>
                                                                                             <td>
-                                                                                                <span className={`badge ${material.usage_category === 'high' ? 'bg-danger' : material.usage_category === 'medium' ? 'bg-warning' : 'bg-success'}`}>
+                                                                                        <span className={`badge ${material.usage_category === 'high' ? 'bg-danger' : material.usage_category === 'medium' ? 'bg-warning' : 'bg-success'}`} style={{ borderRadius: '8px' }}>
                                                                                                     {material.usage_category}
                                                                                                 </span>
                                                                                             </td>
@@ -1429,14 +2162,6 @@ const EnhancedInventoryReports = () => {
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center py-5">
-                                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                                        <h5 className="text-muted">No overall forecast data available</h5>
-                                                        <p className="text-muted">Material usage data is needed to generate comprehensive forecasts</p>
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1451,12 +2176,12 @@ const EnhancedInventoryReports = () => {
             {activeTab === 'replenishment' && (
                 <div className="row">
                     <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <div className="d-flex justify-content-between align-items-center">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <div className="card-header bg-white border-0" style={{ borderRadius: '12px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h5 className="mb-0 d-flex align-items-center">
                                         <FaTruck className="me-2" style={{ color: colors.warning }} />
-                                        Enhanced Replenishment Schedule
+                                        Inventory Replenishment Needs & Schedule
                                         {tabLoadingStates.replenishment && (
                                             <div className="spinner-border spinner-border-sm ms-2" role="status">
                                                 <span className="visually-hidden">Loading...</span>
@@ -1468,7 +2193,7 @@ const EnhancedInventoryReports = () => {
                                             className="form-select form-select-sm" 
                                             value={windowDays}
                                             onChange={(e) => setWindowDays(parseInt(e.target.value))}
-                                            style={{ width: '120px' }}
+                                            style={{ width: '120px', borderRadius: '8px' }}
                                         >
                                             <option value={7}>7 Days</option>
                                             <option value={14}>14 Days</option>
@@ -1479,11 +2204,40 @@ const EnhancedInventoryReports = () => {
                                         <button 
                                             className="btn btn-outline-warning btn-sm"
                                             onClick={() => fetchEnhancedReplenishmentData()}
+                                            style={{ borderRadius: '8px' }}
                                         >
                                             <FaSync className="me-1" />
                                             Refresh
                                         </button>
                                     </div>
+                                </div>
+                                
+                                {/* Filter Buttons */}
+                                <div className="d-flex gap-2 mb-3">
+                                    <button 
+                                        className={`btn ${replenishmentFilter === 'all' ? 'btn-warning' : 'btn-outline-warning'}`}
+                                        onClick={() => setReplenishmentFilter('all')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-list me-2"></i>
+                                        All Materials
+                                    </button>
+                                    <button 
+                                        className={`btn ${replenishmentFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                                        onClick={() => setReplenishmentFilter('alkansya')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-box me-2"></i>
+                                        Alkansya Materials
+                                    </button>
+                                    <button 
+                                        className={`btn ${replenishmentFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                                        onClick={() => setReplenishmentFilter('made_to_order')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-tools me-2"></i>
+                                        Made to Order Materials
+                                    </button>
                                 </div>
                             </div>
                             <div className="card-body">
@@ -1527,6 +2281,211 @@ const EnhancedInventoryReports = () => {
                                         </div>
                                     ) : (
                                         <div>
+                                        {/* Alkansya Replenishment Section */}
+                                        {(replenishmentFilter === 'all' || replenishmentFilter === 'alkansya') && enhancedReplenishment?.alkansya_replenishment && (
+                                            <div className="mb-5">
+                                                <h6 className="mb-3 d-flex align-items-center text-success">
+                                                    <i className="fas fa-box me-2"></i>
+                                                    Alkansya Materials Replenishment (Based on Daily Output)
+                                                </h6>
+                                                <div className="card border-0 shadow-sm mb-3" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body">
+                                                        <div className="row mb-3">
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Materials Need Reorder</h6>
+                                                                        <h4 className="text-danger mb-0">{enhancedReplenishment.alkansya_replenishment.materials_needing_reorder || 0}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Critical Materials</h6>
+                                                                        <h4 className="text-warning mb-0">{enhancedReplenishment.alkansya_replenishment.critical_materials || 0}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Reorder Value</h6>
+                                                                        <h6 className="text-success mb-0">₱{(enhancedReplenishment.alkansya_replenishment.total_reorder_value || 0).toLocaleString()}</h6>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Avg Lead Time</h6>
+                                                                        <h4 className="text-info mb-0">{Math.round(enhancedReplenishment.alkansya_replenishment.avg_lead_time || 0)} days</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {enhancedReplenishment.alkansya_replenishment.schedule && enhancedReplenishment.alkansya_replenishment.schedule.length > 0 && (
+                                                            <div className="table-responsive">
+                                                                <table className="table table-hover">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Material</th>
+                                                                            <th>Current Stock</th>
+                                                                            <th>Reorder Point</th>
+                                                                            <th>Recommended Qty</th>
+                                                                            <th>Priority</th>
+                                                                            <th>Status</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {enhancedReplenishment.alkansya_replenishment.schedule.map((item, index) => (
+                                                                            <tr key={index}>
+                                                                                <td>{item.material_name}</td>
+                                                                                <td>{item.current_stock}</td>
+                                                                                <td>{item.reorder_point}</td>
+                                                                                <td className="text-success fw-bold">{item.recommended_quantity}</td>
+                                                                                <td>
+                                                                                    <span className={`badge ${item.priority === 'critical' ? 'bg-danger' : item.priority === 'high' ? 'bg-warning' : 'bg-info'}`} style={{ borderRadius: '8px' }}>
+                                                                                        {item.priority}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td>
+                                                                                    <span className={`badge ${item.needs_reorder ? 'bg-warning' : 'bg-success'}`} style={{ borderRadius: '8px' }}>
+                                                                                        {item.needs_reorder ? 'Need Reorder' : 'OK'}
+                                                                                    </span>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Made to Order Replenishment Section */}
+                                        {(replenishmentFilter === 'all' || replenishmentFilter === 'made_to_order') && enhancedReplenishment?.made_to_order_replenishment && (
+                                            <div className="mb-5">
+                                                <h6 className="mb-3 d-flex align-items-center text-info">
+                                                    <i className="fas fa-tools me-2"></i>
+                                                    Made to Order Materials Replenishment (Based on Accepted Orders)
+                                                </h6>
+                                                <div className="card border-0 shadow-sm mb-3" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body">
+                                                        <div className="row mb-3">
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Materials Need Reorder</h6>
+                                                                        <h4 className="text-danger mb-0">{enhancedReplenishment.made_to_order_replenishment.materials_needing_reorder || 0}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Critical Materials</h6>
+                                                                        <h4 className="text-warning mb-0">{enhancedReplenishment.made_to_order_replenishment.critical_materials || 0}</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Reorder Value</h6>
+                                                                        <h6 className="text-success mb-0">₱{(enhancedReplenishment.made_to_order_replenishment.total_reorder_value || 0).toLocaleString()}</h6>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">Avg Lead Time</h6>
+                                                                        <h4 className="text-info mb-0">{Math.round(enhancedReplenishment.made_to_order_replenishment.avg_lead_time || 0)} days</h4>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {enhancedReplenishment.made_to_order_replenishment.schedule && enhancedReplenishment.made_to_order_replenishment.schedule.length > 0 && (
+                                                            <div className="table-responsive">
+                                                                <table className="table table-hover">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>Material</th>
+                                                                            <th>Current Stock</th>
+                                                                            <th>Reorder Point</th>
+                                                                            <th>Recommended Qty</th>
+                                                                            <th>Priority</th>
+                                                                            <th>Status</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {enhancedReplenishment.made_to_order_replenishment.schedule.map((item, index) => (
+                                                                            <tr key={index}>
+                                                                                <td>{item.material_name}</td>
+                                                                                <td>{item.current_stock}</td>
+                                                                                <td>{item.reorder_point}</td>
+                                                                                <td className="text-success fw-bold">{item.recommended_quantity}</td>
+                                                                                <td>
+                                                                                    <span className={`badge ${item.priority === 'critical' ? 'bg-danger' : item.priority === 'high' ? 'bg-warning' : 'bg-info'}`} style={{ borderRadius: '8px' }}>
+                                                                                        {item.priority}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td>
+                                                                                    <span className={`badge ${item.needs_reorder ? 'bg-warning' : 'bg-success'}`} style={{ borderRadius: '8px' }}>
+                                                                                        {item.needs_reorder ? 'Need Reorder' : 'OK'}
+                                                                                    </span>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Empty State Messages */}
+                                        {!enhancedReplenishment?.alkansya_replenishment && replenishmentFilter === 'alkansya' && (
+                                            <div className="text-center py-5 mb-4">
+                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body py-5">
+                                                        <i className="fas fa-box fa-3x text-muted mb-3"></i>
+                                                        <h5 className="text-muted">No Alkansya Replenishment Data</h5>
+                                                        <p className="text-muted">Alkansya production data is needed to generate replenishment schedules based on daily output</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!enhancedReplenishment?.made_to_order_replenishment && replenishmentFilter === 'made_to_order' && (
+                                            <div className="text-center py-5 mb-4">
+                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body py-5">
+                                                        <i className="fas fa-tools fa-3x text-muted mb-3"></i>
+                                                        <h5 className="text-muted">No Made-to-Order Replenishment Data</h5>
+                                                        <p className="text-muted">Accepted order data is needed to generate replenishment schedules for made-to-order materials</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!enhancedReplenishment?.alkansya_replenishment && !enhancedReplenishment?.made_to_order_replenishment && replenishmentFilter === 'all' && (
+                                            <div className="text-center py-5 mb-4">
+                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body py-5">
+                                                        <i className="fas fa-truck fa-3x text-muted mb-3"></i>
+                                                        <h5 className="text-muted">No Replenishment Data Available</h5>
+                                                        <p className="text-muted">Replenishment data will appear here once production and order data is available</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* View Tabs */}
                                         <ul className="nav nav-tabs mb-4" id="replenishmentTabs" role="tablist">
                                             <li className="nav-item" role="presentation">
@@ -1945,12 +2904,12 @@ const EnhancedInventoryReports = () => {
             {activeTab === 'transactions' && (
                 <div className="row">
                     <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <div className="d-flex justify-content-between align-items-center">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <div className="card-header bg-white border-0" style={{ borderRadius: '12px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-3">
                                     <h5 className="mb-0 d-flex align-items-center">
                                         <FaHistory className="me-2" style={{ color: colors.dark }} />
-                                        Enhanced Inventory Transactions
+                                        Inventory Transactions & Activity Log
                                         {tabLoadingStates.transactions && (
                                             <div className="spinner-border spinner-border-sm ms-2" role="status">
                                                 <span className="visually-hidden">Loading...</span>
@@ -1960,23 +2919,61 @@ const EnhancedInventoryReports = () => {
                                     <div className="d-flex gap-2">
                                         <select 
                                             className="form-select form-select-sm" 
-                                            value={transactionFilter}
-                                            onChange={(e) => setTransactionFilter(e.target.value)}
-                                            style={{ width: '150px' }}
+                                            value={windowDays}
+                                            onChange={(e) => setWindowDays(parseInt(e.target.value))}
+                                            style={{ width: '120px', borderRadius: '8px' }}
                                         >
-                                            <option value="all">All Transactions</option>
-                                            <option value="alkansya">Alkansya</option>
-                                            <option value="made_to_order">Made-to-Order</option>
-                                            <option value="other">Other</option>
+                                            <option value={7}>7 Days</option>
+                                            <option value={14}>14 Days</option>
+                                            <option value={30}>30 Days</option>
+                                            <option value={60}>60 Days</option>
+                                            <option value={90}>90 Days</option>
                                         </select>
                                         <button 
                                             className="btn btn-outline-dark btn-sm"
                                             onClick={() => fetchEnhancedTransactionsData()}
+                                            style={{ borderRadius: '8px' }}
                                         >
                                             <FaSync className="me-1" />
                                             Refresh
                                         </button>
                                     </div>
+                                </div>
+                                
+                                {/* Filter Buttons */}
+                                <div className="d-flex gap-2 mb-3">
+                                    <button 
+                                        className={`btn ${transactionFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'}`}
+                                        onClick={() => setTransactionFilter('all')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-list me-2"></i>
+                                        All Transactions
+                                    </button>
+                                    <button 
+                                        className={`btn ${transactionFilter === 'alkansya' ? 'btn-success' : 'btn-outline-success'}`}
+                                        onClick={() => setTransactionFilter('alkansya')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-box me-2"></i>
+                                        Alkansya
+                                    </button>
+                                    <button 
+                                        className={`btn ${transactionFilter === 'made_to_order' ? 'btn-info' : 'btn-outline-info'}`}
+                                        onClick={() => setTransactionFilter('made_to_order')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-tools me-2"></i>
+                                        Made to Order
+                                    </button>
+                                    <button 
+                                        className={`btn ${transactionFilter === 'other' ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                        onClick={() => setTransactionFilter('other')}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <i className="fas fa-ellipsis-h me-2"></i>
+                                        Other
+                                    </button>
                                 </div>
                             </div>
                             <div className="card-body">
@@ -2051,79 +3048,92 @@ const EnhancedInventoryReports = () => {
                                         {/* Transaction List */}
                                         {transactionView === 'list' && (
                                             <div>
+                                                <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-header bg-white border-bottom">
+                                                        <h6 className="mb-0">
+                                                            <i className="fas fa-history me-2"></i>
+                                                            All Inventory Transactions
+                                                        </h6>
+                                                    </div>
+                                                    <div className="card-body p-0">
                                                 <div className="table-responsive">
-                                                    <table className="table table-hover">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Date/Time</th>
-                                                                <th>Type</th>
-                                                                <th>Category</th>
-                                                                <th>Material</th>
-                                                                <th>Product</th>
-                                                                <th>Quantity</th>
-                                                                <th>Unit Cost</th>
-                                                                <th>Total Cost</th>
-                                                                <th>Reference</th>
-                                                                <th>Status</th>
+                                                            <table className="table table-hover mb-0">
+                                                                <thead className="table-light">
+                                                                    <tr>
+                                                                        <th style={{ padding: '1rem' }}>Date & Time</th>
+                                                                        <th style={{ padding: '1rem' }}>Type</th>
+                                                                        <th style={{ padding: '1rem' }}>Category</th>
+                                                                        <th style={{ padding: '1rem' }}>Material</th>
+                                                                        <th style={{ padding: '1rem' }}>Product</th>
+                                                                        <th style={{ padding: '1rem' }}>Quantity</th>
+                                                                        <th style={{ padding: '1rem' }}>Unit Cost</th>
+                                                                        <th style={{ padding: '1rem' }}>Total Cost</th>
+                                                                        <th style={{ padding: '1rem' }}>Reference</th>
+                                                                        <th style={{ padding: '1rem' }}>Status</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
                                                             {enhancedTransactions.transactions.map((transaction) => (
-                                                                <tr key={transaction.id}>
-                                                                    <td>
+                                                                        <tr key={transaction.id} style={{ cursor: 'pointer' }}>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <div>
                                                                             <strong>{transaction.date}</strong>
                                                                             <br />
                                                                             <small className="text-muted">{transaction.time}</small>
                                                                         </div>
                                                                     </td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <span className={`badge ${
                                                                             transaction.direction === 'in' ? 'bg-success' : 'bg-danger'
-                                                                        }`}>
+                                                                                }`} style={{ borderRadius: '8px' }}>
                                                                             {transaction.direction_label}
                                                                         </span>
                                                                     </td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <span className={`badge ${
-                                                                            transaction.category === 'alkansya' ? 'bg-primary' :
+                                                                                    transaction.category === 'alkansya' ? 'bg-success' :
                                                                             transaction.category === 'made_to_order' ? 'bg-info' :
                                                                             'bg-secondary'
-                                                                        }`}>
+                                                                                }`} style={{ borderRadius: '8px' }}>
                                                                             {transaction.category === 'alkansya' ? 'Alkansya' :
                                                                              transaction.category === 'made_to_order' ? 'Made-to-Order' : 'Other'}
                                                                         </span>
                                                                     </td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <div>
-                                                                            <strong>{transaction.material_name}</strong>
-                                                                            <br />
-                                                                            <small className="text-muted">{transaction.material_code}</small>
+                                                                                    <strong className="d-block">{transaction.material_name}</strong>
+                                                                                    <small className="text-muted d-block">{transaction.material_code}</small>
                                                                         </div>
                                                                     </td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <span className="text-truncate d-inline-block" style={{ maxWidth: '120px' }} title={transaction.product_name}>
-                                                                            {transaction.product_name}
+                                                                                    {transaction.product_name || '-'}
                                                                         </span>
                                                                     </td>
-                                                                    <td className={transaction.direction === 'in' ? 'text-success' : 'text-danger'}>
+                                                                            <td style={{ padding: '1rem' }} className={transaction.direction === 'in' ? 'text-success' : 'text-danger'}>
                                                                         <strong>{transaction.quantity_display}</strong>
                                                                         <br />
                                                                         <small className="text-muted">{transaction.unit}</small>
                                                                     </td>
-                                                                    <td>₱{transaction.unit_cost?.toLocaleString() || 'N/A'}</td>
-                                                                    <td>₱{transaction.total_cost?.toLocaleString() || 'N/A'}</td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
+                                                                                <div className="d-flex align-items-center">
+                                                                                    ₱{transaction.unit_cost?.toLocaleString() || 'N/A'}
+                                                                                </div>
+                                                                            </td>
+                                                                            <td style={{ padding: '1rem' }}>
+                                                                                <strong>₱{transaction.total_cost?.toLocaleString() || 'N/A'}</strong>
+                                                                            </td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <span className="text-truncate d-inline-block" style={{ maxWidth: '150px' }} title={transaction.reference}>
                                                                             {transaction.reference}
                                                                         </span>
                                                                     </td>
-                                                                    <td>
+                                                                            <td style={{ padding: '1rem' }}>
                                                                         <span className={`badge ${
                                                                             transaction.status === 'completed' ? 'bg-success' :
                                                                             transaction.status === 'pending' ? 'bg-warning' :
                                                                             'bg-secondary'
-                                                                        }`}>
+                                                                                }`} style={{ borderRadius: '8px' }}>
                                                                             {transaction.status}
                                                                         </span>
                                                                     </td>
@@ -2131,6 +3141,8 @@ const EnhancedInventoryReports = () => {
                                                             ))}
                                                         </tbody>
                                                     </table>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -2139,82 +3151,94 @@ const EnhancedInventoryReports = () => {
                                         {transactionView === 'summary' && (
                                             <div>
                                                 <div className="row mb-4">
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Total Transactions</h6>
-                                                                <h4 className="text-primary">{enhancedTransactions.summary.total_transactions}</h4>
+                                                                <i className="fas fa-shopping-cart fa-2x text-primary mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Total Transactions</h6>
+                                                                <h4 className="text-primary mb-0">{enhancedTransactions.summary.total_transactions}</h4>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Total Value</h6>
-                                                                <h4 className="text-success">₱{enhancedTransactions.summary.total_value.toLocaleString()}</h4>
+                                                                <i className="fas fa-peso-sign fa-2x text-success mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Total Value</h6>
+                                                                <h5 className="text-success mb-0">₱{enhancedTransactions.summary.total_value.toLocaleString()}</h5>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Inbound</h6>
-                                                                <h4 className="text-success">{enhancedTransactions.summary.inbound_transactions}</h4>
+                                                                <i className="fas fa-arrow-down fa-2x text-success mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Inbound</h6>
+                                                                <h4 className="text-success mb-0">{enhancedTransactions.summary.inbound_transactions}</h4>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Outbound</h6>
-                                                                <h4 className="text-danger">{enhancedTransactions.summary.outbound_transactions}</h4>
+                                                                <i className="fas fa-arrow-up fa-2x text-danger mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Outbound</h6>
+                                                                <h4 className="text-danger mb-0">{enhancedTransactions.summary.outbound_transactions}</h4>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Materials</h6>
-                                                                <h4 className="text-info">{enhancedTransactions.summary.unique_materials}</h4>
+                                                                <i className="fas fa-boxes fa-2x text-info mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Materials</h6>
+                                                                <h4 className="text-info mb-0">{enhancedTransactions.summary.unique_materials}</h4>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-2">
-                                                        <div className="card bg-light">
+                                                    <div className="col-lg-2 col-md-4 col-sm-6 mb-3">
+                                                        <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
                                                             <div className="card-body text-center">
-                                                                <h6 className="card-title text-muted">Total Qty</h6>
-                                                                <h4 className="text-secondary">{enhancedTransactions.summary.total_quantity.toLocaleString()}</h4>
+                                                                <i className="fas fa-layer-group fa-2x text-secondary mb-2"></i>
+                                                                <h6 className="card-title text-muted mb-2">Total Qty</h6>
+                                                                <h4 className="text-secondary mb-0">{enhancedTransactions.summary.total_quantity.toLocaleString()}</h4>
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </div>
 
                                                 <div className="row">
-                                                    <div className="col-md-6">
-                                                        <div className="card">
-                                                            <div className="card-header">
-                                                                <h6 className="mb-0">Transaction Categories</h6>
+                                                    <div className="col-md-6 mb-4">
+                                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', height: '100%' }}>
+                                                            <div className="card-header bg-white border-bottom">
+                                                                <h6 className="mb-0">
+                                                                    <i className="fas fa-tags me-2"></i>
+                                                                    Transaction Categories
+                                                                </h6>
                                                             </div>
                                                             <div className="card-body">
-                                                                <div className="d-flex justify-content-between mb-2">
-                                                                    <span>Alkansya</span>
-                                                                    <span className="badge bg-primary">{enhancedTransactions.summary.alkansya_transactions}</span>
+                                                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                                                    <span className="fw-bold">Alkansya</span>
+                                                                    <span className="badge bg-success" style={{ borderRadius: '8px', fontSize: '1rem', padding: '0.5rem 1rem' }}>{enhancedTransactions.summary.alkansya_transactions}</span>
                                                                 </div>
-                                                                <div className="d-flex justify-content-between mb-2">
-                                                                    <span>Made-to-Order</span>
-                                                                    <span className="badge bg-info">{enhancedTransactions.summary.made_to_order_transactions}</span>
+                                                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                                                    <span className="fw-bold">Made-to-Order</span>
+                                                                    <span className="badge bg-info" style={{ borderRadius: '8px', fontSize: '1rem', padding: '0.5rem 1rem' }}>{enhancedTransactions.summary.made_to_order_transactions}</span>
                                                                 </div>
-                                                                <div className="d-flex justify-content-between mb-2">
-                                                                    <span>Other</span>
-                                                                    <span className="badge bg-secondary">{enhancedTransactions.summary.other_transactions}</span>
+                                                                <div className="d-flex justify-content-between align-items-center mb-0">
+                                                                    <span className="fw-bold">Other</span>
+                                                                    <span className="badge bg-secondary" style={{ borderRadius: '8px', fontSize: '1rem', padding: '0.5rem 1rem' }}>{enhancedTransactions.summary.other_transactions}</span>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="col-md-6">
-                                                        <div className="card">
-                                                            <div className="card-header">
-                                                                <h6 className="mb-0">Daily Transaction Trends</h6>
+                                                    <div className="col-md-6 mb-4">
+                                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', height: '100%' }}>
+                                                            <div className="card-header bg-white border-bottom">
+                                                                <h6 className="mb-0">
+                                                                    <i className="fas fa-chart-line me-2"></i>
+                                                                    Daily Transaction Trends
+                                                                </h6>
                                                             </div>
                                                             <div className="card-body">
                                                                 <ResponsiveContainer width="100%" height={200}>
@@ -2344,39 +3368,334 @@ const EnhancedInventoryReports = () => {
             {activeTab === 'alerts' && (
                 <div className="row">
                     <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                            <div className="card-header bg-white border-0" style={{ borderRadius: '12px' }}>
+                                <div className="d-flex justify-content-between align-items-center mb-3">
                                 <h5 className="mb-0 d-flex align-items-center">
                                     <FaExclamationTriangle className="me-2" style={{ color: colors.danger }} />
-                                    Real-Time Alerts
+                                        Inventory Alerts & Warnings
+                                        {tabLoadingStates.alerts && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
                                 </h5>
+                                    <button 
+                                        className="btn btn-outline-danger btn-sm"
+                                        onClick={() => {
+                                            setTabLoadingStates(prev => ({ ...prev, alerts: true }));
+                                            loadTabData('alerts');
+                                        }}
+                                        style={{ borderRadius: '8px' }}
+                                    >
+                                        <FaSync className="me-1" />
+                                        Refresh Alerts
+                                    </button>
+                                </div>
                             </div>
                             <div className="card-body">
-                                {realTimeAlerts?.alerts && realTimeAlerts.alerts.length > 0 ? (
-                                    realTimeAlerts.alerts.map((alert) => (
-                                    <div key={alert.id} className={`alert ${
-                                        alert.severity === 'critical' ? 'alert-danger' :
-                                        alert.severity === 'high' ? 'alert-warning' :
-                                        'alert-info'
-                                    } d-flex align-items-center`}>
-                                        <FaExclamationTriangle className="me-3" />
-                                        <div className="flex-grow-1">
-                                            <strong>{alert.material}</strong> - {alert.message}
-                                            <br />
-                                            <small>Current Stock: {alert.current_stock} | Reorder Point: {alert.reorder_point}</small>
+                                {tabLoadingStates.alerts ? (
+                                    <div className="text-center py-5">
+                                        <div className="spinner-border text-danger mb-3" role="status">
+                                            <span className="visually-hidden">Loading...</span>
                                         </div>
-                                        <small className="text-muted">
-                                            {new Date(alert.timestamp).toLocaleString()}
-                                        </small>
+                                        <h5>Loading Inventory Alerts...</h5>
+                                        <p className="text-muted">Checking all material levels and stock status</p>
                                     </div>
-                                    ))
+                                ) : realTimeAlerts?.alerts && realTimeAlerts.alerts.length > 0 ? (
+                                    <div>
+                                        {/* Summary Statistics */}
+                                        <div className="row mb-4">
+                                            <div className="col-lg-3 col-md-6 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', borderLeft: '4px solid #dc3545' }}>
+                                                    <div className="card-body">
+                                                        <div className="d-flex align-items-center">
+                                        <div className="flex-grow-1">
+                                                                <h6 className="text-muted mb-1">Critical Alerts</h6>
+                                                                <h4 className="text-danger mb-0">
+                                                                    {realTimeAlerts.alerts.filter(a => a.severity === 'critical').length}
+                                                                </h4>
+                                        </div>
+                                                            <i className="fas fa-exclamation-circle fa-3x text-danger"></i>
+                                    </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="col-lg-3 col-md-6 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', borderLeft: '4px solid #ffc107' }}>
+                                                    <div className="card-body">
+                                                        <div className="d-flex align-items-center">
+                                                            <div className="flex-grow-1">
+                                                                <h6 className="text-muted mb-1">High Priority</h6>
+                                                                <h4 className="text-warning mb-0">
+                                                                    {realTimeAlerts.alerts.filter(a => a.severity === 'high').length}
+                                                                </h4>
+                                                            </div>
+                                                            <i className="fas fa-exclamation-triangle fa-3x text-warning"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="col-lg-3 col-md-6 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', borderLeft: '4px solid #17a2b8' }}>
+                                                    <div className="card-body">
+                                                        <div className="d-flex align-items-center">
+                                                            <div className="flex-grow-1">
+                                                                <h6 className="text-muted mb-1">Medium Priority</h6>
+                                                                <h4 className="text-info mb-0">
+                                                                    {realTimeAlerts.alerts.filter(a => a.severity === 'medium').length}
+                                                                </h4>
+                                                            </div>
+                                                            <i className="fas fa-info-circle fa-3x text-info"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="col-lg-3 col-md-6 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', borderLeft: '4px solid #6c757d' }}>
+                                                    <div className="card-body">
+                                                        <div className="d-flex align-items-center">
+                                                            <div className="flex-grow-1">
+                                                                <h6 className="text-muted mb-1">Total Alerts</h6>
+                                                                <h4 className="text-secondary mb-0">
+                                                                    {realTimeAlerts.alerts.length}
+                                                                </h4>
+                                                            </div>
+                                                            <i className="fas fa-bell fa-3x text-secondary"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Alert List */}
+                                        <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+                                            <div className="card-header bg-white border-bottom">
+                                                <h6 className="mb-0">
+                                                    <i className="fas fa-list-ul me-2"></i>
+                                                    Active Inventory Alerts
+                                                </h6>
+                                            </div>
+                                            <div className="card-body p-0">
+                                                {realTimeAlerts.alerts.map((alert) => (
+                                                    <div 
+                                                        key={alert.id} 
+                                                        className={`border-bottom p-4 ${
+                                                            alert.severity === 'critical' ? 'bg-light-danger' :
+                                                            alert.severity === 'high' ? 'bg-light-warning' :
+                                                            'bg-light-info'
+                                                        }`}
+                                                        style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = alert.severity === 'critical' ? '#f8d7da' : alert.severity === 'high' ? '#fff3cd' : '#d1ecf1'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = alert.severity === 'critical' ? '#f8d7da' : alert.severity === 'high' ? '#fff3cd' : '#d1ecf1'}
+                                                    >
+                                                        <div className="d-flex align-items-start">
+                                                            <div className="me-3 mt-1">
+                                                                {alert.severity === 'critical' && <FaExclamationTriangle className="text-danger" size={24} />}
+                                                                {alert.severity === 'high' && <FaExclamationTriangle className="text-warning" size={24} />}
+                                                                {alert.severity === 'medium' && <FaExclamationTriangle className="text-info" size={24} />}
+                                                            </div>
+                                                            <div className="flex-grow-1">
+                                                                <div className="d-flex justify-content-between align-items-start mb-2">
+                                                                    <div>
+                                                                        <strong className="d-block mb-1" style={{ fontSize: '1.1rem' }}>
+                                                                            {alert.material}
+                                                                        </strong>
+                                                                        <p className="text-muted mb-2" style={{ fontSize: '0.95rem' }}>
+                                                                            {alert.message}
+                                                                        </p>
+                                                                    </div>
+                                                                    <span className={`badge ${
+                                                                        alert.severity === 'critical' ? 'bg-danger' :
+                                                                        alert.severity === 'high' ? 'bg-warning' :
+                                                                        'bg-info'
+                                                                    }`} style={{ borderRadius: '8px', fontSize: '0.9rem' }}>
+                                                                        {alert.severity.toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="row">
+                                                                    <div className="col-md-3 mb-2">
+                                                                        <div className="d-flex align-items-center">
+                                                                            <i className="fas fa-box text-muted me-2"></i>
+                                                                            <div>
+                                                                                <small className="text-muted d-block">Current Stock</small>
+                                                                                <strong className="text-danger">{alert.current_stock}</strong>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="col-md-3 mb-2">
+                                                                        <div className="d-flex align-items-center">
+                                                                            <i className="fas fa-flag text-muted me-2"></i>
+                                                                            <div>
+                                                                                <small className="text-muted d-block">Reorder Point</small>
+                                                                                <strong>{alert.reorder_point}</strong>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="col-md-3 mb-2">
+                                                                        <div className="d-flex align-items-center">
+                                                                            <i className="fas fa-shield-alt text-muted me-2"></i>
+                                                                            <div>
+                                                                                <small className="text-muted d-block">Safety Stock</small>
+                                                                                <strong>{alert.safety_stock || 'N/A'}</strong>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="col-md-3 mb-2">
+                                                                        <div className="d-flex align-items-center">
+                                                                            <i className="fas fa-clock text-muted me-2"></i>
+                                                                            <div>
+                                                                                <small className="text-muted d-block">Date/Time</small>
+                                                                                <strong className="text-muted">{new Date(alert.timestamp).toLocaleString()}</strong>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Recommendation Card */}
+                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', borderLeft: '4px solid #ffc107' }}>
+                                            <div className="card-header bg-light border-0">
+                                                <h6 className="mb-0">
+                                                    <i className="fas fa-lightbulb me-2 text-warning"></i>
+                                                    Recommended Actions
+                                                </h6>
+                                            </div>
+                                            <div className="card-body">
+                                                <ul className="mb-0">
+                                                    <li className="mb-2">
+                                                        <strong>Critical Materials:</strong> Order immediately to prevent stockout
+                                                    </li>
+                                                    <li className="mb-2">
+                                                        <strong>High Priority:</strong> Reorder within the next 2-3 days
+                                                    </li>
+                                                    <li>
+                                                        <strong>Medium Priority:</strong> Monitor closely and plan for restocking
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
                                 ) : (
                                     <div className="text-center py-5">
-                                        <FaExclamationTriangle className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">No alerts</h5>
-                                        <p className="text-muted">All inventory levels are within normal ranges</p>
+                                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                            <div className="card-body py-5">
+                                                <i className="fas fa-check-circle fa-4x text-success mb-3"></i>
+                                                <h5 className="text-success mb-2">All Clear!</h5>
+                                                <p className="text-muted mb-4">All inventory levels are within normal ranges</p>
+                                                <button 
+                                                    className="btn btn-outline-primary"
+                                                    onClick={() => {
+                                                        setTabLoadingStates(prev => ({ ...prev, alerts: true }));
+                                                        loadTabData('alerts');
+                                                    }}
+                                                    style={{ borderRadius: '8px' }}
+                                                >
+                                                    <FaSync className="me-2" />
+                                                    Refresh Alerts
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Report Preview Modal */}
+            {showPreviewModal && (
+                <div className="modal fade show" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+                    <div className="modal-dialog modal-xl">
+                        <div className="modal-content">
+                            <div className="modal-header">
+                                <h5 className="modal-title d-flex align-items-center">
+                                    <i className="fas fa-file-alt text-primary me-2"></i>
+                                    {previewTitle}
+                                </h5>
+                                <button 
+                                    type="button" 
+                                    className="btn-close" 
+                                    onClick={() => setShowPreviewModal(false)}
+                                ></button>
+                            </div>
+                            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                                {previewData && previewData.sections.map((section, sectionIndex) => (
+                                    <div key={sectionIndex} className="mb-4">
+                                        <h6 className="text-primary mb-3 border-bottom pb-2">
+                                            <i className="fas fa-chart-bar me-2"></i>
+                                            {section.title}
+                                        </h6>
+                                        
+                                        {section.type === 'table' ? (
+                                            <div className="table-responsive">
+                                                <table className="table table-striped table-hover">
+                                                    <thead className="table-dark">
+                                                        <tr>
+                                                            {section.headers.map((header, headerIndex) => (
+                                                                <th key={headerIndex}>{header}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {section.data.map((row, rowIndex) => (
+                                                            <tr key={rowIndex}>
+                                                                {row.map((cell, cellIndex) => (
+                                                                    <td key={cellIndex}>{cell}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="row">
+                                                {section.data.map((item, itemIndex) => (
+                                                    <div key={itemIndex} className="col-md-6 mb-3">
+                                                        <div className="card border-0 shadow-sm">
+                                                            <div className="card-body p-3">
+                                                                <div className="d-flex justify-content-between align-items-center">
+                                                                    <span className="text-muted fw-medium">{item.label}</span>
+                                                                    <span className="fw-bold text-primary fs-5">{item.value}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="modal-footer">
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={() => setShowPreviewModal(false)}
+                                >
+                                    <i className="fas fa-times me-2"></i>
+                                    Close
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        const reportType = previewTitle.includes('Stock Levels') ? 'stock' : 
+                                                         previewTitle.includes('Usage Trends') ? 'usage' :
+                                                         previewTitle.includes('Replenishment') ? 'replenishment' : 'full';
+                                        downloadReport(reportType);
+                                        setShowPreviewModal(false);
+                                    }}
+                                >
+                                    <i className="fas fa-download me-2"></i>
+                                    Download CSV
+                                </button>
                             </div>
                         </div>
                     </div>

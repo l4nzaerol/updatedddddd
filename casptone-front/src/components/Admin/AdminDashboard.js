@@ -27,9 +27,20 @@ const AdminDashboard = () => {
         const ordersResponse = await api.get('/orders');
         const orders = ordersResponse.data || [];
         
-        // Calculate order metrics
+        // Fetch productions to get accurate counts
+        let productionsResponse;
+        let productions = [];
+        try {
+          productionsResponse = await api.get('/productions');
+          productions = productionsResponse.data || [];
+        } catch (prodError) {
+          console.warn('Productions API not available:', prodError);
+        }
+        
+        // Calculate order metrics - only pending orders that haven't been accepted
         const pendingOrders = orders.filter(order => 
-          order.status === 'pending' || order.status === 'processing'
+          order.acceptance_status !== 'accepted' && 
+          (order.status === 'pending' || order.acceptance_status === 'pending')
         ).length;
         
         const completedOrders = orders.filter(order => 
@@ -40,12 +51,21 @@ const AdminDashboard = () => {
           .filter(order => order.payment_status === 'paid')
           .reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0);
         
+        // Calculate production metrics (only for table and chair, exclude alkansya)
+        const completedProductions = productions.filter(prod => 
+          prod.status === 'Completed' && prod.product_type !== 'alkansya'
+        ).length;
+        
+        const inProgressProductions = productions.filter(prod => 
+          prod.status === 'In Progress' && prod.product_type !== 'alkansya'
+        ).length;
+        
         orderData = {
           pending_orders: pendingOrders,
           completed_orders: completedOrders,
           total_sales_revenue: totalRevenue,
-          completed_productions: 0,
-          in_progress: 0
+          completed_productions: completedProductions,
+          in_progress: inProgressProductions
         };
       } catch (orderError) {
         console.warn('Order API not available, using zero values');

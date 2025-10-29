@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import AppLayout from "./Header";
+import AppLayoutWithProvider from "./Header";
 import AdminDashboard from "./Admin/AdminDashboard";
 import CustomerDashboard from "./Customers/CustomerDashboard";
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState({ username: "", role: "" });
+    const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
         const token = localStorage.getItem("token");
@@ -22,15 +23,15 @@ const Dashboard = () => {
     }, [navigate]);
 
     return (
-        <AppLayout>
+        <AppLayoutWithProvider searchTerm={searchTerm} setSearchTerm={setSearchTerm}>
             {user.role === "employee" ? (
                 <AdminDashboard />
             ) : user.role === "customer" ? (
-                <CustomerDashboard />
+                <CustomerDashboard searchTerm={searchTerm} />
             ) : (
                 <p>Loading content...</p>
             )}
-        </AppLayout>
+        </AppLayoutWithProvider>
     );
 };
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Material;
+use App\Models\RawMaterial;
 use App\Models\BOM;
 use App\Models\Inventory;
 use App\Models\InventoryItem;
@@ -139,16 +140,25 @@ class NormalizedInventoryController extends Controller
 
     /**
      * Get all materials with inventory status
+     * Returns only from the materials table (including migrated raw materials)
      */
     public function getMaterials()
     {
-        $materials = Material::with(['inventory', 'transactions' => function ($query) {
-            $query->orderBy('timestamp', 'desc')->limit(10);
-        }])
+        // Get ALL materials from the materials table - NO JOINS, NO FILTERS
+        $materials = Material::orderBy('material_code')
             ->get()
             ->map(function ($material) {
-                $material->total_quantity_on_hand = $material->inventory->sum('current_stock');
-                $material->total_quantity_reserved = $material->inventory->sum('quantity_reserved');
+                // Safe calculation of inventory quantities using direct DB queries
+                $totalOnHand = DB::table('inventory')
+                    ->where('material_id', $material->material_id)
+                    ->sum('current_stock');
+                    
+                $totalReserved = DB::table('inventory')
+                    ->where('material_id', $material->material_id)
+                    ->sum('quantity_reserved');
+                
+                $material->total_quantity_on_hand = $totalOnHand ?? 0;
+                $material->total_quantity_reserved = $totalReserved ?? 0;
                 $material->available_quantity = $material->total_quantity_on_hand - $material->total_quantity_reserved;
                 
                 // Calculate status based on reorder level
@@ -156,7 +166,7 @@ class NormalizedInventoryController extends Controller
                     $material->status = 'out_of_stock';
                     $material->status_label = 'Out of Stock';
                     $material->status_variant = 'danger';
-                } elseif ($material->available_quantity <= $material->reorder_level) {
+                } elseif ($material->reorder_level && $material->available_quantity <= $material->reorder_level) {
                     $material->status = 'low_stock';
                     $material->status_label = 'Low Stock';
                     $material->status_variant = 'warning';
@@ -168,6 +178,8 @@ class NormalizedInventoryController extends Controller
 
                 return $material;
             });
+
+        \Log::info('Returning ' . $materials->count() . ' materials from materials table');
 
         return response()->json($materials);
     }
@@ -238,12 +250,13 @@ class NormalizedInventoryController extends Controller
             'reorder_level' => 'required|numeric|min:0',
             'standard_cost' => 'required|numeric|min:0',
             'initial_quantity' => 'required|numeric|min:0',
-            'location_id' => 'nullable|integer'
+            'location_id' => 'nullable|integer',
+            'product_id' => 'nullable|integer' // Optional: if this material belongs to a specific product
         ]);
 
         DB::beginTransaction();
         try {
-            // Create material
+            // Create material in materials table
             $material = Material::create([
                 'material_name' => $request->material_name,
                 'material_code' => $request->material_code,
@@ -253,6 +266,20 @@ class NormalizedInventoryController extends Controller
                 'standard_cost' => $request->standard_cost,
                 'current_stock' => $request->initial_quantity
             ]);
+
+            // If product_id is provided, also create a raw_material entry
+            if ($request->product_id) {
+                RawMaterial::create([
+                    'product_id' => $request->product_id,
+                    'material_name' => $request->material_name,
+                    'material_code' => $request->material_code,
+                    'description' => $request->description ?? 'Material for production',
+                    'unit_of_measure' => $request->unit_of_measure,
+                    'quantity_needed' => 1, // Default to 1, can be updated later
+                    'unit_cost' => $request->standard_cost,
+                    'total_cost' => $request->standard_cost
+                ]);
+            }
 
             // Create inventory record
             Inventory::create([
@@ -277,7 +304,7 @@ class NormalizedInventoryController extends Controller
             return response()->json($material->load('inventory'), 201);
         } catch (\Exception $e) {
             DB::rollback();
-            return response()->json(['error' => 'Failed to add material'], 500);
+            return response()->json(['error' => 'Failed to add material: ' . $e->getMessage()], 500);
         }
     }
 
@@ -630,23 +657,55 @@ class NormalizedInventoryController extends Controller
      */
     public function getInventorySummary()
     {
-        $summary = [
-            'total_materials' => Material::count(),
-            'total_products' => Product::count(),
-            'low_stock_materials' => Material::whereHas('inventory', function ($query) {
-                $query->selectRaw('SUM(current_stock - quantity_reserved) as available')
-                      ->havingRaw('available <= materials.reorder_level');
-            })->count(),
-            'out_of_stock_materials' => Material::whereHas('inventory', function ($query) {
-                $query->selectRaw('SUM(current_stock - quantity_reserved) as available')
-                      ->havingRaw('available <= 0');
-            })->count(),
-            'total_inventory_value' => Material::join('inventory', 'materials.material_id', '=', 'inventory.material_id')
-                ->selectRaw('SUM(inventory.current_stock * materials.standard_cost) as total_value')
-                ->value('total_value') ?? 0
-        ];
+        try {
+            // Get total materials count
+            $totalMaterials = Material::count();
+            
+            // Get total products count
+            $totalProducts = Product::count();
+            
+            // Calculate low stock materials using a simpler approach
+            $lowStockMaterials = 0;
+            $outOfStockMaterials = 0;
+            $totalInventoryValue = 0;
+            
+            $materials = Material::with('inventory')->get();
+            
+            foreach ($materials as $material) {
+                $totalOnHand = $material->inventory->sum('current_stock');
+                $totalReserved = $material->inventory->sum('quantity_reserved');
+                $availableQuantity = $totalOnHand - $totalReserved;
+                
+                // Calculate inventory value
+                $totalInventoryValue += $availableQuantity * $material->standard_cost;
+                
+                // Check stock status
+                if ($availableQuantity <= 0) {
+                    $outOfStockMaterials++;
+                } elseif ($material->reorder_level && $availableQuantity <= $material->reorder_level) {
+                    $lowStockMaterials++;
+                }
+            }
+            
+            $summary = [
+                'total_materials' => $totalMaterials,
+                'total_products' => $totalProducts,
+                'low_stock_materials' => $lowStockMaterials,
+                'out_of_stock_materials' => $outOfStockMaterials,
+                'total_inventory_value' => $totalInventoryValue
+            ];
 
-        return response()->json($summary);
+            return response()->json($summary);
+        } catch (\Exception $e) {
+            \Log::error('Error in getInventorySummary: ' . $e->getMessage());
+            return response()->json([
+                'total_materials' => 0,
+                'total_products' => 0,
+                'low_stock_materials' => 0,
+                'out_of_stock_materials' => 0,
+                'total_inventory_value' => 0
+            ]);
+        }
     }
 
     /**

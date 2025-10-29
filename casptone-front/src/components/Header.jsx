@@ -27,9 +27,35 @@ export const useSidebar = () => {
 };
 
 // 🔷 Header Component
-const Header = ({ role, username }) => {
+const Header = ({ role, username, searchTerm, setSearchTerm }) => {
     const navigate = useNavigate();
     const [cartCount, setCartCount] = useState(0);
+    const [showSearch, setShowSearch] = useState(false);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+    useEffect(() => {
+        // Check if mobile on mount and resize
+        const handleResize = () => {
+            setIsMobile(window.innerWidth <= 768);
+        };
+
+        // Close mobile menu when clicking outside
+        const handleClickOutside = (e) => {
+            if (showMobileMenu && !e.target.closest('.mobile-menu-container')) {
+                setShowMobileMenu(false);
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        document.addEventListener('click', handleClickOutside);
+        handleResize(); // Initial check
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [showMobileMenu]);
 
     useEffect(() => {
         if (role === "customer") {
@@ -71,43 +97,116 @@ const Header = ({ role, username }) => {
     };
 
     return (
-        <header style={role === "customer" ? styles.headerTransparent : styles.headerWood}>
+        <header style={{
+            ...(role === "customer" ? styles.headerTransparent : styles.headerWood),
+            padding: isMobile ? "0 1rem" : "0 2rem"
+        }}>
             <div style={styles.left} onClick={() => navigate("/dashboard")}>
-                <h2 style={styles.logo}>UNICK FURNITURE</h2>
+                <h2 style={{ ...styles.logo, fontSize: isMobile ? '1.2rem' : '1.5rem' }}>UNICK FURNITURE</h2>
             </div>
 
-            <div style={styles.right}>
+            <div className="mobile-menu-container" style={{ ...styles.right, position: "relative", gap: isMobile ? '0.5rem' : '1.5rem' }}>
                 {role === "customer" && (
                     <>
-                    <NotificationBell />
-                    <button style={styles.iconBtn} onClick={() => navigate("/cart")}>
-                        <ShoppingCart size={24} />
-                        {cartCount > 0 && <span style={styles.cartBadge}>{cartCount}</span>}
-                    </button>
+                        {/* Search Icon with Dropdown */}
+                        <div style={{ position: "relative" }}>
+                            <button 
+                                style={styles.iconBtn} 
+                                onClick={() => setShowSearch(!showSearch)}
+                                title="Search"
+                            >
+                                <i className="fas fa-search" style={{ fontSize: isMobile ? '16px' : '20px', color: '#333' }}></i>
+                            </button>
+                            
+                            {showSearch && (
+                                <div style={{ ...styles.searchDropdown, minWidth: isMobile ? '280px' : '350px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Search for products..."
+                                        value={searchTerm || ""}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        style={styles.searchInput}
+                                        autoFocus
+                                    />
+                                </div>
+                            )}
+                        </div>
+                        
+                        <NotificationBell />
+                        <button style={styles.iconBtn} onClick={() => navigate("/cart")}>
+                            <ShoppingCart size={isMobile ? 20 : 24} />
+                            {cartCount > 0 && <span style={styles.cartBadge}>{cartCount}</span>}
+                        </button>
                     </>
                 )}
-                <div style={styles.userSection}>
-                    <span 
-                        style={styles.username} 
-                        onClick={() => navigate("/profile")}
-                        title="Click to view your profile"
-                        onMouseEnter={(e) => {
-                            e.target.style.background = "rgba(255,255,255,0.2)";
-                            e.target.style.transform = "translateY(-1px)";
-                            e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
-                        }}
-                        onMouseLeave={(e) => {
-                            e.target.style.background = "rgba(255,255,255,0.1)";
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "none";
-                        }}
-                    >
-                        <User size={20} /> {username}
-                    </span>
-                </div>
                 
-                <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
+                {/* Mobile menu button */}
+                {isMobile ? (
+                    <button 
+                        className="mobile-menu-container"
+                        style={styles.mobileMenuBtn}
+                        onClick={() => setShowMobileMenu(!showMobileMenu)}
+                    >
+                        <i className="fas fa-bars"></i>
+                    </button>
+                ) : (
+                    <>
+                        <div style={styles.userSection}>
+                            <span 
+                                style={styles.username} 
+                                onClick={() => navigate("/profile")}
+                                title="Click to view your profile"
+                                onMouseEnter={(e) => {
+                                    e.target.style.background = "rgba(255,255,255,0.2)";
+                                    e.target.style.transform = "translateY(-1px)";
+                                    e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.background = "rgba(255,255,255,0.1)";
+                                    e.target.style.transform = "translateY(0)";
+                                    e.target.style.boxShadow = "none";
+                                }}
+                            >
+                                <User size={20} /> {username}
+                            </span>
+                        </div>
+                        
+                        <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
+                    </>
+                )}
             </div>
+
+            {/* Mobile dropdown menu */}
+            {isMobile && showMobileMenu && (
+                <div className="mobile-menu-container" style={styles.mobileDropdown}>
+                    <div style={styles.mobileUser}>
+                        <User size={18} />
+                        <span>{username}</span>
+                    </div>
+                    <button 
+                        style={styles.mobileMenuItem}
+                        onClick={() => {
+                            navigate("/profile");
+                            setShowMobileMenu(false);
+                        }}
+                        onMouseEnter={handleMobileMenuItemHover}
+                        onMouseLeave={handleMobileMenuItemLeave}
+                    >
+                        <i className="fas fa-user"></i> Profile
+                    </button>
+                    <button 
+                        style={styles.mobileMenuItem}
+                        onClick={() => {
+                            handleLogout();
+                            setShowMobileMenu(false);
+                        }}
+                        onMouseEnter={handleMobileMenuItemHover}
+                        onMouseLeave={handleMobileMenuItemLeave}
+                    >
+                        <i className="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            )}
         </header>
     );
 };
@@ -280,7 +379,7 @@ const SidebarProvider = ({ children }) => {
 };
 
 // 📦 Final Layout
-const AppLayout = ({ children }) => {
+const AppLayout = ({ children, searchTerm, setSearchTerm }) => {
     const [userData, setUserData] = useState(() => getUserData());
     const { isMinimized, toggleSidebar } = useSidebar();
     
@@ -299,7 +398,7 @@ const AppLayout = ({ children }) => {
     return (
         <>
             {/* Show header only for customer */}
-            {role === "customer" && <Header role={role} username={username} />}
+            {role === "customer" && <Header role={role} username={username} searchTerm={searchTerm} setSearchTerm={setSearchTerm} />}
             
             {/* Show sidebar only for employees/admins */}
             {role !== "customer" && <Sidebar isMinimized={isMinimized} toggleSidebar={toggleSidebar} />}
@@ -309,9 +408,10 @@ const AppLayout = ({ children }) => {
                 style={{
                     marginLeft: role !== "customer" ? (isMinimized ? "80px" : "280px") : 0,
                     marginTop: role === "customer" ? "60px" : 0,
-                    padding: "1rem",
+                    padding: role === "customer" ? "0" : "1rem",
                     transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                    minHeight: "100vh"
+                    minHeight: "100vh",
+                    width: role === "customer" ? "100%" : "auto"
                 }}
             >
                 {children}
@@ -329,16 +429,16 @@ const AppLayout = ({ children }) => {
 };
 
 // 📦 Main App Layout with Sidebar Provider
-const AppLayoutWithProvider = ({ children }) => {
+const AppLayoutWithProvider = ({ children, searchTerm, setSearchTerm }) => {
     const { role } = getUserData();
     
     if (role === "customer") {
-        return <AppLayout>{children}</AppLayout>;
+        return <AppLayout searchTerm={searchTerm} setSearchTerm={setSearchTerm}>{children}</AppLayout>;
     }
     
     return (
         <SidebarProvider>
-            <AppLayout>{children}</AppLayout>
+            <AppLayout searchTerm={searchTerm} setSearchTerm={setSearchTerm}>{children}</AppLayout>
         </SidebarProvider>
     );
 };
@@ -352,7 +452,6 @@ const styles = {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: "0 2rem",
         position: "fixed",
         top: 0,
         left: 0,
@@ -413,6 +512,11 @@ const styles = {
         border: "none",
         position: "relative",
         cursor: "pointer",
+        padding: "0.5rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "all 0.3s ease",
     },
     cartBadge: {
         position: "absolute",
@@ -621,7 +725,91 @@ const styles = {
         justifyContent: "center",
         transition: "all 0.3s ease",
         boxShadow: "0 2px 8px rgba(139, 69, 19, 0.2)"
+    },
+    
+    searchDropdown: {
+        position: "absolute",
+        top: "calc(100% + 0.5rem)",
+        right: "0",
+        backgroundColor: "white",
+        padding: "1rem",
+        borderRadius: "12px",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+        zIndex: 1000,
+        minWidth: "350px",
+        maxWidth: "500px"
+    },
+    
+    searchInput: {
+        width: "100%",
+        padding: "0.75rem 1rem",
+        border: "2px solid #e9ecef",
+        borderRadius: "8px",
+        fontSize: "1rem",
+        outline: "none",
+        transition: "all 0.3s ease",
+        boxSizing: "border-box"
+    },
+    
+    mobileMenuBtn: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: "0.5rem",
+        fontSize: "1.2rem",
+        color: "#333",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+    },
+    
+    mobileDropdown: {
+        position: "absolute",
+        top: "100%",
+        right: "1rem",
+        marginTop: "0.5rem",
+        backgroundColor: "white",
+        borderRadius: "12px",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+        zIndex: 1000,
+        minWidth: "200px",
+        overflow: "hidden"
+    },
+    
+    mobileUser: {
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        padding: "1rem",
+        borderBottom: "1px solid #e9ecef",
+        fontSize: "0.95rem",
+        fontWeight: "600",
+        color: "#333"
+    },
+    
+    mobileMenuItem: {
+        width: "100%",
+        background: "none",
+        border: "none",
+        padding: "0.875rem 1rem",
+        cursor: "pointer",
+        fontSize: "0.9rem",
+        color: "#333",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        transition: "background 0.2s ease",
+        textAlign: "left"
     }
+};
+
+// Add hover effect for mobile menu items
+const handleMobileMenuItemHover = (e) => {
+    e.target.style.background = "#f8f9fa";
+};
+
+const handleMobileMenuItemLeave = (e) => {
+    e.target.style.background = "none";
 };
 
 

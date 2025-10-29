@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import api from "../../api/client";
 import { 
   BarChart, Bar, AreaChart, Area, LineChart, Line, PieChart, Pie, Cell,
@@ -19,6 +19,7 @@ const ProductionReports = () => {
     const [activeTab, setActiveTab] = useState("overview");
     const [windowDays, setWindowDays] = useState(30);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [productionFilter, setProductionFilter] = useState('all'); // all, alkansya, made_to_order
     
     // Enhanced data states
     const [dashboardData, setDashboardData] = useState(null);
@@ -35,6 +36,11 @@ const ProductionReports = () => {
     const [alkansyaProductionData, setAlkansyaProductionData] = useState(null);
     const [madeToOrderProductionData, setMadeToOrderProductionData] = useState(null);
     const [productionOutputData, setProductionOutputData] = useState(null);
+    
+    // Modal states for report preview
+    const [showPreviewModal, setShowPreviewModal] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [previewTitle, setPreviewTitle] = useState('');
     
     // Loading states for each tab
     const [tabLoadingStates, setTabLoadingStates] = useState({
@@ -116,12 +122,391 @@ const ProductionReports = () => {
 
     useEffect(() => {
         fetchAllReports();
+        // Load overview data initially
+        fetchProductionOverview();
     }, [fetchAllReports]);
 
     const handleGlobalRefresh = () => {
         setRefreshKey(prev => prev + 1);
         toast.success("Production reports refreshed successfully!");
     };
+
+    // Preview Report Function
+    const previewReport = (reportType) => {
+        try {
+            let data = null;
+            let title = '';
+
+            switch(reportType) {
+                case 'performance':
+                    title = 'Production Performance Report';
+                    data = generatePerformanceReportData(productionOverview);
+                    break;
+                case 'workprogress':
+                    title = 'Work Progress Report';
+                    data = generateWorkProgressReportData(productionOverview, alkansyaProductionData, madeToOrderProductionData);
+                    break;
+                case 'comprehensive':
+                    title = 'Comprehensive Production Report';
+                    data = generateComprehensiveReportData(productionOverview, productionOutputData, alkansyaProductionData, madeToOrderProductionData);
+                    break;
+                default:
+                    return;
+            }
+
+            setPreviewData(data);
+            setPreviewTitle(title);
+            setShowPreviewModal(true);
+        } catch (error) {
+            console.error('Error generating preview:', error);
+            toast.error('Failed to generate report preview. Please try again.');
+        }
+    };
+
+    // Download Report Function
+    const downloadReport = (reportType) => {
+        try {
+            let content = '';
+            let filename = '';
+
+            switch(reportType) {
+                case 'performance':
+                    filename = `Production_Performance_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generatePerformanceReportCSV(productionOverview);
+                    break;
+                case 'workprogress':
+                    filename = `Work_Progress_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateWorkProgressReportCSV(productionOverview, alkansyaProductionData, madeToOrderProductionData);
+                    break;
+                case 'comprehensive':
+                    filename = `Comprehensive_Production_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                    content = generateComprehensiveReportCSV(productionOverview, productionOutputData, alkansyaProductionData, madeToOrderProductionData);
+                    break;
+                default:
+                    return;
+            }
+
+            // Create and download file
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast.success(`${reportType === 'performance' ? 'Performance' : reportType === 'workprogress' ? 'Work Progress' : 'Comprehensive'} report downloaded successfully!`);
+        } catch (error) {
+            console.error('Error downloading report:', error);
+            toast.error('Failed to generate report. Please try again.');
+        }
+    };
+
+    // Generate Performance Report CSV
+    const generatePerformanceReportCSV = (data) => {
+        if (!data) return '';
+        
+        let content = 'Production Performance Report\n';
+        content += `Generated: ${new Date().toLocaleString()}\n\n`;
+        
+        // Overall Metrics
+        content += '=== OVERALL METRICS ===\n';
+        content += `Total Units Produced,${data.overall?.total_units_produced || 0}\n`;
+        content += `Production Efficiency,${data.overall?.production_efficiency || 0}%\n`;
+        content += `Average Daily Output,${data.overall?.average_daily_output || 0}\n`;
+        content += `Total Production Days,${data.overall?.total_production_days || 0}\n\n`;
+        
+        // Alkansya Metrics
+        content += '=== ALKANSYA PRODUCTION ===\n';
+        content += `Total Units Produced,${data.alkansya?.total_units_produced || 0}\n`;
+        content += `Average Daily Output,${data.alkansya?.average_daily_output || 0}\n`;
+        content += `Max Daily Output,${data.alkansya?.max_daily_output || 0}\n`;
+        content += `Min Daily Output,${data.alkansya?.min_daily_output || 0}\n`;
+        content += `Production Days,${data.alkansya?.total_days || 0}\n`;
+        content += `Production Trend,${data.alkansya?.production_trend || 'stable'}\n\n`;
+        
+        // Made-to-Order Metrics
+        content += '=== MADE-TO-ORDER PRODUCTION ===\n';
+        content += `Total Products Ordered,${data.made_to_order?.total_products_ordered || 0}\n`;
+        content += `Products In Progress,${data.made_to_order?.in_progress || 0}\n`;
+        content += `Products Completed,${data.made_to_order?.completed || 0}\n`;
+        content += `Completion Rate,${data.made_to_order?.completion_rate || 0}%\n\n`;
+        
+        // Efficiency Metrics
+        content += '=== EFFICIENCY METRICS ===\n';
+        content += `Overall Efficiency,${data.overall?.production_efficiency || 0}%\n`;
+        content += `Alkansya Efficiency,${data.alkansya?.efficiency || 0}%\n`;
+        content += `Made-to-Order Efficiency,${data.made_to_order?.efficiency || 0}%\n\n`;
+        
+        return content;
+    };
+
+    // Generate Work Progress Report CSV
+    const generateWorkProgressReportCSV = (overview, alkansya, madeToOrder) => {
+        let content = 'Work Progress Report\n';
+        content += `Generated: ${new Date().toLocaleString()}\n\n`;
+        
+        content += '=== ALKANSYA RECENT OUTPUT ===\n';
+        content += 'Date,Quantity,Produced By\n';
+        if (overview?.alkansya?.recent_output) {
+            overview.alkansya.recent_output.forEach(output => {
+                content += `${output.date},${output.quantity},${output.produced_by}\n`;
+            });
+        }
+        content += '\n';
+        
+        content += '=== MADE-TO-ORDER STATUS ===\n';
+        content += `Total Orders,${overview?.made_to_order?.total_products_ordered || 0}\n`;
+        content += `In Progress,${overview?.made_to_order?.in_progress || 0}\n`;
+        content += `Completed,${overview?.made_to_order?.completed || 0}\n`;
+        content += `Pending,${overview?.made_to_order?.pending || 0}\n\n`;
+        
+        if (madeToOrder?.items) {
+            content += '=== ORDER DETAILS ===\n';
+            content += 'Order ID,Product,Status,Quantity,Progress\n';
+            madeToOrder.items.slice(0, 20).forEach(item => {
+                content += `${item.order_id || 'N/A'},${item.product_name || 'N/A'},${item.status || 'N/A'},${item.quantity || 0},${item.progress || 0}%\n`;
+            });
+        }
+        
+        return content;
+    };
+
+    // Generate Comprehensive Report CSV
+    const generateComprehensiveReportCSV = (overview, output, alkansya, madeToOrder) => {
+        let content = 'COMPREHENSIVE PRODUCTION REPORT\n';
+        content += `Generated: ${new Date().toLocaleString()}\n`;
+        content += `Report Period: Last ${windowDays} days\n\n`;
+        
+        // Section 1: Overview
+        content += '=== PRODUCTION OVERVIEW ===\n';
+        if (overview) {
+            content += generatePerformanceReportCSV(overview);
+            content += '\n';
+        }
+        
+        // Section 2: Output Data
+        content += '=== PRODUCTION OUTPUT ===\n';
+        if (output?.metrics) {
+            content += `Total Units Produced,${output.metrics.total_units_produced || 0}\n`;
+            content += `Alkansya Units,${output.metrics.alkansya_units || 0}\n`;
+            content += `Made-to-Order Units,${output.metrics.made_to_order_units || 0}\n\n`;
+        }
+        
+        // Section 3: Recent Alkansya Output
+        if (overview?.alkansya?.recent_output && overview.alkansya.recent_output.length > 0) {
+            content += '=== RECENT PRODUCTION OUTPUT ===\n';
+            content += 'Date,Quantity,Produced By\n';
+            overview.alkansya.recent_output.forEach(output => {
+                content += `${output.date},${output.quantity},${output.produced_by}\n`;
+            });
+            content += '\n';
+        }
+        
+        // Section 4: Made-to-Order Progress
+        if (madeToOrder?.items) {
+            content += '=== MADE-TO-ORDER PROGRESS ===\n';
+            content += 'Order ID,Product Name,Status,Quantity,Progress,Start Date\n';
+            madeToOrder.items.forEach(item => {
+                content += `${item.order_id || 'N/A'},${item.product_name || 'N/A'},${item.status || 'N/A'},${item.quantity || 0},${item.progress || 0}%,${item.start_date || 'N/A'}\n`;
+            });
+        }
+        
+        return content;
+    };
+
+    // Generate Performance Report Data for Preview
+    const generatePerformanceReportData = (data) => {
+        if (!data) return { sections: [] };
+        
+        return {
+            sections: [
+                {
+                    title: 'Overall Metrics',
+                    data: [
+                        { label: 'Total Units Produced', value: data.overall?.total_units_produced || 0 },
+                        { label: 'Production Efficiency', value: `${data.overall?.production_efficiency || 0}%` },
+                        { label: 'Average Daily Output', value: data.overall?.average_daily_output || 0 },
+                        { label: 'Total Production Days', value: data.overall?.total_production_days || 0 }
+                    ]
+                },
+                {
+                    title: 'Alkansya Production',
+                    data: [
+                        { label: 'Total Units Produced', value: data.alkansya?.total_units_produced || 0 },
+                        { label: 'Average Daily Output', value: data.alkansya?.average_daily_output || 0 },
+                        { label: 'Max Daily Output', value: data.alkansya?.max_daily_output || 0 },
+                        { label: 'Min Daily Output', value: data.alkansya?.min_daily_output || 0 },
+                        { label: 'Production Days', value: data.alkansya?.total_days || 0 },
+                        { label: 'Production Trend', value: data.alkansya?.production_trend || 'stable' }
+                    ]
+                },
+                {
+                    title: 'Made-to-Order Production',
+                    data: [
+                        { label: 'Total Products Ordered', value: data.made_to_order?.total_products_ordered || 0 },
+                        { label: 'Products In Progress', value: data.made_to_order?.in_progress || 0 },
+                        { label: 'Products Completed', value: data.made_to_order?.completed || 0 },
+                        { label: 'Completion Rate', value: `${data.made_to_order?.completion_rate || 0}%` }
+                    ]
+                },
+                {
+                    title: 'Efficiency Metrics',
+                    data: [
+                        { label: 'Overall Efficiency', value: `${data.overall?.production_efficiency || 0}%` },
+                        { label: 'Alkansya Efficiency', value: `${data.alkansya?.efficiency || 0}%` },
+                        { label: 'Made-to-Order Efficiency', value: `${data.made_to_order?.efficiency || 0}%` }
+                    ]
+                }
+            ]
+        };
+    };
+
+    // Generate Work Progress Report Data for Preview
+    const generateWorkProgressReportData = (overview, alkansya, madeToOrder) => {
+        return {
+            sections: [
+                {
+                    title: 'Alkansya Recent Output',
+                    type: 'table',
+                    headers: ['Date', 'Quantity', 'Produced By'],
+                    data: overview?.alkansya?.recent_output?.map(output => [
+                        output.date,
+                        output.quantity,
+                        output.produced_by
+                    ]) || []
+                },
+                {
+                    title: 'Made-to-Order Status',
+                    data: [
+                        { label: 'Total Orders', value: overview?.made_to_order?.total_products_ordered || 0 },
+                        { label: 'In Progress', value: overview?.made_to_order?.in_progress || 0 },
+                        { label: 'Completed', value: overview?.made_to_order?.completed || 0 },
+                        { label: 'Pending', value: overview?.made_to_order?.pending || 0 }
+                    ]
+                },
+                {
+                    title: 'Order Details',
+                    type: 'table',
+                    headers: ['Order ID', 'Product', 'Status', 'Quantity', 'Progress'],
+                    data: madeToOrder?.items?.slice(0, 20).map(item => [
+                        item.order_id || 'N/A',
+                        item.product_name || 'N/A',
+                        item.status || 'N/A',
+                        item.quantity || 0,
+                        `${item.progress || 0}%`
+                    ]) || []
+                }
+            ]
+        };
+    };
+
+    // Generate Comprehensive Report Data for Preview
+    const generateComprehensiveReportData = (overview, output, alkansya, madeToOrder) => {
+        return {
+            sections: [
+                {
+                    title: 'Production Overview',
+                    data: [
+                        { label: 'Total Units Produced', value: overview?.overall?.total_units_produced || 0 },
+                        { label: 'Production Efficiency', value: `${overview?.overall?.production_efficiency || 0}%` },
+                        { label: 'Average Daily Output', value: overview?.overall?.average_daily_output || 0 },
+                        { label: 'Total Production Days', value: overview?.overall?.total_production_days || 0 }
+                    ]
+                },
+                {
+                    title: 'Production Output',
+                    data: [
+                        { label: 'Total Units Produced', value: output?.metrics?.total_units_produced || 0 },
+                        { label: 'Alkansya Units', value: output?.metrics?.alkansya_units || 0 },
+                        { label: 'Made-to-Order Units', value: output?.metrics?.made_to_order_units || 0 }
+                    ]
+                },
+                {
+                    title: 'Recent Production Output',
+                    type: 'table',
+                    headers: ['Date', 'Quantity', 'Produced By'],
+                    data: overview?.alkansya?.recent_output?.map(output => [
+                        output.date,
+                        output.quantity,
+                        output.produced_by
+                    ]) || []
+                },
+                {
+                    title: 'Made-to-Order Progress',
+                    type: 'table',
+                    headers: ['Order ID', 'Product Name', 'Status', 'Quantity', 'Progress', 'Start Date'],
+                    data: madeToOrder?.items?.map(item => [
+                        item.order_id || 'N/A',
+                        item.product_name || 'N/A',
+                        item.status || 'N/A',
+                        item.quantity || 0,
+                        `${item.progress || 0}%`,
+                        item.start_date || 'N/A'
+                    ]) || []
+                }
+            ]
+        };
+    };
+
+    // Filter production output data based on selected filter
+    const filteredProductionOutput = useMemo(() => {
+        if (!productionOutputData || productionFilter === 'all') {
+            return productionOutputData;
+        }
+
+        const filtered = {
+            ...productionOutputData,
+            daily_summary: productionOutputData.daily_summary?.map(day => {
+                if (productionFilter === 'alkansya') {
+                    return {
+                        date: day.date,
+                        alkansya_units: day.alkansya_units,
+                        made_to_order_units: 0,
+                        total_units: day.alkansya_units
+                    };
+                } else if (productionFilter === 'made_to_order') {
+                    return {
+                        date: day.date,
+                        alkansya_units: 0,
+                        made_to_order_units: day.made_to_order_units,
+                        total_units: day.made_to_order_units
+                    };
+                }
+                return day;
+            }) || [],
+            weekly_trends: productionOutputData.weekly_trends?.map(week => {
+                if (productionFilter === 'alkansya') {
+                    return {
+                        week: week.week,
+                        alkansya_units: week.alkansya_units,
+                        made_to_order_units: 0,
+                        total_units: week.alkansya_units
+                    };
+                } else if (productionFilter === 'made_to_order') {
+                    return {
+                        week: week.week,
+                        alkansya_units: 0,
+                        made_to_order_units: week.made_to_order_units,
+                        total_units: week.made_to_order_units
+                    };
+                }
+                return week;
+            }) || [],
+            metrics: {
+                ...productionOutputData.metrics,
+                total_units_produced: productionFilter === 'alkansya' 
+                    ? productionOutputData.metrics.alkansya_units 
+                    : productionFilter === 'made_to_order'
+                    ? productionOutputData.metrics.made_to_order_units
+                    : productionOutputData.metrics.total_units_produced
+            }
+        };
+
+        return filtered;
+    }, [productionOutputData, productionFilter]);
 
     // Fetch production overview data
     const fetchProductionOverview = async () => {
@@ -172,15 +557,51 @@ const ProductionReports = () => {
         try {
             const params = {
                 start_date: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                end_date: new Date().toISOString().split('T')[0]
+                end_date: new Date().toISOString().split('T')[0],
+                include_in_progress: true // Ensure in-progress orders are included
             };
 
             const response = await api.get('/production/made-to-order-data', { params });
+            console.log('Made-to-Order Production Data:', response.data);
             setMadeToOrderProductionData(response.data);
 
         } catch (error) {
             console.error('Error fetching Made-to-Order production data:', error);
             toast.error('Failed to load Made-to-Order production data');
+            // Set empty data structure to prevent crashes
+            setMadeToOrderProductionData({
+                metrics: {
+                    total_accepted_orders: 0,
+                    total_products_ordered: 0,
+                    total_revenue: 0,
+                    unique_customers: 0,
+                    average_order_value: 0,
+                    unique_products: 0,
+                    average_products_per_order: 0
+                },
+                current_orders: [],
+                daily_order_summary: [],
+                product_breakdown: [],
+                recent_orders: [],
+                customer_analysis: {
+                    total_customers: 0,
+                    repeat_customers: 0,
+                    new_customers: 0
+                },
+                efficiency_metrics: {
+                    completion_rate: 0,
+                    avg_completion_time: 0,
+                    total_orders: 0,
+                    on_time_delivery: 0
+                },
+                capacity_utilization: {
+                    active_orders: 0,
+                    max_capacity: 0,
+                    processing_rate: 0,
+                    workforce_utilization: 0
+                },
+                orders: []
+            });
         } finally {
             setTabLoadingStates(prev => ({ ...prev, madeToOrder: false }));
         }
@@ -222,7 +643,9 @@ const ProductionReports = () => {
 
             switch (tabName) {
                 case 'overview':
-                    // Use enhanced production overview
+                    // Fetch both Alkansya and Made-to-Order data for comprehensive overview
+                    await fetchAlkansyaProductionData();
+                    await fetchMadeToOrderProductionData();
                     await fetchProductionOverview();
                     break;
                     
@@ -242,18 +665,24 @@ const ProductionReports = () => {
                     break;
                     
                 case 'analytics':
-                    const analyticsResponse = await api.get('/production/analytics', { params: dateRange });
-                    setProductionAnalytics(analyticsResponse.data);
+                    // Fetch Alkansya production data for analytics
+                    await fetchAlkansyaProductionData();
+                    // Fetch Made-to-Order production data for analytics
+                    await fetchMadeToOrderProductionData();
                     break;
                     
                 case 'efficiency':
-                    const efficiencyResponse = await api.get('/production/efficiency-metrics', { params: dateRange });
-                    setEfficiencyMetrics(efficiencyResponse.data);
+                    // Fetch Alkansya production data for efficiency metrics
+                    await fetchAlkansyaProductionData();
+                    // Fetch Made-to-Order production data for efficiency metrics
+                    await fetchMadeToOrderProductionData();
                     break;
                     
                 case 'utilization':
-                    const utilizationResponse = await api.get('/production/resource-utilization', { params: dateRange });
-                    setResourceUtilization(utilizationResponse.data);
+                    // Fetch Alkansya production data for resource utilization
+                    await fetchAlkansyaProductionData();
+                    // Fetch Made-to-Order production data for resource utilization
+                    await fetchMadeToOrderProductionData();
                     break;
                     
                 case 'stages':
@@ -305,38 +734,6 @@ const ProductionReports = () => {
 
     return (
         <div className="enhanced-production-reports">
-            {/* Enhanced Header */}
-            <div className="d-flex justify-content-between align-items-center mb-4 p-4 bg-gradient text-white rounded-3" 
-                 style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)` }}>
-                <div>
-                    <h2 className="mb-2 d-flex align-items-center">
-                        <FaIndustry className="me-3" />
-                        Enhanced Production Analytics
-                    </h2>
-                    <p className="mb-0 opacity-90">Comprehensive production management and performance tracking</p>
-                </div>
-                <div className="d-flex gap-2">
-                    <select 
-                        value={windowDays} 
-                        onChange={(e) => setWindowDays(Number(e.target.value))}
-                        className="form-select form-select-sm"
-                        style={{ width: 'auto' }}
-                    >
-                        <option value={7}>Last 7 days</option>
-                        <option value={30}>Last 30 days</option>
-                        <option value={90}>Last 90 days</option>
-                        <option value={365}>Last year</option>
-                    </select>
-                    <button 
-                        onClick={handleGlobalRefresh}
-                        className="btn btn-light btn-sm"
-                    >
-                        <FaSync className="me-1" />
-                        Refresh
-                    </button>
-                </div>
-            </div>
-
             {/* Enhanced Navigation Tabs */}
             <div className="mb-4">
                 <ul className="nav nav-pills nav-fill" role="tablist">
@@ -402,7 +799,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div>
                                                         <h3 className="mb-0 fw-bold" style={{ color: colors.primary }}>
-                                                            {productionOverview.overall.total_units_produced || 0}
+                                                            {productionOverview?.overall?.total_units_produced || 0}
                                                         </h3>
                                                         <small className="text-muted fw-medium">Total Units Produced</small>
                                                     </div>
@@ -423,7 +820,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div>
                                                         <h3 className="mb-0 fw-bold" style={{ color: colors.success }}>
-                                                            {productionOverview.alkansya.total_units_produced || 0}
+                                                            {productionOverview?.alkansya?.total_units_produced || 0}
                                                         </h3>
                                                         <small className="text-muted fw-medium">Alkansya Units</small>
                                                     </div>
@@ -444,7 +841,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div>
                                                         <h3 className="mb-0 fw-bold" style={{ color: colors.accent }}>
-                                                            {productionOverview.made_to_order.total_products_ordered || 0}
+                                                            {productionOverview?.made_to_order?.total_products_ordered || 0}
                                                         </h3>
                                                         <small className="text-muted fw-medium">Made-to-Order Units</small>
                                                     </div>
@@ -465,7 +862,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div>
                                                         <h3 className="mb-0 fw-bold" style={{ color: colors.info }}>
-                                                            {productionOverview.overall.production_efficiency || 0}%
+                                                            {productionOverview?.overall?.production_efficiency || 0}%
                                                         </h3>
                                                         <small className="text-muted fw-medium">Efficiency</small>
                                                     </div>
@@ -479,28 +876,165 @@ const ProductionReports = () => {
                                 </div>
                             </div>
 
-                            {/* Product Type Breakdown */}
+                            {/* Download Reports Section */}
                             <div className="col-12 mb-4">
-                                <div className="row">
-                                    <div className="col-md-6">
-                                        <div className="card border-0 shadow-sm h-100">
-                                            <div className="card-header bg-white border-0">
-                                                <h5 className="mb-0 d-flex align-items-center">
-                                                    <FaBoxes className="me-2" style={{ color: colors.success }} />
-                                                    Alkansya Production Overview
-                                                </h5>
+                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', backgroundColor: '#f8f9fa' }}>
+                                    <div className="card-body p-4">
+                                        <div className="row align-items-center">
+                                            <div className="col-md-8">
+                                                <div className="d-flex align-items-center mb-3">
+                                                    <div className="rounded-circle p-2 me-3" style={{ backgroundColor: '#e3f2fd', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <i className="fas fa-file-export text-primary" style={{ fontSize: '20px' }}></i>
+                                                    </div>
+                                                    <div>
+                                                        <h5 className="mb-1 fw-bold text-dark">Automated Reports & Analytics</h5>
+                                                        <small className="text-muted">Download comprehensive production reports.</small>
+                                                    </div>
+                                                </div>
+                                                <p className="text-muted mb-3">Generate detailed reports for production performance, work progress, and efficiency metrics.</p>
+                                                <div className="d-flex gap-2 flex-wrap">
+                                                    <div className="btn-group" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-primary"
+                                                            onClick={() => previewReport('performance')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#007bff';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#007bff';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-primary"
+                                                            onClick={() => downloadReport('performance')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#0056b3';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#007bff';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-download me-2"></i>
+                                                            Download
+                                                        </button>
+                                                    </div>
+                                                    <div className="btn-group" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-info"
+                                                            onClick={() => previewReport('workprogress')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#17a2b8';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-info"
+                                                            onClick={() => downloadReport('workprogress')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#138496';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-download me-2"></i>
+                                                            Download
+                                                        </button>
+                                                    </div>
+                                                    <div className="btn-group" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-warning"
+                                                            onClick={() => previewReport('comprehensive')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#ffc107';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#ffc107';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-warning"
+                                                            onClick={() => downloadReport('comprehensive')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#e0a800';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#ffc107';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-download me-2"></i>
+                                                            Download
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="card-body">
+                                            <div className="col-md-4 text-center">
+                                                <div className="rounded-circle p-4 d-inline-flex align-items-center justify-content-center" style={{ backgroundColor: '#e3f2fd', width: '80px', height: '80px' }}>
+                                                    <FaDownload className="text-primary" style={{ fontSize: '2.5rem' }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Alkansya Daily Output - Enhanced Display */}
+                            <div className="col-12 mb-4">
+                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                    <div className="card-header bg-white border-0" style={{ borderRadius: '12px 12px 0 0', borderBottom: '3px solid #28a745' }}>
+                                        <h5 className="mb-0 d-flex align-items-center">
+                                            <i className="fas fa-box text-success me-2" style={{ fontSize: '24px' }}></i>
+                                            Alkansya Daily Production Output
+                                        </h5>
+                                    </div>
+                                    <div className="card-body">
+                                        <div className="row">
+                                            <div className="col-md-8">
                                                 <div className="row mb-3">
                                                     <div className="col-6">
                                                         <div className="text-center">
-                                                            <h4 className="text-success mb-1">{productionOverview.alkansya.average_daily_output || 0}</h4>
+                                                            <h4 className="text-success mb-1">{productionOverview?.alkansya?.average_daily_output || 0}</h4>
                                                             <small className="text-muted">Avg Daily Output</small>
                                                         </div>
                                                     </div>
                                                     <div className="col-6">
                                                         <div className="text-center">
-                                                            <h4 className="text-info mb-1">{productionOverview.alkansya.total_days || 0}</h4>
+                                                            <h4 className="text-info mb-1">{productionOverview?.alkansya?.total_days || 0}</h4>
                                                             <small className="text-muted">Production Days</small>
                                                         </div>
                                                     </div>
@@ -509,20 +1043,20 @@ const ProductionReports = () => {
                                                     <div className="d-flex justify-content-between mb-1">
                                                         <span>Production Trend</span>
                                                         <span className={`badge ${
-                                                            productionOverview.alkansya.production_trend === 'increasing' ? 'bg-success' :
-                                                            productionOverview.alkansya.production_trend === 'decreasing' ? 'bg-danger' :
+                                                            productionOverview?.alkansya?.production_trend === 'increasing' ? 'bg-success' :
+                                                            productionOverview?.alkansya?.production_trend === 'decreasing' ? 'bg-danger' :
                                                             'bg-secondary'
                                                         }`}>
-                                                            {productionOverview.alkansya.production_trend || 'stable'}
+                                                            {productionOverview?.alkansya?.production_trend || 'stable'}
                                                         </span>
                                                     </div>
                                                     <div className="d-flex justify-content-between mb-1">
                                                         <span>Max Daily Output</span>
-                                                        <span className="fw-bold">{productionOverview.alkansya.max_daily_output || 0}</span>
+                                                        <span className="fw-bold">{productionOverview?.alkansya?.max_daily_output || 0}</span>
                                                     </div>
                                                     <div className="d-flex justify-content-between">
                                                         <span>Min Daily Output</span>
-                                                        <span className="fw-bold">{productionOverview.alkansya.min_daily_output || 0}</span>
+                                                        <span className="fw-bold">{productionOverview?.alkansya?.min_daily_output || 0}</span>
                                                     </div>
                                                 </div>
                                                 <div className="mt-3">
@@ -548,60 +1082,85 @@ const ProductionReports = () => {
                                                         </table>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="col-md-6">
-                                        <div className="card border-0 shadow-sm h-100">
-                                            <div className="card-header bg-white border-0">
-                                                <h5 className="mb-0 d-flex align-items-center">
-                                                    <FaClipboardList className="me-2" style={{ color: colors.accent }} />
-                                                    Made-to-Order Overview
-                                                </h5>
-                                            </div>
-                                            <div className="card-body">
-                                                <div className="row mb-3">
-                                                    <div className="col-6">
-                                                        <div className="text-center">
-                                                            <h4 className="text-accent mb-1">{productionOverview.made_to_order.total_orders || 0}</h4>
-                                                            <small className="text-muted">Total Orders</small>
+                                                
+                                                {/* Summary Stats Row */}
+                                                <div className="row mt-4">
+                                                    <div className="col-4">
+                                                        <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                            <div className="d-flex align-items-center justify-content-center mb-2">
+                                                                <i className="fas fa-arrow-up text-success" style={{ fontSize: '24px' }}></i>
+                                                            </div>
+                                                            <h4 className="text-success mb-1">{productionOverview?.alkansya?.max_daily_output || 0}</h4>
+                                                            <small className="text-muted">Max Daily</small>
                                                         </div>
                                                     </div>
-                                                    <div className="col-6">
-                                                        <div className="text-center">
-                                                            <h4 className="text-info mb-1">₱{productionOverview.made_to_order.total_revenue?.toLocaleString() || 0}</h4>
-                                                            <small className="text-muted">Total Revenue</small>
+                                                    <div className="col-4">
+                                                        <div className="text-center p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
+                                                            <div className="d-flex align-items-center justify-content-center mb-2">
+                                                                <i className="fas fa-arrow-down text-warning" style={{ fontSize: '24px' }}></i>
+                                                            </div>
+                                                            <h4 className="text-warning mb-1">{productionOverview?.alkansya?.min_daily_output || 0}</h4>
+                                                            <small className="text-muted">Min Daily</small>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-4">
+                                                        <div className="text-center p-3 rounded" style={{ backgroundColor: '#e3f2fd' }}>
+                                                            <div className="d-flex align-items-center justify-content-center mb-2">
+                                                                <i className="fas fa-chart-line text-info" style={{ fontSize: '24px' }}></i>
+                                                            </div>
+                                                            <h4 className="text-info mb-1">
+                                                                <span className={`badge ${
+                                                                    productionOverview?.alkansya?.production_trend === 'increasing' ? 'bg-success' :
+                                                                    productionOverview?.alkansya?.production_trend === 'decreasing' ? 'bg-danger' :
+                                                                    'bg-secondary'
+                                                                }`}>
+                                                                    {productionOverview?.alkansya?.production_trend || 'stable'}
+                                                                </span>
+                                                            </h4>
+                                                            <small className="text-muted">Trend</small>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="mb-3">
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <span>Unique Products</span>
-                                                        <span className="fw-bold">{productionOverview.made_to_order.unique_products || 0}</span>
+                                            </div>
+                                            
+                                            {/* Recent Production Table */}
+                                            <div className="col-md-4">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-header bg-light border-0">
+                                                        <h6 className="mb-0">
+                                                            <i className="fas fa-history text-success me-2"></i>
+                                                            Recent Production
+                                                        </h6>
                                                     </div>
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <span>Avg Order Value</span>
-                                                        <span className="fw-bold">₱{productionOverview.made_to_order.average_order_value?.toLocaleString() || 0}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="mt-3">
-                                                    <h6 className="text-muted mb-2">Order Status Breakdown</h6>
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <span>Completed</span>
-                                                        <span className="badge bg-success">{productionOverview.made_to_order.order_status_breakdown?.completed || 0}</span>
-                                                    </div>
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <span>In Progress</span>
-                                                        <span className="badge bg-warning">{productionOverview.made_to_order.order_status_breakdown?.in_progress || 0}</span>
-                                                    </div>
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <span>Pending</span>
-                                                        <span className="badge bg-info">{productionOverview.made_to_order.order_status_breakdown?.pending || 0}</span>
-                                                    </div>
-                                                    <div className="d-flex justify-content-between">
-                                                        <span>Cancelled</span>
-                                                        <span className="badge bg-danger">{productionOverview.made_to_order.order_status_breakdown?.cancelled || 0}</span>
+                                                    <div className="card-body p-0">
+                                                        <div className="table-responsive" style={{ maxHeight: '280px' }}>
+                                                            <table className="table table-sm table-hover mb-0">
+                                                                <thead className="table-light">
+                                                                    <tr>
+                                                                        <th>Date</th>
+                                                                        <th>Qty</th>
+                                                                        <th>By</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {productionOverview?.alkansya?.recent_output?.slice(0, 6).map((output, index) => (
+                                                                        <tr key={index}>
+                                                                            <td>
+                                                                                <small>{output.date}</small>
+                                                                            </td>
+                                                                            <td>
+                                                                                <span className="badge bg-success" style={{ borderRadius: '8px' }}>
+                                                                                    {output.quantity}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td>
+                                                                                <small className="text-muted">{output.produced_by}</small>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -609,6 +1168,186 @@ const ProductionReports = () => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Made-to-Order Products - Enhanced Display */}
+                            <div className="col-12 mb-4">
+                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                    <div className="card-header bg-white border-0" style={{ borderRadius: '12px 12px 0 0', borderBottom: '3px solid #CD853F' }}>
+                                        <h5 className="mb-0 d-flex align-items-center">
+                                            <i className="fas fa-clipboard-list text-warning me-2" style={{ fontSize: '24px' }}></i>
+                                            Made-to-Order Products Overview
+                                        </h5>
+                                    </div>
+                                    <div className="card-body">
+                                        <div className="row">
+                                            <div className="col-md-4 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #CD853F15, #F5DEB315)' }}>
+                                                    <div className="card-body text-center">
+                                                        <div className="mb-3">
+                                                            <div className="rounded-circle bg-warning bg-opacity-20 d-inline-flex align-items-center justify-content-center" style={{ width: '70px', height: '70px' }}>
+                                                                <i className="fas fa-clipboard-list text-warning fa-2x"></i>
+                                                            </div>
+                                                        </div>
+                                                        <h3 className="text-warning mb-2">{productionOverview?.made_to_order?.total_orders || 0}</h3>
+                                                        <h6 className="text-muted mb-3">Total Orders</h6>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span className="text-muted">Unique Products</span>
+                                                            <span className="fw-bold">{productionOverview?.made_to_order?.unique_products || 0}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="col-md-4 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, #17a2b815, #4169E115)' }}>
+                                                    <div className="card-body text-center">
+                                                        <div className="mb-3">
+                                                            <div className="rounded-circle bg-info bg-opacity-20 d-inline-flex align-items-center justify-content-center" style={{ width: '70px', height: '70px' }}>
+                                                                <i className="fas fa-peso-sign text-info fa-2x"></i>
+                                                            </div>
+                                                        </div>
+                                                        <h3 className="text-info mb-2">₱{productionOverview?.made_to_order?.total_revenue?.toLocaleString() || 0}</h3>
+                                                        <h6 className="text-muted mb-3">Total Revenue</h6>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span className="text-muted">Avg Order Value</span>
+                                                            <span className="fw-bold">₱{productionOverview?.made_to_order?.average_order_value?.toLocaleString() || 0}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="col-md-4 mb-3">
+                                                <div className="card border-0 shadow-sm h-100" style={{ borderRadius: '12px' }}>
+                                                    <div className="card-body">
+                                                        <h6 className="text-muted mb-3">Order Status Breakdown</h6>
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <div className="d-flex align-items-center">
+                                                                <i className="fas fa-check-circle text-success me-2"></i>
+                                                                <span className="text-muted">Completed</span>
+                                                            </div>
+                                                            <span className="badge bg-success" style={{ borderRadius: '8px', fontSize: '0.9rem', padding: '0.4rem 0.8rem' }}>
+                                                                {productionOverview?.made_to_order?.order_status_breakdown?.completed || 0}
+                                                            </span>
+                                                        </div>
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <div className="d-flex align-items-center">
+                                                                <i className="fas fa-hourglass-half text-warning me-2"></i>
+                                                                <span className="text-muted">In Progress</span>
+                                                            </div>
+                                                            <span className="badge bg-warning" style={{ borderRadius: '8px', fontSize: '0.9rem', padding: '0.4rem 0.8rem' }}>
+                                                                {productionOverview?.made_to_order?.order_status_breakdown?.in_progress || 0}
+                                                            </span>
+                                                        </div>
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <div className="d-flex align-items-center">
+                                                                <i className="fas fa-clock text-info me-2"></i>
+                                                                <span className="text-muted">Pending</span>
+                                                            </div>
+                                                            <span className="badge bg-info" style={{ borderRadius: '8px', fontSize: '0.9rem', padding: '0.4rem 0.8rem' }}>
+                                                                {productionOverview?.made_to_order?.order_status_breakdown?.pending || 0}
+                                                            </span>
+                                                        </div>
+                                                        <div className="d-flex justify-content-between align-items-center">
+                                                            <div className="d-flex align-items-center">
+                                                                <i className="fas fa-times-circle text-danger me-2"></i>
+                                                                <span className="text-muted">Cancelled</span>
+                                                            </div>
+                                                            <span className="badge bg-danger" style={{ borderRadius: '8px', fontSize: '0.9rem', padding: '0.4rem 0.8rem' }}>
+                                                                {productionOverview?.made_to_order?.order_status_breakdown?.cancelled || 0}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Current In-Progress Made-to-Order Orders */}
+                            {(madeToOrderProductionData?.current_orders?.length > 0 || alkansyaProductionData?.recent_productions?.length > 0) && (
+                                <div className="col-12 mb-4">
+                                    <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                        <div className="card-header bg-white border-0" style={{ borderRadius: '12px 12px 0 0', borderBottom: '3px solid #ffc107' }}>
+                                            <h5 className="mb-0 d-flex align-items-center">
+                                                <i className="fas fa-cog fa-spin text-warning me-2" style={{ fontSize: '24px' }}></i>
+                                                Current In-Progress Production
+                                            </h5>
+                                        </div>
+                                        <div className="card-body">
+                                            {madeToOrderProductionData?.current_orders?.length > 0 && (
+                                                <div className="mb-4">
+                                                    <h6 className="text-muted mb-3 d-flex align-items-center">
+                                                        <i className="fas fa-clipboard-list text-warning me-2"></i>
+                                                        Made-to-Order Orders in Production
+                                                    </h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-hover table-sm">
+                                                            <thead className="table-light">
+                                                                <tr>
+                                                                    <th>Order ID</th>
+                                                                    <th>Product</th>
+                                                                    <th>Quantity</th>
+                                                                    <th>Customer</th>
+                                                                    <th>Production Stage</th>
+                                                                    <th>Status</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {madeToOrderProductionData.current_orders.map((order, index) => (
+                                                                    <tr key={index}>
+                                                                        <td className="fw-bold">#{order.id}</td>
+                                                                        <td>{order.product_name || 'N/A'}</td>
+                                                                        <td><span className="badge bg-primary">{order.quantity || 0}</span></td>
+                                                                        <td>{order.customer_name || 'N/A'}</td>
+                                                                        <td>
+                                                                            <span className="badge bg-info">{order.production_stage || 'In Progress'}</span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span className="badge bg-warning">In Progress</span>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {alkansyaProductionData?.recent_productions?.length > 0 && (
+                                                <div>
+                                                    <h6 className="text-muted mb-3 d-flex align-items-center">
+                                                        <i className="fas fa-box text-success me-2"></i>
+                                                        Recent Alkansya Daily Output
+                                                    </h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-hover table-sm">
+                                                            <thead className="table-light">
+                                                                <tr>
+                                                                    <th>Date</th>
+                                                                    <th>Quantity Produced</th>
+                                                                    <th>Produced By</th>
+                                                                    <th>Status</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {alkansyaProductionData.recent_productions.slice(0, 5).map((output, index) => (
+                                                                    <tr key={index}>
+                                                                        <td>{output.date || output.output_date}</td>
+                                                                        <td className="text-success fw-bold">{output.quantity || output.quantity_produced || 0}</td>
+                                                                        <td>{output.produced_by || 'N/A'}</td>
+                                                                        <td><span className="badge bg-success">Completed</span></td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Production Charts */}
                             <div className="col-12 mb-4">
@@ -648,10 +1387,10 @@ const ProductionReports = () => {
                                                 <ResponsiveContainer width="100%" height={200}>
                                                     <PieChart>
                                                         <Pie
-                                                            data={[
-                                                                { name: 'Alkansya', value: productionOverview.overall.material_utilization?.alkansya_percentage || 0, color: colors.success },
-                                                                { name: 'Made-to-Order', value: productionOverview.overall.material_utilization?.made_to_order_percentage || 0, color: colors.accent }
-                                                            ]}
+                                                    data={[
+                                                        { name: 'Alkansya', value: productionOverview?.overall?.material_utilization?.alkansya_percentage || 0, color: colors.success },
+                                                        { name: 'Made-to-Order', value: productionOverview?.overall?.material_utilization?.made_to_order_percentage || 0, color: colors.accent }
+                                                    ]}
                                                             cx="50%"
                                                             cy="50%"
                                                             labelLine={false}
@@ -661,8 +1400,8 @@ const ProductionReports = () => {
                                                             dataKey="value"
                                                         >
                                                             {[
-                                                                { name: 'Alkansya', value: productionOverview.overall.material_utilization?.alkansya_percentage || 0, color: colors.success },
-                                                                { name: 'Made-to-Order', value: productionOverview.overall.material_utilization?.made_to_order_percentage || 0, color: colors.accent }
+                                                                { name: 'Alkansya', value: productionOverview?.overall?.material_utilization?.alkansya_percentage || 0, color: colors.success },
+                                                                { name: 'Made-to-Order', value: productionOverview?.overall?.material_utilization?.made_to_order_percentage || 0, color: colors.accent }
                                                             ].map((entry, index) => (
                                                                 <Cell key={`cell-${index}`} fill={entry.color} />
                                                             ))}
@@ -682,29 +1421,29 @@ const ProductionReports = () => {
                                             <div className="card-body">
                                                 <div className="d-flex justify-content-between mb-3">
                                                     <span>Alkansya Production</span>
-                                                    <span className="badge bg-success fs-6">
-                                                        {productionOverview.overall.production_breakdown?.alkansya_percentage || 0}%
-                                                    </span>
+                                        <span className="badge bg-success fs-6">
+                                            {productionOverview?.overall?.production_breakdown?.alkansya_percentage || 0}%
+                                        </span>
                                                 </div>
                                                 <div className="progress mb-3" style={{ height: '20px' }}>
                                                     <div 
                                                         className="progress-bar bg-success" 
                                                         style={{ 
-                                                            width: `${productionOverview.overall.production_breakdown?.alkansya_percentage || 0}%` 
+                                                            width: `${productionOverview?.overall?.production_breakdown?.alkansya_percentage || 0}%` 
                                                         }}
                                                     ></div>
                                                 </div>
                                                 <div className="d-flex justify-content-between mb-3">
                                                     <span>Made-to-Order Production</span>
                                                     <span className="badge bg-accent fs-6">
-                                                        {productionOverview.overall.production_breakdown?.made_to_order_percentage || 0}%
+                                                        {productionOverview?.overall?.production_breakdown?.made_to_order_percentage || 0}%
                                                     </span>
                                                 </div>
                                                 <div className="progress" style={{ height: '20px' }}>
                                                     <div 
                                                         className="progress-bar" 
                                                         style={{ 
-                                                            width: `${productionOverview.overall.production_breakdown?.made_to_order_percentage || 0}%`,
+                                                            width: `${productionOverview?.overall?.production_breakdown?.made_to_order_percentage || 0}%`,
                                                             backgroundColor: colors.accent
                                                         }}
                                                     ></div>
@@ -733,15 +1472,30 @@ const ProductionReports = () => {
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaIndustry className="me-2" style={{ color: colors.secondary }} />
-                                    Production Output Analysis
-                                    {tabLoadingStates.output && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <h5 className="mb-0 d-flex align-items-center">
+                                        <FaIndustry className="me-2" style={{ color: colors.secondary }} />
+                                        Production Output Analysis
+                                        {tabLoadingStates.output && (
+                                            <div className="spinner-border spinner-border-sm ms-2" role="status">
+                                                <span className="visually-hidden">Loading...</span>
+                                            </div>
+                                        )}
+                                    </h5>
+                                    <div className="d-flex gap-2 align-items-center">
+                                        <FaFilter className="text-muted" />
+                                        <select 
+                                            value={productionFilter} 
+                                            onChange={(e) => setProductionFilter(e.target.value)}
+                                            className="form-select form-select-sm"
+                                            style={{ width: 'auto' }}
+                                        >
+                                            <option value="all">All Products</option>
+                                            <option value="alkansya">Alkansya Only</option>
+                                            <option value="made_to_order">Made-to-Order Only</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                             <div className="card-body">
                                 {tabLoadingStates.output ? (
@@ -752,14 +1506,14 @@ const ProductionReports = () => {
                                         <h5>Loading Production Output Data...</h5>
                                         <p className="text-muted">Analyzing accurate production performance and output trends</p>
                                     </div>
-                                ) : productionOutputData ? (
+                                ) : filteredProductionOutput ? (
                                     <div>
                                         {/* Key Metrics */}
                                         <div className="row mb-4">
                                             <div className="col-lg-3 col-md-6 mb-3">
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
-                                                        <h4 className="text-primary mb-1">{productionOutputData.metrics.total_units_produced || 0}</h4>
+                                                        <h4 className="text-primary mb-1">{filteredProductionOutput.metrics.total_units_produced || 0}</h4>
                                                         <small className="text-muted">Total Units Produced</small>
                                                     </div>
                                                 </div>
@@ -767,7 +1521,7 @@ const ProductionReports = () => {
                                             <div className="col-lg-3 col-md-6 mb-3">
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
-                                                        <h4 className="text-success mb-1">{productionOutputData.metrics.alkansya_units || 0}</h4>
+                                                        <h4 className="text-success mb-1">{filteredProductionOutput.metrics.alkansya_units || 0}</h4>
                                                         <small className="text-muted">Alkansya Units</small>
                                                     </div>
                                                 </div>
@@ -775,7 +1529,7 @@ const ProductionReports = () => {
                                             <div className="col-lg-3 col-md-6 mb-3">
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
-                                                        <h4 className="text-accent mb-1">{productionOutputData.metrics.made_to_order_units || 0}</h4>
+                                                        <h4 className="text-accent mb-1">{filteredProductionOutput.metrics.made_to_order_units || 0}</h4>
                                                         <small className="text-muted">Made-to-Order Units</small>
                                                     </div>
                                                 </div>
@@ -783,7 +1537,7 @@ const ProductionReports = () => {
                                             <div className="col-lg-3 col-md-6 mb-3">
                                                 <div className="card bg-light">
                                                     <div className="card-body text-center">
-                                                        <h4 className="text-info mb-1">{productionOutputData.metrics.production_days || 0}</h4>
+                                                        <h4 className="text-info mb-1">{filteredProductionOutput.metrics.production_days || 0}</h4>
                                                         <small className="text-muted">Production Days</small>
                                                     </div>
                                                 </div>
@@ -800,15 +1554,15 @@ const ProductionReports = () => {
                                                     <div className="card-body">
                                                         <div className="d-flex justify-content-between mb-2">
                                                             <span>Order Days</span>
-                                                            <span className="fw-bold">{productionOutputData.metrics.order_days || 0}</span>
+                                                            <span className="fw-bold">{filteredProductionOutput.metrics.order_days || 0}</span>
                                                         </div>
                                                         <div className="d-flex justify-content-between mb-2">
                                                             <span>Avg Daily Alkansya</span>
-                                                            <span className="fw-bold text-success">{productionOutputData.metrics.average_daily_alkansya || 0}</span>
+                                                            <span className="fw-bold text-success">{filteredProductionOutput.metrics.average_daily_alkansya || 0}</span>
                                                         </div>
                                                         <div className="d-flex justify-content-between">
                                                             <span>Avg Daily Orders</span>
-                                                            <span className="fw-bold text-accent">{productionOutputData.metrics.average_daily_orders || 0}</span>
+                                                            <span className="fw-bold text-accent">{filteredProductionOutput.metrics.average_daily_orders || 0}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -821,15 +1575,15 @@ const ProductionReports = () => {
                                                     <div className="card-body">
                                                         <div className="d-flex justify-content-between mb-2">
                                                             <span>Alkansya Consistency</span>
-                                                            <span className="fw-bold text-success">{productionOutputData.efficiency_analysis?.alkansya_consistency || 0}%</span>
+                                                            <span className="fw-bold text-success">{filteredProductionOutput.efficiency_analysis?.alkansya_consistency || 0}%</span>
                                                         </div>
                                                         <div className="d-flex justify-content-between mb-2">
                                                             <span>Order Completion</span>
-                                                            <span className="fw-bold text-accent">{productionOutputData.efficiency_analysis?.order_completion_rate || 0}%</span>
+                                                            <span className="fw-bold text-accent">{filteredProductionOutput.efficiency_analysis?.order_completion_rate || 0}%</span>
                                                         </div>
                                                         <div className="d-flex justify-content-between">
                                                             <span>Overall Efficiency</span>
-                                                            <span className="fw-bold text-primary">{productionOutputData.efficiency_analysis?.overall_efficiency || 0}%</span>
+                                                            <span className="fw-bold text-primary">{filteredProductionOutput.efficiency_analysis?.overall_efficiency || 0}%</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -845,7 +1599,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div className="card-body">
                                                         <ResponsiveContainer width="100%" height={300}>
-                                                            <LineChart data={productionOutputData.daily_summary}>
+                                                            <LineChart data={filteredProductionOutput.daily_summary}>
                                                                 <CartesianGrid strokeDasharray="3 3" />
                                                                 <XAxis dataKey="date" />
                                                                 <YAxis />
@@ -870,7 +1624,7 @@ const ProductionReports = () => {
                                                     </div>
                                                     <div className="card-body">
                                                         <ResponsiveContainer width="100%" height={300}>
-                                                            <BarChart data={productionOutputData.weekly_trends}>
+                                                            <BarChart data={filteredProductionOutput.weekly_trends}>
                                                                 <CartesianGrid strokeDasharray="3 3" />
                                                                 <XAxis dataKey="week" />
                                                                 <YAxis />
@@ -898,11 +1652,11 @@ const ProductionReports = () => {
                                                             <div className="col-md-4">
                                                                 <div className="text-center">
                                                                     <h5 className={`${
-                                                                        productionOutputData.efficiency_analysis?.production_stability === 'high' ? 'text-success' :
-                                                                        productionOutputData.efficiency_analysis?.production_stability === 'medium' ? 'text-warning' :
+                                                                        filteredProductionOutput.efficiency_analysis?.production_stability === 'high' ? 'text-success' :
+                                                                        filteredProductionOutput.efficiency_analysis?.production_stability === 'medium' ? 'text-warning' :
                                                                         'text-danger'
                                                                     }`}>
-                                                                        {productionOutputData.efficiency_analysis?.production_stability?.toUpperCase() || 'LOW'}
+                                                                        {filteredProductionOutput.efficiency_analysis?.production_stability?.toUpperCase() || 'LOW'}
                                                                     </h5>
                                                                     <small className="text-muted">Production Stability</small>
                                                                 </div>
@@ -910,11 +1664,11 @@ const ProductionReports = () => {
                                                             <div className="col-md-4">
                                                                 <div className="text-center">
                                                                     <h5 className={`${
-                                                                        productionOutputData.efficiency_analysis?.alkansya_trend === 'increasing' ? 'text-success' :
-                                                                        productionOutputData.efficiency_analysis?.alkansya_trend === 'decreasing' ? 'text-danger' :
+                                                                        filteredProductionOutput.efficiency_analysis?.alkansya_trend === 'increasing' ? 'text-success' :
+                                                                        filteredProductionOutput.efficiency_analysis?.alkansya_trend === 'decreasing' ? 'text-danger' :
                                                                         'text-info'
                                                                     }`}>
-                                                                        {productionOutputData.efficiency_analysis?.alkansya_trend?.toUpperCase() || 'STABLE'}
+                                                                        {filteredProductionOutput.efficiency_analysis?.alkansya_trend?.toUpperCase() || 'STABLE'}
                                                                     </h5>
                                                                     <small className="text-muted">Alkansya Trend</small>
                                                                 </div>
@@ -922,7 +1676,7 @@ const ProductionReports = () => {
                                                             <div className="col-md-4">
                                                                 <div className="text-center">
                                                                     <h5 className="text-success">
-                                                                        {productionOutputData.efficiency_analysis?.order_completion_rate || 0}%
+                                                                        {filteredProductionOutput.efficiency_analysis?.order_completion_rate || 0}%
                                                                     </h5>
                                                                     <small className="text-muted">Order Completion Rate</small>
                                                                 </div>
@@ -1004,6 +1758,60 @@ const ProductionReports = () => {
                                                     <div className="card-body text-center">
                                                         <h4 className="text-warning mb-1">{madeToOrderProductionData.metrics.unique_customers || 0}</h4>
                                                         <small className="text-muted">Unique Customers</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Current In-Progress Orders */}
+                                        <div className="row mb-4">
+                                            <div className="col-12">
+                                                <div className="card border-0 shadow-sm">
+                                                    <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #ffc107' }}>
+                                                        <h5 className="mb-0 d-flex align-items-center">
+                                                            <i className="fas fa-cog fa-spin text-warning me-2"></i>
+                                                            In-Progress Orders
+                                                        </h5>
+                                                    </div>
+                                                    <div className="card-body">
+                                                        {madeToOrderProductionData.current_orders?.length > 0 ? (
+                                                            <div className="table-responsive">
+                                                                <table className="table table-hover">
+                                                                    <thead className="table-light">
+                                                                        <tr>
+                                                                            <th>Order ID</th>
+                                                                            <th>Product</th>
+                                                                            <th>Quantity</th>
+                                                                            <th>Customer</th>
+                                                                            <th>Status</th>
+                                                                            <th>Production Stage</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        {madeToOrderProductionData.current_orders.map((order, index) => (
+                                                                            <tr key={index}>
+                                                                                <td className="fw-bold">#{order.id}</td>
+                                                                                <td>{order.product_name}</td>
+                                                                                <td><span className="badge bg-primary">{order.quantity}</span></td>
+                                                                                <td>{order.customer_name}</td>
+                                                                                <td>
+                                                                                    <span className="badge bg-warning">In Progress</span>
+                                                                                </td>
+                                                                                <td>
+                                                                                    <span className="badge bg-info">{order.production_stage}</span>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-center py-4">
+                                                                <i className="fas fa-check-circle text-success fa-3x mb-3"></i>
+                                                                <h5 className="text-muted">No In-Progress Orders</h5>
+                                                                <p className="text-muted">All orders are completed or pending acceptance</p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1499,14 +2307,85 @@ const ProductionReports = () => {
                                         <div className="spinner-border text-info mb-3" role="status">
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
-                                        <h5>Loading Analytics Data...</h5>
-                                        <p className="text-muted">Analyzing production performance metrics</p>
+                                        <h5>Loading Predictive Analytics...</h5>
+                                        <p className="text-muted">Analyzing historical production data and trends</p>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
-                                        <FaChartBar className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Production Analytics</h5>
-                                        <p className="text-muted">Advanced production analytics will appear here</p>
+                                    <div className="predictive-analytics-container">
+                                        {/* Header Section */}
+                                        <div className="mb-4">
+                                            <h4 className="d-flex align-items-center mb-2">
+                                                <i className="fas fa-crystal-ball text-info me-2" style={{ fontSize: '28px' }}></i>
+                                                Predictive Analytics Dashboard
+                                            </h4>
+                                            <p className="text-muted mb-0">
+                                                Analyze historical production data to forecast output levels and anticipate delays
+                                            </p>
+                                        </div>
+
+                                        {/* Display Alkansya Daily Output or empty state */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #28a745' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-box text-success me-2"></i>
+                                                        Alkansya Daily Output Analytics
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {alkansyaProductionData?.daily_output ? (
+                                                        <ResponsiveContainer width="100%" height={300}>
+                                                            <LineChart data={alkansyaProductionData.daily_output}>
+                                                                <CartesianGrid strokeDasharray="3 3" />
+                                                                <XAxis dataKey="date" />
+                                                                <YAxis />
+                                                                <Tooltip />
+                                                                <Legend />
+                                                                <Line type="monotone" dataKey="quantity" stroke="#28a745" strokeWidth={2} name="Daily Output" />
+                                                            </LineChart>
+                                                        </ResponsiveContainer>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Alkansya Production Data Available</h5>
+                                                            <p className="text-muted">Alkansya daily output data will appear here once production activities are recorded</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Display Made-to-Order Accepted Orders or empty state */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #CD853F' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-clipboard-list text-warning me-2"></i>
+                                                        Made-to-Order Products Analytics
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {madeToOrderProductionData?.orders ? (
+                                                        <ResponsiveContainer width="100%" height={300}>
+                                                            <BarChart data={madeToOrderProductionData.orders}>
+                                                                <CartesianGrid strokeDasharray="3 3" />
+                                                                <XAxis dataKey="order_date" />
+                                                                <YAxis />
+                                                                <Tooltip />
+                                                                <Legend />
+                                                                <Bar dataKey="order_count" fill="#CD853F" name="Accepted Orders" />
+                                                            </BarChart>
+                                                        </ResponsiveContainer>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Made-to-Order Data Available</h5>
+                                                            <p className="text-muted">Made-to-Order accepted orders data will appear here once orders are received and accepted</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1541,10 +2420,159 @@ const ProductionReports = () => {
                                         <p className="text-muted">Calculating production efficiency metrics</p>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
-                                        <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Efficiency Metrics</h5>
-                                        <p className="text-muted">Production efficiency analysis will appear here</p>
+                                    <div className="efficiency-metrics-container">
+                                        {/* Header */}
+                                        <div className="mb-4">
+                                            <h4 className="d-flex align-items-center mb-2">
+                                                <i className="fas fa-chart-line text-warning me-2" style={{ fontSize: '28px' }}></i>
+                                                Production Efficiency Analysis
+                                            </h4>
+                                            <p className="text-muted mb-0">
+                                                Analyze production efficiency based on Alkansya daily output and Made-to-Order accepted orders
+                                            </p>
+                                        </div>
+
+                                        {/* Alkansya Production Efficiency */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #28a745' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-box text-success me-2"></i>
+                                                        Alkansya Production Efficiency
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {alkansyaProductionData?.efficiency_metrics ? (
+                                                        <div className="row">
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                                    <i className="fas fa-percent text-success fa-2x mb-2"></i>
+                                                                    <h4 className="text-success">{alkansyaProductionData.efficiency_metrics?.overall_efficiency || 0}%</h4>
+                                                                    <small className="text-muted">Overall Efficiency</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e3f2fd' }}>
+                                                                    <i className="fas fa-boxes text-info fa-2x mb-2"></i>
+                                                                    <h4 className="text-info">{alkansyaProductionData.efficiency_metrics?.average_daily_output || 0}</h4>
+                                                                    <small className="text-muted">Avg Daily Output</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
+                                                                    <i className="fas fa-tasks text-warning fa-2x mb-2"></i>
+                                                                    <h4 className="text-warning">{alkansyaProductionData.efficiency_metrics?.production_days || 0}</h4>
+                                                                    <small className="text-muted">Production Days</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                                    <i className="fas fa-target text-success fa-2x mb-2"></i>
+                                                                    <h4 className="text-success">{alkansyaProductionData.efficiency_metrics?.target_achievement || 0}%</h4>
+                                                                    <small className="text-muted">Target Achievement</small>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Alkansya Efficiency Data Available</h5>
+                                                            <p className="text-muted">Efficiency metrics will appear here based on Alkansya daily output</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Made-to-Order Production Efficiency */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #CD853F' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-clipboard-list text-warning me-2"></i>
+                                                        Made-to-Order Production Efficiency
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {madeToOrderProductionData?.efficiency_metrics ? (
+                                                        <div className="row">
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFF3E0' }}>
+                                                                    <i className="fas fa-check-circle text-success fa-2x mb-2"></i>
+                                                                    <h4 className="text-success">{madeToOrderProductionData.efficiency_metrics?.completion_rate || 0}%</h4>
+                                                                    <small className="text-muted">Completion Rate</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#E3F2FD' }}>
+                                                                    <i className="fas fa-hourglass-half text-info fa-2x mb-2"></i>
+                                                                    <h4 className="text-info">{madeToOrderProductionData.efficiency_metrics?.avg_completion_time || 0}</h4>
+                                                                    <small className="text-muted">Avg Completion Time</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#E8F5E9' }}>
+                                                                    <i className="fas fa-list-alt text-warning fa-2x mb-2"></i>
+                                                                    <h4 className="text-warning">{madeToOrderProductionData.efficiency_metrics?.total_orders || 0}</h4>
+                                                                    <small className="text-muted">Total Orders</small>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-3 mb-3">
+                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFEBEE' }}>
+                                                                    <i className="fas fa-clock text-danger fa-2x mb-2"></i>
+                                                                    <h4 className="text-danger">{madeToOrderProductionData.efficiency_metrics?.on_time_delivery || 0}%</h4>
+                                                                    <small className="text-muted">On-Time Delivery</small>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Made-to-Order Efficiency Data Available</h5>
+                                                            <p className="text-muted">Efficiency metrics will appear here based on accepted orders</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Work Progress Bar */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0">
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-tasks text-primary me-2"></i>
+                                                        Overall Work Progress
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    <div className="mb-3">
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <span className="fw-bold">Alkansya Production Progress</span>
+                                                            <span className="badge bg-success">{alkansyaProductionData?.efficiency_metrics?.overall_efficiency || 0}%</span>
+                                                        </div>
+                                                        <div className="progress" style={{ height: '25px', borderRadius: '8px' }}>
+                                                            <div className="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                                                                 style={{ width: `${alkansyaProductionData?.efficiency_metrics?.overall_efficiency || 0}%` }}>
+                                                                {alkansyaProductionData?.efficiency_metrics?.overall_efficiency || 0}%
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="mb-3">
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                            <span className="fw-bold">Made-to-Order Completion Progress</span>
+                                                            <span className="badge bg-warning">{madeToOrderProductionData?.efficiency_metrics?.completion_rate || 0}%</span>
+                                                        </div>
+                                                        <div className="progress" style={{ height: '25px', borderRadius: '8px' }}>
+                                                            <div className="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                                                                 style={{ width: `${madeToOrderProductionData?.efficiency_metrics?.completion_rate || 0}%` }}>
+                                                                {madeToOrderProductionData?.efficiency_metrics?.completion_rate || 0}%
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1579,10 +2607,129 @@ const ProductionReports = () => {
                                         <p className="text-muted">Analyzing resource utilization patterns</p>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
-                                        <FaCogs className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Resource Utilization</h5>
-                                        <p className="text-muted">Resource usage analysis will appear here</p>
+                                    <div className="resource-utilization-container">
+                                        {/* Header */}
+                                        <div className="mb-4">
+                                            <h4 className="d-flex align-items-center mb-2">
+                                                <i className="fas fa-cogs text-dark me-2" style={{ fontSize: '28px' }}></i>
+                                                Resource Allocation & Utilization Analysis
+                                            </h4>
+                                            <p className="text-muted mb-0">
+                                                Optimize resource allocation to improve production efficiency based on Alkansya daily output and Made-to-Order accepted orders
+                                            </p>
+                                        </div>
+
+                                        {/* Capacity Utilization for Alkansya */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #28a745' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-box text-success me-2"></i>
+                                                        Alkansya Capacity Utilization
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {alkansyaProductionData?.capacity_utilization ? (
+                                                        <div className="row">
+                                                            <div className="col-md-6 mb-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body">
+                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                            <span className="fw-bold">Production Capacity</span>
+                                                                            <span className="badge bg-success">{alkansyaProductionData.capacity_utilization?.used_capacity || 0} / {alkansyaProductionData.capacity_utilization?.total_capacity || 0}</span>
+                                                                        </div>
+                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                            <div className="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                                                                                 style={{ width: `${alkansyaProductionData.capacity_utilization?.utilization_percentage || 0}%` }}>
+                                                                                {alkansyaProductionData.capacity_utilization?.utilization_percentage || 0}%
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-6 mb-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body">
+                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                            <span className="fw-bold">Resource Efficiency</span>
+                                                                            <span className="badge bg-info">{alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%</span>
+                                                                        </div>
+                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                            <div className="progress-bar bg-info progress-bar-striped progress-bar-animated" 
+                                                                                 style={{ width: `${alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%` }}>
+                                                                                {alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Alkansya Capacity Data Available</h5>
+                                                            <p className="text-muted">Capacity utilization metrics will appear here based on Alkansya daily output</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Capacity Utilization for Made-to-Order */}
+                                        <div className="mb-4">
+                                            <div className="card border-0 shadow-sm">
+                                                <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #CD853F' }}>
+                                                    <h5 className="mb-0 d-flex align-items-center">
+                                                        <i className="fas fa-clipboard-list text-warning me-2"></i>
+                                                        Made-to-Order Capacity Utilization
+                                                    </h5>
+                                                </div>
+                                                <div className="card-body">
+                                                    {madeToOrderProductionData?.capacity_utilization ? (
+                                                        <div className="row">
+                                                            <div className="col-md-6 mb-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body">
+                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                            <span className="fw-bold">Order Processing Capacity</span>
+                                                                            <span className="badge bg-warning">{madeToOrderProductionData.capacity_utilization?.active_orders || 0} / {madeToOrderProductionData.capacity_utilization?.max_capacity || 0}</span>
+                                                                        </div>
+                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                            <div className="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                                                                                 style={{ width: `${madeToOrderProductionData.capacity_utilization?.processing_rate || 0}%` }}>
+                                                                                {madeToOrderProductionData.capacity_utilization?.processing_rate || 0}%
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-6 mb-3">
+                                                                <div className="card bg-light">
+                                                                    <div className="card-body">
+                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                            <span className="fw-bold">Workforce Utilization</span>
+                                                                            <span className="badge bg-danger">{madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%</span>
+                                                                        </div>
+                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                            <div className="progress-bar bg-danger progress-bar-striped progress-bar-animated" 
+                                                                                 style={{ width: `${madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%` }}>
+                                                                                {madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center py-5">
+                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                                                            <h5 className="text-muted">No Made-to-Order Capacity Data Available</h5>
+                                                            <p className="text-muted">Capacity utilization metrics will appear here based on accepted orders</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1617,12 +2764,236 @@ const ProductionReports = () => {
                                         <p className="text-muted">Analyzing production stage performance</p>
                                     </div>
                                 ) : (
-                                    <div className="text-center py-5">
-                                        <FaHistory className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Production Stages</h5>
-                                        <p className="text-muted">Stage-by-stage production analysis will appear here</p>
-                                    </div>
+                                    <>
+                                        {stageBreakdown && stageBreakdown.summary && (
+                                            <div className="row mb-4">
+                                                <div className="col-md-3">
+                                                    <div className="card bg-light">
+                                                        <div className="card-body text-center">
+                                                            <h3 className="text-primary mb-1">{stageBreakdown.summary.total_productions || 0}</h3>
+                                                            <p className="text-muted mb-0 small">Total Productions</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card bg-light">
+                                                        <div className="card-body text-center">
+                                                            <h3 className="text-warning mb-1">{stageBreakdown.summary.in_progress_productions || 0}</h3>
+                                                            <p className="text-muted mb-0 small">In Progress</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card bg-light">
+                                                        <div className="card-body text-center">
+                                                            <h3 className="text-success mb-1">{stageBreakdown.summary.completed_productions || 0}</h3>
+                                                            <p className="text-muted mb-0 small">Completed</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-3">
+                                                    <div className="card bg-light">
+                                                        <div className="card-body text-center">
+                                                            <h3 className="text-info mb-1">{stageBreakdown.summary.average_progress || 0}%</h3>
+                                                            <p className="text-muted mb-0 small">Avg Progress</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="accordion" id="stagesAccordion">
+                                            {stageBreakdown && stageBreakdown.stages && stageBreakdown.stages.length > 0 ? (
+                                                stageBreakdown.stages.map((stage, index) => (
+                                                    <div key={index} className="accordion-item mb-2">
+                                                        <h2 className="accordion-header" id={`heading${index}`}>
+                                                            <button
+                                                                className={`accordion-button ${index === 0 ? '' : 'collapsed'}`}
+                                                                type="button"
+                                                                data-bs-toggle="collapse"
+                                                                data-bs-target={`#collapse${index}`}
+                                                                aria-expanded={index === 0}
+                                                                aria-controls={`collapse${index}`}
+                                                                style={{
+                                                                    backgroundColor: stage.total_productions > 0 ? colors.primary : '#f8f9fa',
+                                                                    color: stage.total_productions > 0 ? 'white' : '#6c757d'
+                                                                }}
+                                                            >
+                                                                <div className="d-flex justify-content-between align-items-center w-100 me-3">
+                                                                    <span className="fw-bold">{stage.stage_name}</span>
+                                                                    <span className="badge bg-light text-dark ms-2">
+                                                                        {stage.total_productions} Production{stage.total_productions !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                        </h2>
+                                                        <div
+                                                            id={`collapse${index}`}
+                                                            className={`accordion-collapse collapse ${index === 0 ? 'show' : ''}`}
+                                                            aria-labelledby={`heading${index}`}
+                                                            data-bs-parent="#stagesAccordion"
+                                                        >
+                                                            <div className="accordion-body p-0">
+                                                                {stage.productions && stage.productions.length > 0 ? (
+                                                                    <div className="table-responsive">
+                                                                        <table className="table table-hover table-sm mb-0">
+                                                                            <thead className="table-light">
+                                                                                <tr>
+                                                                                    <th style={{ minWidth: '120px' }}>Order #</th>
+                                                                                    <th style={{ minWidth: '150px' }}>Product</th>
+                                                                                    <th style={{ minWidth: '120px' }}>Customer</th>
+                                                                                    <th style={{ minWidth: '80px' }} className="text-center">Quantity</th>
+                                                                                    <th style={{ minWidth: '120px' }} className="text-center">Status</th>
+                                                                                    <th style={{ minWidth: '120px' }} className="text-center">Progress</th>
+                                                                                    <th style={{ minWidth: '120px' }} className="text-center">Start Date</th>
+                                                                                    <th style={{ minWidth: '120px' }} className="text-center">Est. Completion</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {stage.productions.map((prod, prodIndex) => (
+                                                                                    <tr key={prodIndex}>
+                                                                                        <td className="fw-bold text-primary">{prod.order_number}</td>
+                                                                                        <td className="text-nowrap">{prod.product_name}</td>
+                                                                                        <td className="text-nowrap">{prod.customer_name}</td>
+                                                                                        <td className="text-center">{prod.quantity}</td>
+                                                                                        <td className="text-center">
+                                                                                            <span className={`badge ${
+                                                                                                prod.status === 'Completed' ? 'bg-success' :
+                                                                                                prod.status === 'In Progress' ? 'bg-warning' :
+                                                                                                'bg-secondary'
+                                                                                            }`}>
+                                                                                                {prod.status}
+                                                                                            </span>
+                                                                                        </td>
+                                                                                        <td className="text-center">
+                                                                                            <div className="progress" style={{ height: '20px' }}>
+                                                                                                <div 
+                                                                                                    className="progress-bar bg-info" 
+                                                                                                    role="progressbar"
+                                                                                                    style={{ width: `${Number(prod.overall_progress) || 0}%` }}
+                                                                                                >
+                                                                                                    {(Number(prod.overall_progress) || 0).toFixed(0)}%
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </td>
+                                                                                        <td className="text-center text-nowrap">{prod.start_date}</td>
+                                                                                        <td className="text-center text-nowrap">{prod.estimated_completion}</td>
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-center py-4 text-muted">
+                                                                        No productions in this stage
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="text-center py-5">
+                                                    <FaHistory className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                    <h5 className="text-muted">No Production Data</h5>
+                                                    <p className="text-muted">No accepted or in-progress orders to display</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Report Preview Modal */}
+            {showPreviewModal && (
+                <div className="modal fade show" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+                    <div className="modal-dialog modal-xl">
+                        <div className="modal-content">
+                            <div className="modal-header">
+                                <h5 className="modal-title d-flex align-items-center">
+                                    <i className="fas fa-file-alt text-primary me-2"></i>
+                                    {previewTitle}
+                                </h5>
+                                <button 
+                                    type="button" 
+                                    className="btn-close" 
+                                    onClick={() => setShowPreviewModal(false)}
+                                ></button>
+                            </div>
+                            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                                {previewData && previewData.sections.map((section, sectionIndex) => (
+                                    <div key={sectionIndex} className="mb-4">
+                                        <h6 className="text-primary mb-3 border-bottom pb-2">
+                                            <i className="fas fa-chart-bar me-2"></i>
+                                            {section.title}
+                                        </h6>
+                                        
+                                        {section.type === 'table' ? (
+                                            <div className="table-responsive">
+                                                <table className="table table-striped table-hover">
+                                                    <thead className="table-dark">
+                                                        <tr>
+                                                            {section.headers.map((header, headerIndex) => (
+                                                                <th key={headerIndex}>{header}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {section.data.map((row, rowIndex) => (
+                                                            <tr key={rowIndex}>
+                                                                {row.map((cell, cellIndex) => (
+                                                                    <td key={cellIndex}>{cell}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="row">
+                                                {section.data.map((item, itemIndex) => (
+                                                    <div key={itemIndex} className="col-md-6 mb-3">
+                                                        <div className="card border-0 shadow-sm">
+                                                            <div className="card-body p-3">
+                                                                <div className="d-flex justify-content-between align-items-center">
+                                                                    <span className="text-muted fw-medium">{item.label}</span>
+                                                                    <span className="fw-bold text-primary fs-5">{item.value}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="modal-footer">
+                                <button 
+                                    type="button" 
+                                    className="btn btn-secondary" 
+                                    onClick={() => setShowPreviewModal(false)}
+                                >
+                                    <i className="fas fa-times me-2"></i>
+                                    Close
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        const reportType = previewTitle.includes('Performance') ? 'performance' : 
+                                                         previewTitle.includes('Work Progress') ? 'workprogress' : 'comprehensive';
+                                        downloadReport(reportType);
+                                        setShowPreviewModal(false);
+                                    }}
+                                >
+                                    <i className="fas fa-download me-2"></i>
+                                    Download CSV
+                                </button>
                             </div>
                         </div>
                     </div>

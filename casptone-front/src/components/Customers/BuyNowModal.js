@@ -368,22 +368,6 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0
                       </div>
                     </div>
                   </div>
-                  <div className={`payment-option-card ${formData.paymentMethod === "maya" ? "selected" : ""}`}>
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value="maya"
-                      checked={formData.paymentMethod === "maya"}
-                      onChange={(e) => handleInputChange("paymentMethod", e.target.value)}
-                    />
-                    <div className="payment-content">
-                      <div className="payment-icon">📱</div>
-                      <div className="payment-text">
-                        <div className="payment-title">Maya Payment</div>
-                        <div className="payment-desc">Digital wallet payment</div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

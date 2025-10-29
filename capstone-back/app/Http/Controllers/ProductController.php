@@ -237,6 +237,29 @@ class ProductController extends Controller
     }
 
     // BOM endpoints
+    public function getAllBOMs()
+    {
+        $boms = BOM::with(['material', 'product'])
+            ->orderBy('product_id')
+            ->orderBy('material_id')
+            ->get()
+            ->map(function($bomItem) {
+                return [
+                    'id' => $bomItem->id,
+                    'product_id' => $bomItem->product_id,
+                    'product_name' => $bomItem->product->name ?? 'Unknown Product',
+                    'material_id' => $bomItem->material_id,
+                    'material_name' => $bomItem->material->material_name ?? 'Unknown Material',
+                    'material_code' => $bomItem->material->material_code ?? '',
+                    'quantity_per_product' => $bomItem->quantity_per_product,
+                    'unit_of_measure' => $bomItem->unit_of_measure,
+                    'standard_cost' => $bomItem->material->standard_cost ?? 0,
+                    'total_cost' => $bomItem->quantity_per_product * ($bomItem->material->standard_cost ?? 0)
+                ];
+            });
+        return response()->json($boms);
+    }
+
     public function getBOM($id)
     {
         $product = Product::findOrFail($id);
