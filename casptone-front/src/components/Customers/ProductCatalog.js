@@ -42,7 +42,16 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
 
   const handleShowModal = useCallback((product, event) => {
     setSelectedProduct(product);
-    setQuantity(1);
+    
+    // Set initial quantity based on product type
+    const productName = (product.name || product.product_name || '').toLowerCase();
+    const categoryName = product.category_name || '';
+    const isMadeToOrderDiningTable = 
+      (categoryName === 'Made to Order' || categoryName === 'made_to_order') &&
+      productName.includes('dining table');
+    
+    // Fixed to 1 for made-to-order Dining Table
+    setQuantity(isMadeToOrderDiningTable ? 1 : 1);
     
     // Always center the modal on the screen
     setModalPosition({
@@ -89,6 +98,27 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
 
   const handleAddToCart = async () => {
     if (!selectedProduct) return;
+    
+    // Validate quantity limits
+    const productName = (selectedProduct.name || selectedProduct.product_name || '').toLowerCase();
+    const categoryName = selectedProduct.category_name || '';
+    const isMadeToOrderDiningTable = 
+      (categoryName === 'Made to Order' || categoryName === 'made_to_order') &&
+      productName.includes('dining table');
+    const isWoodenChair = productName.includes('wooden chair');
+    
+    // Enforce quantity limits - always use quantity 1 for Dining Table
+    let finalQuantity = quantity;
+    if (isMadeToOrderDiningTable) {
+      finalQuantity = 1;
+    }
+    
+    if (isWoodenChair && quantity > 4) {
+      setError("Wooden Chair maximum quantity is 4");
+      setQuantity(4);
+      return;
+    }
+    
     // Add this product to loading set
     setLoadingProducts(prev => new Set(prev).add(selectedProduct.id));
     setError(null);
@@ -109,7 +139,7 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
         "http://localhost:8000/api/cart",
         {
           product_id: selectedProduct.id,
-          quantity: quantity,
+          quantity: finalQuantity,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -137,58 +167,10 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
     }
   };
 
-  const handleAddToCartDirect = useCallback(async (product) => {
-    // Add this product to loading set
-    setLoadingProducts(prev => {
-      if (prev.has(product.id)) return prev; // Already loading, don't update
-      return new Set(prev).add(product.id);
-    });
-
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("You need to be logged in to add to cart.");
-        setLoadingProducts(prev => {
-          if (!prev.has(product.id)) return prev; // Already removed, don't update
-          const newSet = new Set(prev);
-          newSet.delete(product.id);
-          return newSet;
-        });
-        return;
-      }
-
-      await axios.post(
-        "http://localhost:8000/api/cart",
-        {
-          product_id: product.id,
-          quantity: 1,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      // Show success toast
-      toast.success(`${product.name} added to cart!`);
-      
-      // Dispatch custom event to update cart count in header (non-blocking)
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('cartItemAdded'));
-      }, 0);
-      
-    } catch (err) {
-      console.error("Error adding to cart:", err);
-      toast.error(err.response?.data?.message || "Failed to add to cart");
-    } finally {
-      // Remove this product from loading set
-      setLoadingProducts(prev => {
-        if (!prev.has(product.id)) return prev; // Already removed, don't update
-        const newSet = new Set(prev);
-        newSet.delete(product.id);
-        return newSet;
-      });
-    }
-  }, []);
+  const handleAddToCartDirect = useCallback((product) => {
+    // Open the details modal instead of directly adding to cart
+    handleShowModal(product);
+  }, [handleShowModal]);
 
   // Memoized ProductCard component to prevent unnecessary re-renders
   const ProductCard = React.memo(({ product, index, category, onShowModal, onAddToCart, onBuyNow, isLoading }) => {
@@ -393,20 +375,6 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
                       `Premium quality ${selectedProduct.name.toLowerCase()} made with traditional craftsmanship and modern design. Each piece is carefully crafted to bring warmth and elegance to your home.`}
                     </p>
                   </div>
-                  
-                  <div className="modal-product-stock">
-                    {selectedProduct.category_name === 'Made to Order' || selectedProduct.category_name === 'made_to_order' ? (
-                      <span className={`stock-status ${selectedProduct.is_available !== false ? 'in-stock' : 'out-of-stock'}`}>
-                        <i className={`fas ${selectedProduct.is_available !== false ? 'fa-tools' : 'fa-times-circle'}`}></i>
-                        {selectedProduct.is_available !== false ? 'Available for Made to Order' : 'Currently Not Available'}
-                      </span>
-                    ) : (
-                      <span className={`stock-status ${selectedProduct.stock > 10 ? 'in-stock' : selectedProduct.stock > 0 ? 'low-stock' : 'out-of-stock'}`}>
-                        <i className={`fas ${selectedProduct.stock > 10 ? 'fa-check-circle' : selectedProduct.stock > 0 ? 'fa-exclamation-triangle' : 'fa-times-circle'}`}></i>
-                        {selectedProduct.stock > 10 ? 'In Stock' : selectedProduct.stock > 0 ? `Only ${selectedProduct.stock} left` : 'Out of Stock'}
-                      </span>
-                    )}
-                  </div>
 
                   {error && (
                     <div className="alert alert-danger" role="alert">
@@ -415,47 +383,169 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
                     </div>
                   )}
 
-                  <Form className="mt-3">
-                    <Form.Group>
-                      <Form.Label className="fw-bold">
-                        <i className="fas fa-calculator me-2"></i>
-                        Quantity
-                      </Form.Label>
-                      <div className="quantity-controls">
-                        <button 
-                          type="button" 
-                          className="btn btn-outline-secondary btn-sm"
-                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          disabled={quantity <= 1}
-                        >
-                          <i className="fas fa-minus"></i>
-                        </button>
-                        <Form.Control
-                          type="number"
-                          min="1"
-                          max={selectedProduct.stock}
-                          value={quantity}
-                          onChange={(e) => setQuantity(Number(e.target.value))}
-                          className="text-center"
-                          style={{ width: '60px' }}
-                          size="sm"
-                        />
-                        <button 
-                          type="button" 
-                          className="btn btn-outline-secondary btn-sm"
-                          onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
-                          disabled={quantity >= selectedProduct.stock}
-                        >
-                          <i className="fas fa-plus"></i>
-                        </button>
+                  {(() => {
+                    const productName = (selectedProduct.name || selectedProduct.product_name || '').toLowerCase();
+                    const categoryName = selectedProduct.category_name || '';
+                    const isMadeToOrderDiningTable = 
+                      (categoryName === 'Made to Order' || categoryName === 'made_to_order') &&
+                      productName.includes('dining table');
+                    const isWoodenChair = productName.includes('wooden chair');
+                    const isAlkansya = productName.includes('alkansya');
+                    const isMadeToOrder = (categoryName === 'Made to Order' || categoryName === 'made_to_order');
+                    
+                    // Only show quantity controls for Wooden Chair and Alkansya
+                    const showQuantityControls = isWoodenChair || isAlkansya;
+                    
+                    // For Dining Table: Don't show quantity controls at all
+                    if (isMadeToOrderDiningTable) {
+                      return (
+                        <div className="mt-3">
+                          <div className="quantity-stock-row">
+                            <div className="quantity-info-simple">
+                              <span className="info-text">Quantity: <strong>1</strong></span>
+                            </div>
+                            <div className="modal-product-stock-compact">
+                              {isMadeToOrder ? (
+                                <span className="stock-badge stock-in">
+                                  Available for Made to Order
+                                </span>
+                              ) : (
+                                <span className={`stock-badge ${selectedProduct.stock > 0 ? 'stock-in' : 'stock-out'}`}>
+                                  {selectedProduct.stock > 0 ? `In Stock (${selectedProduct.stock})` : 'Out of Stock'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // For Wooden Chair and Alkansya: Show quantity controls with stock on the right
+                    if (showQuantityControls) {
+                      const maxQty = isWoodenChair ? 4 : (selectedProduct.stock || 999);
+                      
+                      return (
+                        <div className="mt-3">
+                          <div className="quantity-stock-row">
+                            <div className="quantity-selector-compact-inline">
+                              <label className="quantity-label-compact">Quantity</label>
+                              <div className="quantity-input-group">
+                                <button 
+                                  type="button" 
+                                  className="qty-btn-compact qty-minus"
+                                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                  disabled={quantity <= 1}
+                                >
+                                  <span>−</span>
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={maxQty}
+                                  value={quantity}
+                                  onChange={(e) => {
+                                    const newQty = Number(e.target.value);
+                                    if (newQty < 1) {
+                                      setQuantity(1);
+                                    } else if (isWoodenChair && newQty > 4) {
+                                      setQuantity(4);
+                                      toast.error("Wooden Chair maximum quantity is 4");
+                                    } else if (newQty > maxQty) {
+                                      setQuantity(maxQty);
+                                    } else {
+                                      setQuantity(newQty);
+                                    }
+                                  }}
+                                  className="qty-input-compact"
+                                  readOnly
+                                />
+                                <button 
+                                  type="button" 
+                                  className="qty-btn-compact qty-plus"
+                                  onClick={() => {
+                                    const newQty = quantity + 1;
+                                    if (isWoodenChair && newQty > 4) {
+                                      toast.error("Wooden Chair maximum quantity is 4");
+                                      return;
+                                    }
+                                    setQuantity(Math.min(maxQty, newQty));
+                                  }}
+                                  disabled={quantity >= maxQty}
+                                >
+                                  <span>+</span>
+                                </button>
+                              </div>
+                              {isWoodenChair && (
+                                <small className="qty-hint">Max: 4</small>
+                              )}
+                            </div>
+                            <div className="modal-product-stock-compact">
+                              {isMadeToOrder ? (
+                                <span className="stock-badge stock-in">
+                                  Available for Made to Order
+                                </span>
+                              ) : (
+                                <span className={`stock-badge ${selectedProduct.stock > 0 ? 'stock-in' : 'stock-out'}`}>
+                                  {selectedProduct.stock > 0 ? `In Stock (${selectedProduct.stock})` : 'Out of Stock'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // For other products: Don't show quantity controls
+                    return (
+                      <div className="mt-3">
+                        <div className="quantity-stock-row">
+                          <div className="quantity-info-simple">
+                            <span className="info-text">Quantity: <strong>1</strong></span>
+                          </div>
+                          <div className="modal-product-stock-compact">
+                            {isMadeToOrder ? (
+                              <span className="stock-badge stock-in">
+                                Available for Made to Order
+                              </span>
+                            ) : (
+                              <span className={`stock-badge ${selectedProduct.stock > 0 ? 'stock-in' : 'stock-out'}`}>
+                                {selectedProduct.stock > 0 ? `In Stock (${selectedProduct.stock})` : 'Out of Stock'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <Form.Text className="text-muted">
-                        Total: {formatPrice((selectedProduct.price || 0) * quantity)}
-                      </Form.Text>
-                    </Form.Group>
-                  </Form>
+                    );
+                  })()}
                   
-                  {/* Action buttons removed as requested */}
+                  {/* Action Buttons - Add to Cart and Buy Now */}
+                  <div className="modal-action-buttons">
+                    <button
+                      className="modal-add-to-cart-btn"
+                      onClick={handleAddToCart}
+                      disabled={loadingProducts.has(selectedProduct.id)}
+                    >
+                      {loadingProducts.has(selectedProduct.id) ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-cart-plus"></i>
+                          Add to Cart
+                        </>
+                      )}
+                    </button>
+                    <button
+                      className="modal-buy-now-btn"
+                      onClick={() => handleBuyNow(selectedProduct)}
+                      disabled={loadingProducts.has(selectedProduct.id)}
+                    >
+                      <i className="fas fa-bolt"></i>
+                      Buy Now
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

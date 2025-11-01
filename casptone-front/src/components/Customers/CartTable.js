@@ -442,6 +442,29 @@ const CartTable = () => {
   const handleEditQuantity = async (itemId, newQuantity) => {
     if (newQuantity < 1) return;
     
+    // Find the item to check its properties
+    const item = cartItems.find(item => item.id === itemId);
+    if (!item) return;
+    
+    const productName = (item.product?.name || item.name || '').toLowerCase();
+    const categoryName = item.product?.category_name || '';
+    const isMadeToOrderDiningTable = 
+      (categoryName === 'Made to Order' || categoryName === 'made_to_order') &&
+      productName.includes('dining table');
+    const isWoodenChair = productName.includes('wooden chair');
+    
+    // Prevent quantity changes for made-to-order Dining Table
+    if (isMadeToOrderDiningTable) {
+      toast.error("Dining Table (Made to Order) quantity is fixed to 1 and cannot be changed.");
+      return;
+    }
+    
+    // Enforce max quantity for Wooden Chair
+    if (isWoodenChair && newQuantity > 4) {
+      toast.error("Wooden Chair maximum quantity is 4");
+      return;
+    }
+    
     setUpdatingItems(prev => new Set(prev).add(itemId));
     
     // Optimistic update
@@ -459,7 +482,8 @@ const CartTable = () => {
         ...prev,
         [itemId]: cartItems.find(item => item.id === itemId)?.quantity || 1
       }));
-      toast.error("Failed to update item quantity.");
+      const errorMsg = err.response?.data?.message || "Failed to update item quantity.";
+      toast.error(errorMsg);
     } finally {
       setUpdatingItems(prev => {
         const newSet = new Set(prev);
@@ -813,6 +837,14 @@ const CartTable = () => {
               const isUpdating = updatingItems.has(item.id);
               const currentQuantity = quantities[item.id] || item.quantity;
               
+              // Check if this is a made-to-order Dining Table (quantity should be fixed to 1)
+              const productName = (item.product?.name || item.name || '').toLowerCase();
+              const categoryName = item.product?.category_name || '';
+              const isMadeToOrderDiningTable = 
+                (categoryName === 'Made to Order' || categoryName === 'made_to_order') &&
+                (productName.includes('dining table'));
+              const isWoodenChair = productName.includes('wooden chair');
+              
               return (
                 <div 
                   key={item.id} 
@@ -854,38 +886,53 @@ const CartTable = () => {
                   {/* Quantity Controls */}
                   <div className="quantity-controls">
                     <label className="quantity-label">Quantity</label>
-                    <div className="quantity-selector">
-                      <button
-                        className="qty-btn qty-decrease"
-                        onClick={() => handleEditQuantity(item.id, Math.max(currentQuantity - 1, 1))}
-                        disabled={isUpdating || currentQuantity <= 1}
-                        title="Decrease quantity"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                          <rect x="2" y="5" width="8" height="2" rx="1"/>
-                        </svg>
-                      </button>
-                      
-                      <div className="qty-display">
-                        {isUpdating ? (
-                          <div className="qty-spinner"></div>
-                        ) : (
-                          <span className="qty-number">{currentQuantity}</span>
-                        )}
+                    {isMadeToOrderDiningTable ? (
+                      <div className="quantity-selector">
+                        <div className="qty-display qty-display-fixed" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+                          <span className="qty-number">1</span>
+                        </div>
                       </div>
-                      
-                      <button
-                        className="qty-btn qty-increase"
-                        onClick={() => handleEditQuantity(item.id, currentQuantity + 1)}
-                        disabled={isUpdating}
-                        title="Increase quantity"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                          <rect x="5" y="2" width="2" height="8" rx="1"/>
-                          <rect x="2" y="5" width="8" height="2" rx="1"/>
-                        </svg>
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="quantity-selector">
+                        <button
+                          className="qty-btn qty-decrease"
+                          onClick={() => handleEditQuantity(item.id, Math.max(currentQuantity - 1, 1))}
+                          disabled={isUpdating || currentQuantity <= 1}
+                          title="Decrease quantity"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                            <rect x="2" y="5" width="8" height="2" rx="1"/>
+                          </svg>
+                        </button>
+                        
+                        <div className="qty-display">
+                          {isUpdating ? (
+                            <div className="qty-spinner"></div>
+                          ) : (
+                            <span className="qty-number">{currentQuantity}</span>
+                          )}
+                        </div>
+                        
+                        <button
+                          className="qty-btn qty-increase"
+                          onClick={() => {
+                            const newQty = currentQuantity + 1;
+                            if (isWoodenChair && newQty > 4) {
+                              toast.error("Wooden Chair maximum quantity is 4");
+                              return;
+                            }
+                            handleEditQuantity(item.id, newQty);
+                          }}
+                          disabled={isUpdating || (isWoodenChair && currentQuantity >= 4)}
+                          title={isWoodenChair && currentQuantity >= 4 ? "Maximum quantity is 4" : "Increase quantity"}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                            <rect x="5" y="2" width="2" height="8" rx="1"/>
+                            <rect x="2" y="5" width="8" height="2" rx="1"/>
+                          </svg>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -1674,6 +1721,19 @@ const CartTable = () => {
         .qty-number {
           font-weight: 600;
           color: var(--ink);
+        }
+        
+        .qty-display-fixed {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0 12px;
+        }
+        
+        .qty-fixed-label {
+          font-size: 12px;
+          color: #666;
+          font-style: italic;
         }
 
         .qty-spinner {

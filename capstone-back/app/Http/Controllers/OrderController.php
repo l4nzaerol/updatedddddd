@@ -26,10 +26,27 @@ class OrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $cartItems = Cart::where('user_id', $user->id)->with('product')->get();
+        // Get all cart items
+        $allCartItems = Cart::where('user_id', $user->id)->with('product')->get();
+
+        if ($allCartItems->isEmpty()) {
+            return response()->json(['message' => 'Cart is empty'], 400);
+        }
+
+        // Filter cart items based on selected items from request
+        $selectedItemIds = $request->input('selected_items', []);
+        
+        if (empty($selectedItemIds)) {
+            return response()->json(['message' => 'No items selected for checkout'], 400);
+        }
+
+        // Only process selected cart items
+        $cartItems = $allCartItems->filter(function ($item) use ($selectedItemIds) {
+            return in_array($item->id, $selectedItemIds);
+        });
 
         if ($cartItems->isEmpty()) {
-            return response()->json(['message' => 'Cart is empty'], 400);
+            return response()->json(['message' => 'No valid items selected for checkout'], 400);
         }
 
         $totalPrice = 0;
@@ -88,7 +105,7 @@ class OrderController extends Controller
         $paymentMethod = $validated['payment_method'] ?? 'cod';
         $paymentStatus = 'cod_pending';
 
-        return DB::transaction(function () use ($user, $cartItems, $totalPrice, $paymentMethod, $paymentStatus, $validated) {
+        return DB::transaction(function () use ($user, $cartItems, $totalPrice, $paymentMethod, $paymentStatus, $validated, $selectedItemIds) {
             // Generate unique tracking number
             $trackingNumber = $this->generateTrackingNumber();
             
@@ -130,13 +147,16 @@ class OrderController extends Controller
                 }
             }
 
-            // Clear cart
+            // Clear cart - only remove checked out items
             // Create tracking for each order item
             foreach ($cartItems as $item) {
                 $this->createOrderTracking($order->id, $item->product_id, $item->product);
             }
 
-            Cart::where('user_id', $user->id)->delete();
+            // Only delete the selected items from cart, keep unselected items
+            Cart::where('user_id', $user->id)
+                ->whereIn('id', $selectedItemIds)
+                ->delete();
 
             return response()->json(['message' => 'Checkout successful', 'order_id' => $order->id, 'order' => $order]);
         });
@@ -1171,11 +1191,32 @@ class OrderController extends Controller
             $productions = $order->productions;
             
             if ($productions->isEmpty()) {
+                // Calculate remaining days for made-to-order items even if production hasn't started
+                $remainingDays = null;
+                $isMadeToOrder = false;
+                if ($order->accepted_at && $hasTrackedProducts) {
+                    $hasMadeToOrderItems = $order->items->some(function ($item) {
+                        $categoryName = $item->product->category_name ?? '';
+                        return strtolower($categoryName) === 'made to order' || 
+                               strtolower($categoryName) === 'made_to_order';
+                    });
+                    
+                    if ($hasMadeToOrderItems) {
+                        $isMadeToOrder = true;
+                        $acceptedDate = \Carbon\Carbon::parse($order->accepted_at);
+                        $today = \Carbon\Carbon::now();
+                        $daysElapsed = $today->diffInDays($acceptedDate);
+                        $remainingDays = max(0, 14 - $daysElapsed);
+                    }
+                }
+                
                 return response()->json([
                     'isCompleted' => false,
                     'message' => 'Production not started yet',
                     'details' => 'Production records will be created when manufacturing begins',
-                    'stage' => 'Not Started'
+                    'stage' => 'Not Started',
+                    'isMadeToOrder' => $isMadeToOrder,
+                    'remainingDays' => $remainingDays
                 ]);
             }
             
@@ -1244,6 +1285,26 @@ class OrderController extends Controller
                     $overallProgress = $firstProduction['progress'];
                 }
                 
+                // Calculate remaining days for made-to-order items (14 days from acceptance)
+                $remainingDays = null;
+                $isMadeToOrder = false;
+                if ($order->accepted_at && $hasTrackedProducts) {
+                    // Check if order has made-to-order items
+                    $hasMadeToOrderItems = $order->items->some(function ($item) {
+                        $categoryName = $item->product->category_name ?? '';
+                        return strtolower($categoryName) === 'made to order' || 
+                               strtolower($categoryName) === 'made_to_order';
+                    });
+                    
+                    if ($hasMadeToOrderItems) {
+                        $isMadeToOrder = true;
+                        $acceptedDate = \Carbon\Carbon::parse($order->accepted_at);
+                        $today = \Carbon\Carbon::now();
+                        $daysElapsed = $today->diffInDays($acceptedDate);
+                        $remainingDays = max(0, 14 - $daysElapsed);
+                    }
+                }
+                
                 return response()->json([
                     'isCompleted' => false,
                     'message' => $message,
@@ -1251,7 +1312,9 @@ class OrderController extends Controller
                     'stage' => $currentStage,
                     'progress' => $overallProgress,
                     'incompleteProductions' => $incompleteProductions,
-                    'woodenItems' => $woodenItems->values()->toArray()
+                    'woodenItems' => $woodenItems->values()->toArray(),
+                    'isMadeToOrder' => $isMadeToOrder,
+                    'remainingDays' => $remainingDays
                 ]);
             }
             

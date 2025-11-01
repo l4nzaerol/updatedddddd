@@ -244,12 +244,18 @@ const UnifiedOrderManagement = () => {
 
     setProcessing(true);
     try {
-      // Check if trying to update to statuses that require production completion
-      if (['ready_for_delivery', 'delivered', 'completed'].includes(newStatus)) {
-        const productionStatus = await checkProductionCompletion(selectedOrder.id);
+      // Allow status updates even if production is incomplete
+      // Just show a warning if production is not complete
+      const productionStatus = await checkProductionCompletion(selectedOrder.id);
+      
+      if (!productionStatus.isCompleted && ['ready_for_delivery', 'delivered', 'completed'].includes(newStatus)) {
+        // Show warning but allow the update
+        const warningMsg = productionStatus.isMadeToOrder && productionStatus.remainingDays !== null
+          ? `Warning: Production is incomplete and ${productionStatus.remainingDays} day(s) remaining in processing period. Are you sure you want to continue?`
+          : `Warning: Production is incomplete. Are you sure you want to continue?`;
         
-        if (!productionStatus.isCompleted) {
-          toast.error(`Cannot mark as ${newStatus.replace('_', ' ')}: ${productionStatus.message}`);
+        const confirmed = window.confirm(warningMsg);
+        if (!confirmed) {
           setProcessing(false);
           return;
         }
@@ -1072,10 +1078,19 @@ const UnifiedOrderManagement = () => {
                           </small>
                         )}
                         {!productionStatus.isCompleted && (
-                          <small className="text-warning d-block mt-1">
-                            <i className="fas fa-clock me-1"></i>
-                            Complete production before marking as ready for delivery
-                          </small>
+                          <>
+                            {productionStatus.isMadeToOrder && productionStatus.remainingDays !== null ? (
+                              <small className="text-warning d-block mt-1">
+                                <i className="fas fa-exclamation-triangle me-1"></i>
+                                <strong>Warning:</strong> Production is incomplete. {productionStatus.remainingDays} day(s) remaining in the 14-day processing period. You can still update the status, but production should be completed.
+                              </small>
+                            ) : (
+                              <small className="text-warning d-block mt-1">
+                                <i className="fas fa-exclamation-triangle me-1"></i>
+                                <strong>Warning:</strong> Production is incomplete. You can still update the status, but production should be completed first.
+                              </small>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1088,9 +1103,9 @@ const UnifiedOrderManagement = () => {
                   <div className="row g-1">
                     {['processing', 'ready_for_delivery', 'delivered', 'completed', 'cancelled'].map((status) => {
                       const requiresProductionCompletion = ['ready_for_delivery', 'delivered', 'completed'].includes(status);
-                      const isDisabled = selectedOrder.status === status || processing ||
-                        (requiresProductionCompletion && productionStatus && !productionStatus.isCompleted);
+                      const isDisabled = selectedOrder.status === status || processing;
                       const isCurrentStatus = selectedOrder.status === status;
+                      const hasProductionWarning = requiresProductionCompletion && productionStatus && !productionStatus.isCompleted;
                       
                       const statusConfig = {
                         processing: { icon: '⚙️', label: 'Processing', color: 'primary' },
@@ -1126,18 +1141,24 @@ const UnifiedOrderManagement = () => {
                                 <small className={`${isCurrentStatus ? 'text-white-50' : 'text-muted'} small`}>
                                   {status === 'processing' && 'Order is accepted and in production'}
                                   {status === 'ready_for_delivery' && (
-                                    isDisabled && productionStatus && !productionStatus.isCompleted
-                                      ? 'Production must be completed first'
+                                    hasProductionWarning
+                                      ? (productionStatus.isMadeToOrder && productionStatus.remainingDays !== null
+                                          ? `⚠️ Production incomplete. ${productionStatus.remainingDays} day(s) remaining in processing period`
+                                          : '⚠️ Production incomplete')
                                       : 'Order is ready to be delivered'
                                   )}
                                   {status === 'delivered' && (
-                                    isDisabled && productionStatus && !productionStatus.isCompleted
-                                      ? 'Production must be completed first'
+                                    hasProductionWarning
+                                      ? (productionStatus.isMadeToOrder && productionStatus.remainingDays !== null
+                                          ? `⚠️ Production incomplete. ${productionStatus.remainingDays} day(s) remaining in processing period`
+                                          : '⚠️ Production incomplete')
                                       : 'Order has been delivered to customer'
                                   )}
                                   {status === 'completed' && (
-                                    isDisabled && productionStatus && !productionStatus.isCompleted
-                                      ? 'Production must be completed first'
+                                    hasProductionWarning
+                                      ? (productionStatus.isMadeToOrder && productionStatus.remainingDays !== null
+                                          ? `⚠️ Production incomplete. ${productionStatus.remainingDays} day(s) remaining in processing period`
+                                          : '⚠️ Production incomplete')
                                       : 'Order is fully completed'
                                   )}
                                   {status === 'cancelled' && 'Order has been cancelled'}
