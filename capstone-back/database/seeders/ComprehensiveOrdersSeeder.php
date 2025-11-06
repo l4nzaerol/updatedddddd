@@ -12,17 +12,20 @@ use App\Models\Production;
 use App\Models\ProductionProcess;
 use Carbon\Carbon;
 
-class AccurateOrdersSeeder extends Seeder
+class ComprehensiveOrdersSeeder extends Seeder
 {
     /**
      * Run the database seeds.
      * 
-     * This seeder creates orders with accurate production tracking that displays
-     * consistently across both customer orders page and production tracking page.
+     * This seeder creates comprehensive orders with:
+     * - Production tracking with delays
+     * - Ready-to-deliver Alkansya order
+     * - Pending Alkansya order
+     * - Various stages of production completion
      */
     public function run(): void
     {
-        $this->command->info('=== Creating Accurate Orders with Synchronized Tracking ===');
+        $this->command->info('=== Creating Comprehensive Orders with Production Tracking & Delays ===');
         
         // Find or create customer
         $customer = User::firstOrCreate(
@@ -32,7 +35,6 @@ class AccurateOrdersSeeder extends Seeder
                 'email' => 'customer@gmail.com',
                 'password' => bcrypt('password'),
                 'role' => 'customer',
-                'email_verified_at' => now(),
             ]
         );
 
@@ -44,9 +46,33 @@ class AccurateOrdersSeeder extends Seeder
                 'email' => 'admin@gmail.com',
                 'password' => bcrypt('password'),
                 'role' => 'admin',
-                'email_verified_at' => now(),
             ]);
         }
+
+        // Create staff members (employees)
+        $staff = [];
+        $staffNames = [
+            ['name' => 'Juan Dela Cruz', 'email' => 'juan@unick.com'],
+            ['name' => 'Maria Santos', 'email' => 'maria@unick.com'],
+            ['name' => 'Pedro Reyes', 'email' => 'pedro@unick.com'],
+            ['name' => 'Ana Garcia', 'email' => 'ana@unick.com'],
+            ['name' => 'Carlos Mendoza', 'email' => 'carlos@unick.com'],
+        ];
+
+        foreach ($staffNames as $staffData) {
+            $staff[] = User::firstOrCreate(
+                ['email' => $staffData['email']],
+                [
+                    'name' => $staffData['name'],
+                    'email' => $staffData['email'],
+                    'password' => bcrypt('password'),
+                    'role' => 'employee',
+                ]
+            );
+        }
+
+        $this->command->info("Created/Found " . count($staff) . " staff members");
+        $this->command->info("");
 
         // Get products
         $alkansya = Product::where('name', 'Alkansya')->first();
@@ -58,130 +84,153 @@ class AccurateOrdersSeeder extends Seeder
             return;
         }
 
-        $this->command->info("\n--- Creating Sample Orders ---\n");
-        $this->command->info("Demonstrating Order Lifecycle:");
-        $this->command->info("  1. Customer places order → Status: PENDING");
-        $this->command->info("  2. Admin accepts order → Status: PROCESSING (production starts)");
-        $this->command->info("  3. Production completes → Status: READY FOR DELIVERY");
-        $this->command->info("");
+        $this->command->info("\n--- Creating Sample Orders with Delays ---\n");
 
-        // Order 1: PENDING - Customer placed order, waiting for admin acceptance
-        $this->command->info("1. Creating PENDING order (just placed, awaiting admin acceptance)");
-        $this->createOrder($customer, $admin, $diningTable, 1, [
+        // Order 1: PENDING Alkansya - Just placed, awaiting acceptance
+        $this->command->info("1. Creating PENDING Alkansya order (awaiting acceptance)");
+        $this->createOrder($customer, $admin, $staff, $alkansya, 3, [
             'days_ago_placed' => 0,
             'is_accepted' => false,
         ]);
 
-        // Order 2: PENDING - Customer placed order 2 days ago, still waiting
-        $this->command->info("2. Creating PENDING order (placed 2 days ago, still awaiting acceptance)");
-        $this->createOrder($customer, $admin, $woodenChair, 2, [
-            'days_ago_placed' => 2,
-            'is_accepted' => false,
-        ]);
-
-        // Order 3: PROCESSING - Admin accepted 1.4 days ago, early stage (10% progress)
-        // Time-based: 1.4 days / 14 days = 10%
-        $this->command->info("3. Creating PROCESSING order (accepted 1.4 days ago, 10% complete)");
-        $this->createOrder($customer, $admin, $diningTable, 1, [
-            'days_ago_placed' => 1.4,
-            'days_ago_accepted' => 1.4,
+        // Order 2: READY TO DELIVER Alkansya - Completed and ready
+        $this->command->info("2. Creating READY TO DELIVER Alkansya order");
+        $this->createOrder($customer, $admin, $staff, $alkansya, 5, [
+            'days_ago_placed' => 8,
+            'days_ago_accepted' => 7,
             'is_accepted' => true,
-            'progress' => 10,
+            'progress' => 100,
+            'is_alkansya_ready' => true,
         ]);
 
-        // Order 4: PROCESSING - Early stage (20% progress)
-        // Time-based: 2.8 days / 14 days = 20%
-        $this->command->info("4. Creating PROCESSING order (accepted 2.8 days ago, 20% complete)");
-        $this->createOrder($customer, $admin, $woodenChair, 2, [
-            'days_ago_placed' => 2.8,
-            'days_ago_accepted' => 2.8,
+        // Order 3: PROCESSING - Wooden Chair with delays (20% complete)
+        $this->command->info("3. Creating PROCESSING Wooden Chair with early delay");
+        $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
+            'days_ago_placed' => 4,
+            'days_ago_accepted' => 3,
             'is_accepted' => true,
             'progress' => 20,
+            'has_delays' => true,
+            'delayed_processes' => [
+                'Material Preparation' => [
+                    'reason' => 'Supplier delayed wood delivery by 1 day',
+                    'extra_days' => 1
+                ]
+            ]
         ]);
 
-        // Order 5: PROCESSING - Mid-production (40% progress)
-        // Time-based: 5.6 days / 14 days = 40%
-        $this->command->info("5. Creating PROCESSING order (accepted 5.6 days ago, 40% complete)");
-        $this->createOrder($customer, $admin, $diningTable, 1, [
-            'days_ago_placed' => 5.6,
-            'days_ago_accepted' => 5.6,
+        // Order 4: PROCESSING - Dining Table with multiple delays (45% complete)
+        $this->command->info("4. Creating PROCESSING Dining Table with multiple delays");
+        $this->createOrder($customer, $admin, $staff, $diningTable, 2, [
+            'days_ago_placed' => 8,
+            'days_ago_accepted' => 7,
             'is_accepted' => true,
-            'progress' => 40,
+            'progress' => 45,
+            'has_delays' => true,
+            'delayed_processes' => [
+                'Material Preparation' => [
+                    'reason' => 'Supplier delayed wood delivery by 2 days',
+                    'extra_days' => 2
+                ],
+                'Cutting & Shaping' => [
+                    'reason' => 'Equipment malfunction required maintenance',
+                    'extra_days' => 1.5
+                ]
+            ]
         ]);
 
-        // Order 6: PROCESSING - Mid-production (60% progress)
-        // Time-based: 8.4 days / 14 days = 60%
-        $this->command->info("6. Creating PROCESSING order (accepted 8.4 days ago, 60% complete)");
-        $this->createOrder($customer, $admin, $woodenChair, 1, [
-            'days_ago_placed' => 8.4,
-            'days_ago_accepted' => 8.4,
+        // Order 5: PROCESSING - Wooden Chair mid-production (60% complete)
+        $this->command->info("5. Creating PROCESSING Wooden Chair at 60% (no delays)");
+        $this->createOrder($customer, $admin, $staff, $woodenChair, 2, [
+            'days_ago_placed' => 10,
+            'days_ago_accepted' => 9,
             'is_accepted' => true,
             'progress' => 60,
         ]);
 
-        // Order 7: PROCESSING - Late stage (75% progress)
-        // Time-based: 10.5 days / 14 days = 75%
-        $this->command->info("7. Creating PROCESSING order (accepted 10.5 days ago, 75% complete)");
-        $this->createOrder($customer, $admin, $diningTable, 2, [
-            'days_ago_placed' => 10.5,
-            'days_ago_accepted' => 10.5,
+        // Order 6: PROCESSING - Dining Table with delay (75% complete)
+        $this->command->info("6. Creating PROCESSING Dining Table with assembly delay");
+        $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
+            'days_ago_placed' => 13,
+            'days_ago_accepted' => 12,
             'is_accepted' => true,
             'progress' => 75,
+            'has_delays' => true,
+            'delayed_processes' => [
+                'Assembly' => [
+                    'reason' => 'Worker shortage due to sick leave',
+                    'extra_days' => 1
+                ]
+            ]
         ]);
 
-        // Order 8: PROCESSING - Near completion (90% progress)
-        // Time-based: 12.6 days / 14 days = 90%
-        $this->command->info("8. Creating PROCESSING order (accepted 12.6 days ago, 90% complete)");
-        $this->createOrder($customer, $admin, $woodenChair, 1, [
-            'days_ago_placed' => 12.6,
-            'days_ago_accepted' => 12.6,
+        // Order 7: PROCESSING - Wooden Chair near completion with delays (90% complete)
+        $this->command->info("7. Creating PROCESSING Wooden Chair with finishing delay");
+        $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
+            'days_ago_placed' => 16,
+            'days_ago_accepted' => 15,
             'is_accepted' => true,
             'progress' => 90,
+            'has_delays' => true,
+            'delayed_processes' => [
+                'Finishing' => [
+                    'reason' => 'Waiting for custom stain color to arrive',
+                    'extra_days' => 2
+                ]
+            ]
         ]);
 
-        // Order 9: COMPLETED PRODUCTION - Production complete (100% progress)
-        // Note: Order status will be 'processing' but production is 'Completed'
-        $this->command->info("9. Creating COMPLETED PRODUCTION order (accepted 14 days ago, 100% complete)");
-        $this->createOrder($customer, $admin, $diningTable, 1, [
-            'days_ago_placed' => 14,
-            'days_ago_accepted' => 14,
+        // Order 8: COMPLETED - Dining Table ready for delivery (100% complete)
+        $this->command->info("8. Creating COMPLETED Dining Table (ready for delivery)");
+        $this->createOrder($customer, $admin, $staff, $diningTable, 1, [
+            'days_ago_placed' => 18,
+            'days_ago_accepted' => 17,
             'is_accepted' => true,
             'progress' => 100,
-            'keep_processing_status' => true, // Don't change to ready_for_delivery
         ]);
 
-        // Order 10: PENDING - Alkansya (no production tracking needed)
-        // Alkansya orders are manually updated in orders page, no production tracking
-        $this->command->info("10. Creating PENDING order - Alkansya (no production tracking)");
-        $this->createOrder($customer, $admin, $alkansya, 5, [
-            'days_ago_placed' => 0,
-            'is_accepted' => false, // Not accepted, so no production created
+        // Order 9: PENDING - Regular furniture awaiting acceptance
+        $this->command->info("9. Creating PENDING Wooden Chair order");
+        $this->createOrder($customer, $admin, $staff, $woodenChair, 1, [
+            'days_ago_placed' => 1,
+            'is_accepted' => false,
         ]);
 
         $this->command->info("");
-        $this->command->info("✓ All orders created successfully with accurate tracking!");
+        $this->command->info("✓ All comprehensive orders created successfully!");
         $this->command->info("");
-        $this->command->info("=== Order Status Summary ===");
-        $this->command->info("PENDING (3 orders): Orders 1-2, 10 → Awaiting admin acceptance");
-        $this->command->info("  - Orders 1-2: Regular furniture (Dining Table, Wooden Chair)");
-        $this->command->info("  - Order 10: Alkansya (no production tracking needed)");
-        $this->command->info("PROCESSING (7 orders): Orders 3-9 → Production in progress (10%-100%)");
-        $this->command->info("  - Order 9: Production completed (100%) but order still processing");
+        $this->command->info("=== Order Summary ===");
+        $this->command->info("PENDING (2 orders): Orders 1, 9");
+        $this->command->info("  - Order 1: Alkansya (no production tracking)");
+        $this->command->info("  - Order 9: Wooden Chair (awaiting acceptance)");
         $this->command->info("");
-        $this->command->info("Customer Orders Page: Shows ALL 10 orders");
-        $this->command->info("Production Tracking Page: Shows ONLY 7 orders (3-9, NOT 1-2 or 10)");
+        $this->command->info("READY TO DELIVER (2 orders): Orders 2, 8");
+        $this->command->info("  - Order 2: Alkansya (completed, ready to deliver)");
+        $this->command->info("  - Order 8: Dining Table (100% complete)");
+        $this->command->info("");
+        $this->command->info("PROCESSING (5 orders): Orders 3-7");
+        $this->command->info("  - Orders with delays: 3, 4, 6, 7");
+        $this->command->info("  - Order without delays: 5");
+        $this->command->info("");
+        $this->command->info("Delay Information:");
+        $this->command->info("  - Order 3: Material Preparation delayed");
+        $this->command->info("  - Order 4: Material Preparation + Cutting & Shaping delayed");
+        $this->command->info("  - Order 6: Assembly delayed");
+        $this->command->info("  - Order 7: Finishing delayed");
     }
 
     /**
-     * Create an order with accurate production tracking
+     * Create an order with comprehensive production tracking
      */
-    private function createOrder($customer, $admin, $product, $quantity, $config)
+    private function createOrder($customer, $admin, $staff, $product, $quantity, $config)
     {
         $daysAgoPlaced = $config['days_ago_placed'] ?? 0;
         $daysAgoAccepted = $config['days_ago_accepted'] ?? $daysAgoPlaced;
         $isAccepted = $config['is_accepted'] ?? false;
         $progress = $config['progress'] ?? 0;
-        $keepProcessingStatus = $config['keep_processing_status'] ?? false;
+        $hasDelays = $config['has_delays'] ?? false;
+        $delayedProcesses = $config['delayed_processes'] ?? [];
+        $isAlkansyaReady = $config['is_alkansya_ready'] ?? false;
 
         $isAlkansya = str_contains(strtolower($product->name), 'alkansya');
         $totalProductionDays = $isAlkansya ? 7 : 14;
@@ -189,7 +238,7 @@ class AccurateOrdersSeeder extends Seeder
         // Determine order status
         $orderStatus = 'pending';
         if ($isAccepted) {
-            if ($progress >= 100 && !$keepProcessingStatus) {
+            if ($progress >= 100 || $isAlkansyaReady) {
                 $orderStatus = 'ready_for_delivery';
             } else {
                 $orderStatus = 'processing';
@@ -227,14 +276,13 @@ class AccurateOrdersSeeder extends Seeder
         // Calculate dates
         $productionStartedAt = $isAccepted ? now()->subDays($daysAgoAccepted) : null;
         $estimatedCompletion = $isAccepted ? $productionStartedAt->copy()->addDays($totalProductionDays) : null;
-        $actualCompletion = ($isAccepted && $progress >= 100) ? now()->subDays(max(0, $daysAgoAccepted - $totalProductionDays)) : null;
+        $actualCompletion = ($isAccepted && ($progress >= 100 || $isAlkansyaReady)) ? now() : null;
 
         // Create production if accepted
         $production = null;
         if ($isAccepted) {
-            // Ensure minimum progress of 5% for accepted orders to show in production tracking
             $actualProgress = max(5, $progress);
-            $productionStatus = $progress >= 100 ? 'Completed' : 'In Progress';
+            $productionStatus = ($progress >= 100 || $isAlkansyaReady) ? 'Completed' : 'In Progress';
             
             $production = Production::create([
                 'order_id' => $order->id,
@@ -256,7 +304,7 @@ class AccurateOrdersSeeder extends Seeder
 
             // Create production processes for non-alkansya items
             if (!$isAlkansya) {
-                $this->createProductionProcesses($production, $progress, $currentStage, $productionStartedAt);
+                $this->createProductionProcesses($production, $progress, $currentStage, $productionStartedAt, $staff, $delayedProcesses);
             }
         }
 
@@ -266,7 +314,7 @@ class AccurateOrdersSeeder extends Seeder
         $actualProgress = $isAccepted ? max(5, $progress) : 0;
         
         if ($isAccepted) {
-            if ($progress >= 100) {
+            if ($progress >= 100 || $isAlkansyaReady) {
                 $trackingStatus = 'ready_for_delivery';
             } else {
                 $trackingStatus = 'in_production';
@@ -299,23 +347,19 @@ class AccurateOrdersSeeder extends Seeder
             $production->refresh();
         }
 
-        // Log creation with detailed information
+        // Log creation
         $displayProgress = $isAccepted ? max(5, $progress) : 0;
-        $statusText = $isAccepted ? ($progress >= 100 ? 'COMPLETED' : "IN PROGRESS ({$displayProgress}%)") : 'PENDING ACCEPTANCE';
-        $acceptanceStatus = $isAccepted ? '✅ ACCEPTED' : '⏳ PENDING';
+        $delayInfo = $hasDelays ? " [HAS DELAYS]" : "";
         
-        $this->command->info("   ✓ Order #{$order->id} | {$product->name} x{$quantity}");
-        $this->command->info("     Order Status: {$order->status} | Acceptance: {$acceptanceStatus}");
+        $this->command->info("   ✓ Order #{$order->id} | {$product->name} x{$quantity}{$delayInfo}");
+        $this->command->info("     Status: {$order->status} | Progress: {$displayProgress}%");
         
         if ($production) {
-            $this->command->info("     🏭 Production: #{$production->id} CREATED");
-            $this->command->info("        Stage: {$currentStage} | Progress: {$displayProgress}%");
-            $this->command->info("        Status: {$production->status} | Will show in production tracking: YES ✅");
-        } else {
-            $this->command->info("     🏭 Production: NOT CREATED (order not accepted)");
-            $this->command->info("        Will show in production tracking: NO ❌");
+            $this->command->info("     🏭 Production: #{$production->id} | Stage: {$currentStage}");
+            if ($hasDelays) {
+                $this->command->info("     ⚠️  Delays: " . count($delayedProcesses) . " process(es) delayed");
+            }
         }
-        $this->command->info("     📊 Tracking: Stage: {$tracking->current_stage} | Status: {$tracking->status} | Progress: {$displayProgress}%");
         $this->command->info("");
     }
 
@@ -324,16 +368,13 @@ class AccurateOrdersSeeder extends Seeder
      */
     private function determineStageFromProgress($progress, $isAlkansya)
     {
-        // For Alkansya, we use the custom furniture stages since the database
-        // only has one set of stage enums. We map Alkansya progress to these stages.
         if ($isAlkansya) {
-            // Map Alkansya stages to custom furniture stage names
             $stages = [
-                ['name' => 'Material Preparation', 'threshold' => 16],  // Design + Preparation
-                ['name' => 'Cutting & Shaping', 'threshold' => 50],     // Cutting
-                ['name' => 'Assembly', 'threshold' => 66],              // Assembly
-                ['name' => 'Finishing', 'threshold' => 83],             // Finishing
-                ['name' => 'Quality Check & Packaging', 'threshold' => 100], // Quality Control
+                ['name' => 'Material Preparation', 'threshold' => 16],
+                ['name' => 'Cutting & Shaping', 'threshold' => 50],
+                ['name' => 'Assembly', 'threshold' => 66],
+                ['name' => 'Finishing', 'threshold' => 83],
+                ['name' => 'Quality Check & Packaging', 'threshold' => 100],
             ];
         } else {
             $stages = [
@@ -357,9 +398,9 @@ class AccurateOrdersSeeder extends Seeder
     }
 
     /**
-     * Create production processes with accurate status
+     * Create production processes with delays
      */
-    private function createProductionProcesses($production, $progress, $currentStage, $productionStartedAt)
+    private function createProductionProcesses($production, $progress, $currentStage, $productionStartedAt, $staff, $delayedProcesses)
     {
         $totalMinutes = 14 * 24 * 60; // 14 days in minutes
         
@@ -382,23 +423,44 @@ class AccurateOrdersSeeder extends Seeder
             $processStatus = 'pending';
             $startedAt = null;
             $completedAt = null;
+            $delayReason = null;
+            $isDelayed = false;
+            $completedByName = null;
+            
+            // Check if this process has a delay
+            $hasDelay = isset($delayedProcesses[$proc['name']]);
+            $extraDays = $hasDelay ? $delayedProcesses[$proc['name']]['extra_days'] : 0;
+            $actualDuration = $proc['days_duration'] + $extraDays;
             
             if ($progress >= $proc['threshold']) {
                 // Process is completed
                 $processStatus = 'completed';
                 $startedAt = $productionStartedAt->copy()->addDays($cumulativeDays);
-                $completedAt = $startedAt->copy()->addDays($proc['days_duration']);
+                $completedAt = $startedAt->copy()->addDays($actualDuration);
+                // Assign random staff member
+                $completedByName = $staff[array_rand($staff)]->name;
+                
+                if ($hasDelay) {
+                    $delayReason = $delayedProcesses[$proc['name']]['reason'];
+                    $isDelayed = true;
+                }
             } elseif ($index === $currentStageIndex || ($progress > 0 && $index === 0 && $currentStageIndex === 0)) {
-                // Current process is in progress (or first process if just started)
+                // Current process is in progress
                 $processStatus = 'in_progress';
                 $startedAt = $productionStartedAt->copy()->addDays($cumulativeDays);
             } elseif ($index < $currentStageIndex) {
                 // Previous processes should be completed
                 $processStatus = 'completed';
                 $startedAt = $productionStartedAt->copy()->addDays($cumulativeDays);
-                $completedAt = $startedAt->copy()->addDays($proc['days_duration']);
+                $completedAt = $startedAt->copy()->addDays($actualDuration);
+                // Assign random staff member
+                $completedByName = $staff[array_rand($staff)]->name;
+                
+                if ($hasDelay) {
+                    $delayReason = $delayedProcesses[$proc['name']]['reason'];
+                    $isDelayed = true;
+                }
             }
-            // else: process is pending (future stage)
 
             ProductionProcess::create([
                 'production_id' => $production->id,
@@ -408,9 +470,13 @@ class AccurateOrdersSeeder extends Seeder
                 'estimated_duration_minutes' => $proc['estimated_duration'],
                 'started_at' => $startedAt,
                 'completed_at' => $completedAt,
+                'delay_reason' => $delayReason,
+                'is_delayed' => $isDelayed,
+                'completed_by_name' => $completedByName,
+                'actual_completion_date' => $completedAt,
             ]);
             
-            $cumulativeDays += $proc['days_duration'];
+            $cumulativeDays += $actualDuration;
         }
     }
 
@@ -420,8 +486,6 @@ class AccurateOrdersSeeder extends Seeder
     private function generateProcessTimeline($trackingType, $currentStage, $status, $progress, $isAccepted)
     {
         if ($trackingType === 'alkansya') {
-            // For Alkansya, use simplified stages that map to the production stages
-            // This ensures consistency between tracking and production
             $stages = [
                 ['stage' => 'Material Preparation', 'description' => 'Design and material preparation', 'estimated_duration' => '1 day'],
                 ['stage' => 'Cutting & Shaping', 'description' => 'Cutting wood to specifications', 'estimated_duration' => '2 days'],

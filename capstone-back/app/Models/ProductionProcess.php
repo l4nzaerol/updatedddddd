@@ -22,11 +22,17 @@ class ProductionProcess extends Model
         'materials_used',
         'quality_checks',
         'assigned_worker',
+        'delay_reason',
+        'is_delayed',
+        'actual_completion_date',
+        'completed_by_name',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'actual_completion_date' => 'datetime',
+        'is_delayed' => 'boolean',
         'materials_used' => 'array',
         'quality_checks' => 'array',
     ];

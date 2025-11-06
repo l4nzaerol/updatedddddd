@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../Header";
 import Pusher from "pusher-js";
+import AlkansyaDailyOutputModal from "./AlkansyaDailyOutputModal";
 
 /**
  * Enhanced Inventory Management Page with Material CRUD Operations
@@ -403,6 +404,7 @@ const InventoryPage = () => {
   const [filter, setFilter] = useState({ q: "", type: "all", product: "all" });
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
+  const [showAlkansyaModal, setShowAlkansyaModal] = useState(false);
   const wsRef = useRef(null);
   const pollRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -738,12 +740,15 @@ const InventoryPage = () => {
       </div>
 
 
-
     <div className="container-fluid py-4">
       {/* Header */}
       <div className="d-flex align-items-center justify-content-between mb-3">
         <h2 id="inv-heading" className="mb-0">Inventory Management</h2>
         <div className="d-flex gap-2 flex-wrap">
+          <button className="btn btn-info" onClick={() => setShowAlkansyaModal(true)}>
+            <i className="fas fa-piggy-bank me-2"></i>
+            + Finished Alkansya for Daily Output
+          </button>
           <button className="btn btn-success" onClick={handleAddMaterial}>
             + Add Material
           </button>
@@ -752,8 +757,6 @@ const InventoryPage = () => {
           </button>
           <button className="btn btn-outline-primary" onClick={exportReplenishmentPlan}>
             Export Replenishment CSV
-          </button>
-          <button className="btn btn-outline-dark" onClick={exportUsageTrends}>
             Export Usage CSV
           </button>
           <label className="btn btn-outline-success mb-0">
@@ -1027,6 +1030,13 @@ const InventoryPage = () => {
         onHide={() => setShowModal(false)}
         material={editingMaterial}
         onSave={handleSaveMaterial}
+      />
+
+      {/* Alkansya Daily Output Modal */}
+      <AlkansyaDailyOutputModal
+        show={showAlkansyaModal}
+        onHide={() => setShowAlkansyaModal(false)}
+        onSuccess={() => fetchInventory()}
       />
 
       {/* Mini projected stock cards for top 5 critical */}

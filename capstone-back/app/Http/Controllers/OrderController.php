@@ -575,6 +575,7 @@ class OrderController extends Controller
         $trackingDetails = $trackings->map(function($tracking) use ($trackingService) {
             $production = Production::where('order_id', $tracking->order_id)
                 ->where('product_id', $tracking->product_id)
+                ->with('processes')
                 ->first();
             
             $progress = $production ? 
@@ -585,14 +586,63 @@ class OrderController extends Controller
                 $trackingService->calculatePredictiveETA($production) : 
                 $tracking->estimated_completion_date;
 
+            // Check if this is a table or chair (tracked products)
+            $productName = $tracking->product->name ?? '';
+            $isTrackedProduct = stripos($productName, 'table') !== false || 
+                               stripos($productName, 'chair') !== false;
+
+            // Get production processes for table and chair only
+            $processes = null;
+            
+            \Log::info('Processing tracking for product:', [
+                'product_name' => $productName,
+                'is_tracked' => $isTrackedProduct,
+                'has_production' => !!$production,
+                'production_id' => $production?->id,
+                'has_processes' => $production && $production->processes ? $production->processes->count() : 0
+            ]);
+            
+            if ($isTrackedProduct && $production && $production->processes) {
+                $processes = $production->processes->map(function($process) {
+                    $processData = [
+                        'id' => $process->id,
+                        'process_name' => $process->process_name,
+                        'status' => $process->status,
+                        'started_at' => $process->started_at,
+                        'completed_at' => $process->completed_at,
+                        'estimated_duration_minutes' => $process->estimated_duration_minutes,
+                        'delay_reason' => $process->delay_reason,
+                        'is_delayed' => $process->is_delayed,
+                        'actual_completion_date' => $process->actual_completion_date,
+                        'completed_by_name' => $process->completed_by_name,
+                    ];
+                    
+                    if ($process->delay_reason) {
+                        \Log::info('Delayed process found:', $processData);
+                    }
+                    
+                    return $processData;
+                })->toArray();
+                
+                \Log::info('Total processes returned:', ['count' => count($processes)]);
+            } else {
+                \Log::warning('Processes not included because:', [
+                    'is_tracked_product' => $isTrackedProduct,
+                    'has_production' => !!$production,
+                    'has_processes' => $production && $production->processes ? 'yes' : 'no'
+                ]);
+            }
+
             return [
-                'product_name' => $tracking->product->name,
+                'product_name' => $productName,
                 'current_stage' => $tracking->current_stage,
                 'status' => $tracking->status,
                 'progress_percentage' => $progress,
                 'estimated_completion_date' => $eta,
                 'tracking_type' => $tracking->tracking_type,
                 'process_timeline' => $tracking->process_timeline,
+                'processes' => $processes, // Add production processes
+                'is_tracked_product' => $isTrackedProduct,
                 'days_remaining' => $eta ? 
                     max(0, now()->diffInDays($eta, false)) : 0,
             ];

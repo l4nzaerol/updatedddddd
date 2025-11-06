@@ -8,7 +8,11 @@ const ProductionTracking = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  console.log('🚀 ProductionTracking component mounted');
+  console.warn('⚠️ CUSTOMER VIEW - This should appear in console!');
+
   useEffect(() => {
+    console.log('🔄 useEffect triggered - fetching orders');
     fetchOrders();
     const interval = setInterval(fetchOrders, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
@@ -19,18 +23,40 @@ const ProductionTracking = () => {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("User not authenticated.");
 
+      console.log('🔍 Fetching customer orders...');
       const response = await axios.get(`http://localhost:8000/api/my-orders`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      console.log('📦 Orders received:', response.data.length, 'orders');
 
       // Fetch tracking for each order
       const ordersWithTracking = await Promise.all(
         response.data.map(async (order) => {
           try {
+            console.log(`🔍 Fetching tracking for order #${order.id}...`);
             const trackingResponse = await axios.get(`http://localhost:8000/api/orders/${order.id}/tracking`, {
               headers: { Authorization: `Bearer ${token}` },
             });
-            console.log(`Tracking for order ${order.id}:`, trackingResponse.data);
+            console.log(`✅ Tracking for order ${order.id}:`, trackingResponse.data);
+            
+            // Log processes data specifically
+            if (trackingResponse.data.trackings) {
+              trackingResponse.data.trackings.forEach(tracking => {
+                if (tracking.processes) {
+                  console.log(`Processes for ${tracking.product_name}:`, tracking.processes);
+                  tracking.processes.forEach(process => {
+                    if (process.delay_reason) {
+                      console.log(`⚠️ DELAYED PROCESS FOUND:`, {
+                        name: process.process_name,
+                        reason: process.delay_reason,
+                        completed_by: process.completed_by_name
+                      });
+                    }
+                  });
+                }
+              });
+            }
+            
             return { ...order, tracking: trackingResponse.data };
           } catch (err) {
             console.error(`Failed to fetch tracking for order ${order.id}:`, err.response?.data || err.message);
@@ -39,8 +65,20 @@ const ProductionTracking = () => {
         })
       );
 
+      console.log('💾 Setting orders state with:', ordersWithTracking.length, 'orders');
       setOrders(ordersWithTracking);
+      
+      // Log each order's tracking details
+      ordersWithTracking.forEach(order => {
+        console.log(`📋 Order #${order.id} tracking details:`, {
+          has_tracking: !!order.tracking,
+          has_trackings_array: !!order.tracking?.trackings,
+          trackings_count: order.tracking?.trackings?.length || 0,
+          trackings: order.tracking?.trackings
+        });
+      });
     } catch (err) {
+      console.error('❌ Error fetching orders:', err);
       setError("Failed to load orders. Please try again.");
     } finally {
       setLoading(false);
@@ -384,6 +422,231 @@ const ProductionTracking = () => {
                         </div>
                       )}
 
+                      {/* Debug: Check why process timeline might not show */}
+                      {console.log('=== ORDER TRACKING DEBUG ===')}
+                      {console.log('Order ID:', order.id)}
+                      {console.log('Has tracking:', !!order.tracking)}
+                      {console.log('Has trackings array:', !!order.tracking?.trackings)}
+                      {console.log('Trackings count:', order.tracking?.trackings?.length || 0)}
+                      {order.tracking?.trackings && order.tracking.trackings.forEach((t, i) => {
+                        console.log(`Tracking ${i}:`, {
+                          product: t.product_name,
+                          is_tracked: t.is_tracked_product,
+                          has_processes: !!t.processes,
+                          process_count: t.processes?.length || 0
+                        });
+                      })}
+                      {console.log('================================')}
+
+                      {/* Production Process Tracking - Only for Table and Chair */}
+                      {order.tracking?.trackings && order.tracking.trackings.some(t => t.is_tracked_product && t.processes && t.processes.length > 0) ? (
+                        <div className="mb-4">
+                          <h6 className="text-primary mb-3">
+                            <FaHammer className="me-2" />
+                            Production Stages
+                          </h6>
+                          {order.tracking.trackings
+                            .filter(t => t.is_tracked_product && t.processes && t.processes.length > 0)
+                            .map((tracking, idx) => {
+                              // Check if there are any delayed processes
+                              const delayedProcesses = (tracking.processes || []).filter(p => 
+                                p.delay_reason && p.delay_reason.trim() !== '' && p.status === 'completed'
+                              );
+                              
+                              return (
+                                <div key={idx} className="card border-0 bg-light mb-3">
+                                  <div className="card-body">
+                                    <h6 className="text-dark mb-3">
+                                      {tracking.product_name} - Production Timeline
+                                    </h6>
+                                    
+                                    {/* Debug Info - Shows in browser console */}
+                                    {console.log('=== PRODUCTION TRACKING DEBUG ===')}
+                                    {console.log('Product:', tracking.product_name)}
+                                    {console.log('Total processes:', tracking.processes?.length || 0)}
+                                    {console.log('All processes:', tracking.processes)}
+                                    {console.log('Delayed processes found:', delayedProcesses.length)}
+                                    {delayedProcesses.length > 0 && console.log('Delay details:', delayedProcesses.map(p => ({
+                                      name: p.process_name,
+                                      reason: p.delay_reason,
+                                      status: p.status,
+                                      completed_by: p.completed_by_name
+                                    })))}
+                                    {console.log('================================')}
+                                    
+                                    {/* Delay Summary Alert - Show if any processes were delayed */}
+                                    {delayedProcesses.length > 0 ? (
+                                      <div className="alert alert-warning mb-3">
+                                        <div className="d-flex align-items-start">
+                                          <FaExclamationTriangle className="text-danger me-2" style={{ fontSize: '1.5rem' }} />
+                                          <div className="flex-grow-1">
+                                            <h6 className="alert-heading text-danger mb-2">
+                                              Production Delays Occurred
+                                            </h6>
+                                            <p className="mb-2 small">
+                                              {delayedProcesses.length} process{delayedProcesses.length > 1 ? 'es were' : ' was'} completed late. 
+                                              See details below for each delayed stage.
+                                            </p>
+                                            <div className="small">
+                                              <strong>Delayed Stages:</strong>
+                                              <ul className="mb-0 mt-1">
+                                                {delayedProcesses.map(p => (
+                                                  <li key={p.id}>{p.process_name} - {p.delay_reason}</li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="alert alert-info mb-3">
+                                        <small>
+                                          <FaCheckCircle className="me-2" />
+                                          All processes completed on time so far!
+                                        </small>
+                                      </div>
+                                    )}
+                                    
+                                    <div className="d-flex flex-column gap-2">
+                                    {tracking.processes.map((process) => {
+                                      // Check if process is delayed
+                                      const expectedDate = process.started_at ? 
+                                        new Date(new Date(process.started_at).getTime() + (process.estimated_duration_minutes || 0) * 60000) : null;
+                                      const actualDate = process.completed_at ? new Date(process.completed_at) : new Date();
+                                      const isDelayed = (process.delay_reason && process.delay_reason.trim()) || 
+                                                       (expectedDate && actualDate > expectedDate && process.status !== 'pending');
+                                      
+                                      return (
+                                        <div key={process.id} className={`d-flex align-items-start gap-3 p-3 rounded ${isDelayed ? 'bg-warning bg-opacity-10 border border-warning' : 'bg-white'}`}>
+                                          <div className="mt-1">
+                                            {process.status === 'completed' ? (
+                                              <FaCheckCircle className={isDelayed ? 'text-warning' : 'text-success'} style={{ fontSize: '1.5rem' }} />
+                                            ) : process.status === 'in_progress' ? (
+                                              <FaSpinner className="text-primary fa-spin" style={{ fontSize: '1.5rem' }} />
+                                            ) : (
+                                              <FaClock className="text-muted" style={{ fontSize: '1.5rem' }} />
+                                            )}
+                                          </div>
+                                          <div className="flex-grow-1">
+                                            <div className="d-flex justify-content-between align-items-start">
+                                              <div className="flex-grow-1">
+                                                <div className="d-flex align-items-center gap-2 mb-1">
+                                                  <span className={`fw-bold ${process.status === 'completed' && !isDelayed ? 'text-decoration-line-through text-muted' : 'text-dark'}`}>
+                                                    {process.process_name}
+                                                  </span>
+                                                  {isDelayed && process.status !== 'pending' && (
+                                                    <span className="badge bg-danger">
+                                                      <FaExclamationTriangle className="me-1" />
+                                                      DELAYED
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {process.estimated_duration_minutes && (
+                                                  <div className="text-muted small">
+                                                    Duration: {Math.floor(process.estimated_duration_minutes / 60)}h {process.estimated_duration_minutes % 60}m
+                                                  </div>
+                                                )}
+                                              </div>
+                                              <span className={`badge ${
+                                                process.status === 'completed' ? (isDelayed ? 'bg-warning' : 'bg-success') : 
+                                                process.status === 'in_progress' ? 'bg-info' : 
+                                                'bg-secondary'
+                                              } text-capitalize`}>
+                                                {process.status === 'in_progress' ? 'In Progress' : process.status}
+                                              </span>
+                                            </div>
+                                            
+                                            {/* Date Information */}
+                                            {process.started_at && (
+                                              <div className="small text-muted mt-2">
+                                                <div>
+                                                  <strong>Started:</strong> {new Date(process.started_at).toLocaleDateString()}
+                                                </div>
+                                                {expectedDate && (
+                                                  <div>
+                                                    <strong>Expected Completion:</strong> {expectedDate.toLocaleDateString()}
+                                                  </div>
+                                                )}
+                                                {process.completed_at && (
+                                                  <div className={isDelayed ? 'text-danger fw-bold' : 'text-success'}>
+                                                    <strong>Actual Completion:</strong> {new Date(process.completed_at).toLocaleDateString()}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                            
+                                            {/* Delay Reason */}
+                                            {process.delay_reason && process.delay_reason.trim() && (
+                                              <div className="alert alert-warning mt-2 mb-0 py-2">
+                                                <div className="d-flex align-items-start">
+                                                  <FaExclamationTriangle className="text-danger me-2 mt-1" />
+                                                  <div className="flex-grow-1">
+                                                    <strong className="text-danger">Delay Reason:</strong>
+                                                    <div className="small">{process.delay_reason}</div>
+                                                    {process.completed_by_name && (
+                                                      <div className="small text-muted mt-1">
+                                                        <strong>Completed by:</strong> {process.completed_by_name}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+                                            
+                                            {/* Completed By (for on-time completions) */}
+                                            {process.completed_by_name && !process.delay_reason && process.status === 'completed' && (
+                                              <div className="small text-success mt-2">
+                                                <FaCheckCircle className="me-1" />
+                                                <strong>Completed by:</strong> {process.completed_by_name}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="mt-3 p-2 bg-info bg-opacity-10 rounded">
+                                    <small className="text-muted">
+                                      <FaCalendarAlt className="me-2" />
+                                      <strong>Estimated Delivery:</strong> 2 weeks from production start
+                                    </small>
+                                  </div>
+                                </div>
+                              </div>
+                              );
+                            })}
+                        </div>
+                      ) : order.tracking?.trackings && order.tracking.trackings.length > 0 && (
+                        <div className="mb-4">
+                          <div className="alert alert-info">
+                            <h6 className="mb-2">
+                              <FaHammer className="me-2" />
+                              Production Information
+                            </h6>
+                            <p className="mb-2 small">
+                              Detailed process tracking is available for Tables and Chairs. 
+                              {order.tracking.trackings.map((t, i) => (
+                                <div key={i} className="mt-2">
+                                  <strong>{t.product_name}:</strong>
+                                  {t.is_tracked_product ? (
+                                    t.processes && t.processes.length > 0 ? (
+                                      <span className="text-success ms-2">✓ Process tracking active</span>
+                                    ) : (
+                                      <span className="text-warning ms-2">⚠ Processes not yet created</span>
+                                    )
+                                  ) : (
+                                    <span className="text-muted ms-2">Standard tracking (not Table/Chair)</span>
+                                  )}
+                                </div>
+                              ))}
+                            </p>
+                            <small className="text-muted">
+                              Current stage: {order.tracking.trackings[0]?.current_stage || 'Processing'}
+                            </small>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Order Items Summary */}
                       <div className="pt-3 border-top">
                         <h6 className="text-muted mb-3">Order Items:</h6>
@@ -430,7 +693,7 @@ const ProductionTracking = () => {
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .production-card {
           transition: all 0.3s ease;
           border-left: 4px solid #007bff;

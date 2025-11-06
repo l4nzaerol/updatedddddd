@@ -95,6 +95,52 @@ class InventoryController extends Controller
     }
 
     /**
+     * Add daily Alkansya production output to inventory
+     */
+    public function addAlkansyaDailyOutput(Request $request)
+    {
+        $data = $request->validate([
+            'quantity' => 'required|integer|min:1',
+            'date' => 'required|date',
+            'notes' => 'nullable|string'
+        ]);
+
+        // Find Alkansya inventory item
+        $alkansya = InventoryItem::where('name', 'LIKE', '%Alkansya%')
+            ->where('category', 'finished')
+            ->first();
+
+        if (!$alkansya) {
+            return response()->json([
+                'error' => 'Alkansya not found in inventory. Please add it first.'
+            ], 404);
+        }
+
+        // Add quantity to inventory
+        $alkansya->quantity_on_hand += $data['quantity'];
+        $alkansya->save();
+
+        // Log the addition
+        DB::table('inventory_transactions')->insert([
+            'inventory_item_id' => $alkansya->id,
+            'transaction_type' => 'production_output',
+            'quantity' => $data['quantity'],
+            'date' => $data['date'],
+            'notes' => $data['notes'] ?? 'Daily Alkansya production output',
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        broadcast(new InventoryUpdated($alkansya))->toOthers();
+
+        return response()->json([
+            'message' => 'Daily output added successfully',
+            'item' => $alkansya,
+            'added_quantity' => $data['quantity']
+        ]);
+    }
+
+    /**
      * Get daily material usage report
      */
     public function getDailyUsage(Request $request)

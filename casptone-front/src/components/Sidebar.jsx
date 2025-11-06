@@ -7,8 +7,8 @@ const Sidebar = () => {
 
   useEffect(() => {
     // Get user role from localStorage
-    const user = JSON.parse(localStorage.getItem('user'));
-    setUserRole(user?.role || '');
+    const role = localStorage.getItem('role');
+    setUserRole(role || '');
   }, []);
 
   // Define all menu items with their allowed roles

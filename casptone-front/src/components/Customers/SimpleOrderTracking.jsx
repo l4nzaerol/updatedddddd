@@ -23,9 +23,30 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
       const response = await axios.get(`http://localhost:8000/api/orders/${orderId}/tracking`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log('Tracking data received:', response.data);
+      console.log('=== TRACKING DATA RECEIVED ===');
+      console.log('Full response:', response.data);
+      console.log('Trackings array:', response.data.trackings);
+      
+      // Check each tracking for processes
+      if (response.data.trackings) {
+        response.data.trackings.forEach((tracking, idx) => {
+          console.log(`Tracking ${idx} - ${tracking.product_name}:`, {
+            has_processes: !!tracking.processes,
+            processes_count: tracking.processes?.length || 0,
+            processes: tracking.processes
+          });
+          
+          // Check for delayed processes
+          if (tracking.processes) {
+            const delayed = tracking.processes.filter(p => p.delay_reason);
+            console.log(`Delayed processes in ${tracking.product_name}:`, delayed);
+          }
+        });
+      }
+      
       setTrackingData(response.data);
     } catch (err) {
+      console.error('Error fetching tracking:', err);
       setError("Failed to load tracking information");
     } finally {
       setLoading(false);
@@ -336,38 +357,159 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
                     </div>
                   </div>
                   <div className="row">
-                    {trackings.map((tracking, index) => (
-                      <div key={index} className="col-md-6 mb-3">
-                        <div className="card">
-                          <div className="card-body">
-                            <h6 className="card-title">{tracking.product_name}</h6>
-                            <div className="d-flex align-items-center mb-2">
-                              <div className="me-2">
-                                {getStageIcon(tracking.current_stage)}
+                    {trackings.map((tracking, index) => {
+                      // Get delayed processes for this tracking
+                      const delayedProcesses = tracking.processes?.filter(p => 
+                        p.delay_reason && p.delay_reason.trim() && p.status === 'completed'
+                      ) || [];
+                      
+                      return (
+                        <div key={index} className="col-md-12 mb-3">
+                          <div className="card">
+                            <div className="card-body">
+                              <h6 className="card-title">{tracking.product_name}</h6>
+                              
+                              {/* Current Stage Info */}
+                              <div className="d-flex align-items-center mb-2">
+                                <div className="me-2">
+                                  {getStageIcon(tracking.current_stage)}
+                                </div>
+                                <div>
+                                  <strong>Current Stage:</strong> {tracking.current_stage}
+                                </div>
                               </div>
-                              <div>
-                                <strong>Current Stage:</strong> {tracking.current_stage}
+                              
+                              {/* Current Stage Description */}
+                              <div className="small text-muted mb-2">
+                                Joining and assembling all components together, ensuring structural integrity and proper alignment.
                               </div>
-                            </div>
-                            <div className="progress mb-2">
-                              <div 
-                                className="progress-bar bg-primary" 
-                                role="progressbar" 
-                                style={{ width: `${tracking.progress_percentage}%` }}
-                              >
-                                {tracking.progress_percentage}%
+                              
+                              {/* Progress Bar */}
+                              <div className="progress mb-2">
+                                <div 
+                                  className="progress-bar bg-primary" 
+                                  role="progressbar" 
+                                  style={{ width: `${tracking.progress_percentage}%` }}
+                                >
+                                  {tracking.progress_percentage}%
+                                </div>
                               </div>
-                            </div>
-                            <div className="small text-muted">
-                              <span className={`badge bg-${getStatusColor(tracking.status)}`}>
-                                {tracking.status === 'completed' ? 'Completed' : 
-                                 tracking.status === 'in_progress' ? 'In Production' : 'Pending'}
-                              </span>
+                              
+                              {/* Status Badge */}
+                              <div className="small text-muted mb-3">
+                                <span className={`badge bg-${getStatusColor(tracking.status)}`}>
+                                  {tracking.status === 'completed' ? 'Completed' : 
+                                   tracking.status === 'in_progress' ? 'In Production' : 'Pending'}
+                                </span>
+                              </div>
+                              
+                              {/* Previous Completed Stages */}
+                              {tracking.processes && tracking.processes.length > 0 && (
+                                <div className="mt-3">
+                                  <h6 className="text-muted mb-2">
+                                    <i className="fas fa-history me-2"></i>
+                                    Previous Stages
+                                  </h6>
+                                  {tracking.processes
+                                    .filter(p => p.status === 'completed')
+                                    .map((process, idx) => {
+                                      const isDelayed = process.delay_reason && process.delay_reason.trim();
+                                      return (
+                                        <div key={idx} className={`card mb-2 ${isDelayed ? 'border-warning' : 'border-success'}`}>
+                                          <div className="card-body p-2">
+                                            <div className="d-flex align-items-start">
+                                              <div className="me-2">
+                                                {isDelayed ? (
+                                                  <i className="fas fa-exclamation-triangle text-warning"></i>
+                                                ) : (
+                                                  <i className="fas fa-check-circle text-success"></i>
+                                                )}
+                                              </div>
+                                              <div className="flex-grow-1">
+                                                <div className="d-flex justify-content-between align-items-start">
+                                                  <strong className="small">{process.process_name}</strong>
+                                                  {isDelayed && (
+                                                    <span className="badge bg-danger">DELAYED</span>
+                                                  )}
+                                                </div>
+                                                {process.completed_at && (
+                                                  <div className="small text-muted">
+                                                    Completed: {new Date(process.completed_at).toLocaleDateString()}
+                                                  </div>
+                                                )}
+                                                {isDelayed && (
+                                                  <div className="alert alert-warning p-2 mt-2 mb-0">
+                                                    <div className="small">
+                                                      <strong>Delay Reason:</strong> {process.delay_reason}
+                                                    </div>
+                                                    {process.completed_by_name && (
+                                                      <div className="small text-muted">
+                                                        Completed by: {process.completed_by_name}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              )}
+                              
+                              {/* Debug Info */}
+                              {console.log('Rendering tracking:', tracking.product_name)}
+                              {console.log('Has processes:', !!tracking.processes)}
+                              {console.log('Processes:', tracking.processes)}
+                              {console.log('Delayed processes:', delayedProcesses)}
+                              
+                              {/* Delay Information */}
+                              {delayedProcesses.length > 0 ? (
+                                <div className="alert alert-warning mb-0">
+                                  <h6 className="alert-heading text-danger">
+                                    <i className="fas fa-exclamation-triangle me-2"></i>
+                                    Previous Stage Delays
+                                  </h6>
+                                  {delayedProcesses.map((process, idx) => (
+                                    <div key={idx} className="mb-2 pb-2 border-bottom">
+                                      <div className="fw-bold">{process.process_name}</div>
+                                      <div className="small">
+                                        <strong>Reason:</strong> {process.delay_reason}
+                                      </div>
+                                      {process.completed_by_name && (
+                                        <div className="small text-muted">
+                                          <strong>Completed by:</strong> {process.completed_by_name}
+                                        </div>
+                                      )}
+                                      {process.completed_at && (
+                                        <div className="small text-muted">
+                                          <strong>Completed:</strong> {new Date(process.completed_at).toLocaleDateString()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : tracking.processes ? (
+                                <div className="alert alert-success mb-0">
+                                  <small>
+                                    <i className="fas fa-check-circle me-2"></i>
+                                    All previous stages completed on time!
+                                  </small>
+                                </div>
+                              ) : (
+                                <div className="alert alert-info mb-0">
+                                  <small>
+                                    <i className="fas fa-info-circle me-2"></i>
+                                    Process details loading... (Check console for debug info)
+                                  </small>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

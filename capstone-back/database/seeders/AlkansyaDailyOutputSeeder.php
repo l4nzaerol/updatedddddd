@@ -13,13 +13,13 @@ use Carbon\Carbon;
 class AlkansyaDailyOutputSeeder extends Seeder
 {
     /**
-     * Seed Alkansya daily output analytics for 1 month
+     * Seed Alkansya daily output analytics for 3 months
      * Creates analytics records AND inventory usage tracking
      * Realistic production patterns with no Sunday output
      */
     public function run(): void
     {
-        $this->command->info('=== Creating Alkansya Daily Output Analytics (1 Month) ===');
+        $this->command->info('=== Creating Alkansya Daily Output Analytics (3 Months) ===');
         
         // Get Alkansya product
         $alkansya = Product::where('name', 'Alkansya')->first();
@@ -43,8 +43,8 @@ class AlkansyaDailyOutputSeeder extends Seeder
         $this->command->info("Creating analytics and inventory usage records...");
         $this->command->info("");
 
-        // Start from 1 month ago
-        $startDate = Carbon::now()->subMonth()->startOfDay();
+        // Start from 3 months ago
+        $startDate = Carbon::now()->subMonths(3)->startOfDay();
         $endDate = Carbon::now()->subDay(); // Up to yesterday
         
         $analyticsCount = 0;

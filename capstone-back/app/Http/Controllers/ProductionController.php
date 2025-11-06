@@ -43,10 +43,8 @@ class ProductionController extends Controller
 
             $productions = $query->orderBy('date', 'desc')->get();
             
-            // Update progress based on time elapsed for each production
+            // Add BOM and process details for each production
             foreach ($productions as $production) {
-                $this->updateTimeBasedProgress($production);
-                
                 // Add BOM (Bill of Materials) for the product
                 $production->bom = $this->getProductBOM($production->product_id);
                 
@@ -400,6 +398,151 @@ class ProductionController extends Controller
         return response()->json(['message' => 'Production deleted']);
     }
 
+    /**
+     * Manually update a specific process status
+     */
+    public function updateProcess(Request $request, $productionId, $processId)
+    {
+        try {
+            $data = $request->validate([
+                'status' => 'required|string|in:pending,in_progress,completed',
+                'delay_reason' => 'nullable|string',
+                'is_delayed' => 'nullable|boolean',
+                'actual_completion_date' => 'nullable|date',
+            ]);
+
+            $production = Production::findOrFail($productionId);
+            $process = ProductionProcess::where('production_id', $productionId)
+                ->where('id', $processId)
+                ->firstOrFail();
+
+            $oldStatus = $process->status;
+            $newStatus = $data['status'];
+
+            // Update process status
+            $updateData = ['status' => $newStatus];
+            
+            if ($newStatus === 'in_progress' && !$process->started_at) {
+                $updateData['started_at'] = now();
+            }
+            
+            if ($newStatus === 'completed') {
+                $updateData['completed_at'] = $data['actual_completion_date'] ?? now();
+                if (!$process->started_at) {
+                    $updateData['started_at'] = now();
+                }
+                
+                // Add delay tracking data if provided
+                if (isset($data['delay_reason'])) {
+                    $updateData['delay_reason'] = $data['delay_reason'];
+                }
+                if (isset($data['is_delayed'])) {
+                    $updateData['is_delayed'] = $data['is_delayed'];
+                }
+                if (isset($data['actual_completion_date'])) {
+                    $updateData['actual_completion_date'] = $data['actual_completion_date'];
+                }
+                
+                // Add completed by user name
+                if ($request->user()) {
+                    $updateData['completed_by_name'] = $request->user()->name;
+                }
+            }
+
+            $process->update($updateData);
+
+            // Update production current_stage based on processes
+            $this->updateProductionStageFromProcesses($production);
+
+            // Reload production with relationships
+            $production->load(['processes', 'order']);
+
+            // Broadcast update - use ProductionUpdated instead
+            try {
+                broadcast(new ProductionUpdated($production))->toOthers();
+            } catch (\Exception $e) {
+                \Log::warning("Failed to broadcast production update: " . $e->getMessage());
+            }
+
+            // Notify customer if there's an order (wrapped in try-catch to prevent email errors from breaking the API)
+            try {
+                if ($production->order_id) {
+                    $order = Order::with('user')->find($production->order_id);
+                    if ($order && $order->user) {
+                        $order->user->notify(new OrderStageUpdated(
+                            $order->id,
+                            $production->product_name,
+                            $production->current_stage,
+                            $production->status
+                        ));
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning("Failed to send customer notification: " . $e->getMessage());
+                // Don't fail the request if notification fails
+            }
+
+            return response()->json([
+                'message' => 'Process updated successfully',
+                'process' => $process,
+                'production' => $production
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Error updating process: " . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to update process',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update production stage and status based on current processes
+     */
+    private function updateProductionStageFromProcesses($production)
+    {
+        $processes = $production->processes()->orderBy('process_order')->get();
+        
+        if ($processes->isEmpty()) {
+            return;
+        }
+
+        // Find current in-progress process
+        $currentProcess = $processes->firstWhere('status', 'in_progress');
+        
+        if ($currentProcess) {
+            $production->current_stage = $currentProcess->process_name;
+            $production->status = 'In Progress';
+        } else {
+            // Check if all completed
+            $completedCount = $processes->where('status', 'completed')->count();
+            
+            if ($completedCount === $processes->count()) {
+                $production->current_stage = 'Completed';
+                $production->status = 'Completed';
+                $production->overall_progress = 100;
+                $production->actual_completion_date = now();
+                
+                // DO NOT auto-update order status to ready_for_delivery
+                // Admin must manually mark as ready for delivery from the "Ready (Furniture)" tab
+            } else {
+                // Find next pending process
+                $nextProcess = $processes->where('status', 'pending')->first();
+                if ($nextProcess) {
+                    $production->current_stage = $nextProcess->process_name;
+                }
+            }
+        }
+
+        // Calculate overall progress
+        $completedCount = $processes->where('status', 'completed')->count();
+        $totalCount = $processes->count();
+        $production->overall_progress = ($completedCount / $totalCount) * 100;
+
+        $production->save();
+    }
+
     public function analytics(Request $request)
     {
         // Get Production data (main source with 30 records)
@@ -425,32 +568,65 @@ class ProductionController extends Controller
 
         // KPIs from Production data + Order data
         // Use allOrders for pending/completed counts to show current state
+        // Only count Table/Chair productions (exclude Alkansya)
         $kpis = [
-            'total'       => $productionData->count(),
-            'in_progress' => $productionData->where('status', 'In Progress')->count(),
-            'completed'   => $productionData->where('status', 'Completed')->count(),
-            'hold'        => $productionData->where('status', 'Hold')->count(),
+            'total'       => $productionData->where('product_type', '!=', 'alkansya')->count(),
+            'in_progress' => $productionData->where('status', 'In Progress')->where('product_type', '!=', 'alkansya')->count(),
+            'completed'   => $productionData->where('status', 'Completed')->where('product_type', '!=', 'alkansya')->count(),
+            'hold'        => $productionData->where('status', 'Hold')->where('product_type', '!=', 'alkansya')->count(),
             'pending_orders' => $allOrders->where('acceptance_status', 'pending')->count(),
             'completed_orders' => $allOrders->where('status', 'completed')->count(),
-            'completed_productions' => $productionData->where('status', 'Completed')->count(),
+            'completed_productions' => $productionData->where('status', 'Completed')->where('product_type', '!=', 'alkansya')->count(),
         ];
 
-        // Daily output from ProductionAnalytics (includes Alkansya and other products)
+        // Daily output - SEPARATED by product type
+        // Get ALL ProductionAnalytics data (no date filter by default for accurate totals)
         $analyticsQuery = ProductionAnalytics::query();
         
+        // Only apply date filter if explicitly provided
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $analyticsQuery->whereBetween('date', [$request->start_date, $request->end_date]);
         }
         
-        $daily = $analyticsQuery->get()
+        // Alkansya output from ProductionAnalytics (includes all historical data)
+        $alkansyaData = $analyticsQuery->get()
             ->groupBy('date')
             ->map(fn($items, $date) => [
-                'date'     => $date,
-                'quantity' => $items->sum('actual_output'),
-            ])
-            ->values()
-            ->sortBy('date')
-            ->values();
+                'date' => $date,
+                'alkansya' => $items->sum('actual_output'),
+                'furniture' => 0,
+                'quantity' => $items->sum('actual_output'), // Total for backward compatibility
+            ]);
+
+        // Completed Table/Chair productions
+        $completedProductions = Production::where('status', 'Completed')
+            ->where('product_type', '!=', 'alkansya')
+            ->whereNotNull('actual_completion_date')
+            ->get()
+            ->groupBy(function($prod) {
+                return Carbon::parse($prod->actual_completion_date)->format('Y-m-d');
+            })
+            ->map(fn($items, $date) => [
+                'date' => $date,
+                'alkansya' => 0,
+                'furniture' => $items->sum('quantity'),
+                'quantity' => $items->sum('quantity'),
+            ]);
+
+        // Merge both datasets
+        $allDates = collect($alkansyaData->keys())->merge($completedProductions->keys())->unique();
+        
+        $daily = $allDates->map(function($date) use ($alkansyaData, $completedProductions) {
+            $alkansyaQty = $alkansyaData->get($date)['alkansya'] ?? 0;
+            $furnitureQty = $completedProductions->get($date)['furniture'] ?? 0;
+            
+            return [
+                'date' => $date,
+                'alkansya' => $alkansyaQty,
+                'furniture' => $furnitureQty,
+                'quantity' => $alkansyaQty + $furnitureQty, // Total
+            ];
+        })->sortBy('date')->values();
 
         // Stage breakdown from Production data (using actual stages from data)
         $actualStages = $productionData->whereNotNull('current_stage')
@@ -542,12 +718,30 @@ class ProductionController extends Controller
             })
             ->values();
 
+        // Top Staff - Staff members who completed the most processes
+        $topStaff = ProductionProcess::whereNotNull('completed_by_name')
+            ->where('completed_by_name', '!=', '')
+            ->where('status', 'completed')
+            ->select('completed_by_name', DB::raw('COUNT(*) as completed_processes'))
+            ->groupBy('completed_by_name')
+            ->orderByDesc('completed_processes')
+            ->limit(5)
+            ->get()
+            ->map(function($staff) {
+                return [
+                    'name' => $staff->completed_by_name,
+                    'completed_processes' => $staff->completed_processes,
+                ];
+            })
+            ->values();
+
         return response()->json([
             'kpis'             => $kpis,
             'daily_output'     => $daily,
             'stage_breakdown'  => $stageBreakdown,
             'top_products'     => $topProducts,
             'top_users'        => $topUsers,
+            'top_staff'        => $topStaff,
             'resource_allocation' => $resourceAllocation,
             'stage_workload'   => $stageWorkload,
             'capacity_utilization' => [

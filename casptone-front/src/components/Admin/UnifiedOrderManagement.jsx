@@ -28,6 +28,7 @@ const UnifiedOrderManagement = () => {
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState('all'); // pending, all, accepted, rejected
+  const [productTypeFilter, setProductTypeFilter] = useState('all'); // all, furniture, alkansya
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
@@ -65,7 +66,7 @@ const UnifiedOrderManagement = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [orders, activeView, filters]);
+  }, [orders, activeView, productTypeFilter, filters]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -138,6 +139,23 @@ const UnifiedOrderManagement = () => {
       filtered = filtered.filter(o => {
         const orderDate = new Date(o.checkout_date).getTime();
         return orderDate >= start && orderDate <= end;
+      });
+    }
+
+    // Product type filter
+    if (productTypeFilter === 'furniture') {
+      filtered = filtered.filter(o => {
+        // Check if order has items with products that are NOT Alkansya
+        return o.items?.some(item => 
+          item.product?.name && !item.product.name.toLowerCase().includes('alkansya')
+        );
+      });
+    } else if (productTypeFilter === 'alkansya') {
+      filtered = filtered.filter(o => {
+        // Check if order has items with Alkansya products
+        return o.items?.some(item => 
+          item.product?.name && item.product.name.toLowerCase().includes('alkansya')
+        );
       });
     }
 
@@ -350,6 +368,40 @@ const UnifiedOrderManagement = () => {
                   <FaBox className="text-secondary mb-2" size={24} />
                   <h3 className="mb-0">{orders.length}</h3>
                   <small className="text-muted">All Orders</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Product Type Filter */}
+          <div className="row mb-4">
+            <div className="col-12">
+              <div className="card border-0 shadow-sm">
+                <div className="card-body">
+                  <div className="btn-group w-100" role="group">
+                    <button
+                      type="button"
+                      className={`btn ${productTypeFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setProductTypeFilter('all')}
+                    >
+                      <FaBox className="me-2" />
+                      All Orders
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${productTypeFilter === 'furniture' ? 'btn-success' : 'btn-outline-success'}`}
+                      onClick={() => setProductTypeFilter('furniture')}
+                    >
+                      🪑 Table & Chair Orders
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${productTypeFilter === 'alkansya' ? 'btn-info' : 'btn-outline-info'}`}
+                      onClick={() => setProductTypeFilter('alkansya')}
+                    >
+                      🐷 Alkansya Orders
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

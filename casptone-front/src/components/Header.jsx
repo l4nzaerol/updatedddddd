@@ -74,6 +74,7 @@ const Header = ({ role, username }) => {
 // 🔸 Sidebar for Admin
 const Sidebar = () => {
     const navigate = useNavigate();
+    const role = localStorage.getItem("role");
 
     const handleLogout = () => {
         localStorage.clear();
@@ -94,21 +95,29 @@ const Sidebar = () => {
                     <button style={styles.navItem} onClick={() => navigate("/dashboard")}>
                         <LayoutDashboard size={20} /> Dashboard
                     </button>
-                    <button style={styles.navItem} onClick={() => navigate("/product")}>
-                        <Package size={20} /> Products
-                    </button>
-                    <button style={styles.navItem} onClick={() => navigate("/orders")}>
-                        <ClipboardList size={20} /> Orders
-                    </button>
-                    <button style={styles.navItem} onClick={() => navigate("/inventory")}>
-                        <Boxes size={20} /> Inventory
-                    </button>
+                    {role === "employee" && (
+                        <button style={styles.navItem} onClick={() => navigate("/product")}>
+                            <Package size={20} /> Products
+                        </button>
+                    )}
+                    {role === "employee" && (
+                        <button style={styles.navItem} onClick={() => navigate("/orders")}>
+                            <ClipboardList size={20} /> Orders
+                        </button>
+                    )}
+                    {role === "employee" && (
+                        <button style={styles.navItem} onClick={() => navigate("/inventory")}>
+                            <Boxes size={20} /> Inventory
+                        </button>
+                    )}
                     <button style={styles.navItem} onClick={() => navigate("/productions")}>
                         <Factory size={20} /> Productions
                     </button>
-                    <button style={styles.navItem} onClick={() => navigate("/reports")}>
-                        <BarChart size={20} /> Reports
-                    </button>
+                    {role === "employee" && (
+                        <button style={styles.navItem} onClick={() => navigate("/reports")}>
+                            <BarChart size={20} /> Reports
+                        </button>
+                    )}
                 </nav>
                 
             </div>

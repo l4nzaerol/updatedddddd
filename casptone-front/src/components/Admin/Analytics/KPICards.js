@@ -9,7 +9,7 @@ export default function KPICards({ kpis }) {
       isPrimary: false
     },
     { 
-      label: "Completed", 
+      label: "Completed Productions OF Table and Chair", 
       value: kpis.completed_productions, 
       icon: "fa-check-circle",
       isPrimary: false

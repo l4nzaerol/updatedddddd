@@ -30,10 +30,25 @@ const Report = () => {
     // Production report data states
     const [productionAnalytics, setProductionAnalytics] = useState(null);
     const [productionPerformance, setProductionPerformance] = useState(null);
+    
+    // Advanced analytics states
+    const [productionOutput, setProductionOutput] = useState(null);
+    const [resourceUtilization, setResourceUtilization] = useState(null);
+    const [advancedPerformance, setAdvancedPerformance] = useState(null);
+    const [predictiveAnalytics, setPredictiveAnalytics] = useState(null);
+    const [materialTrends, setMaterialTrends] = useState(null);
+    const [stockReport, setStockReport] = useState(null);
 
     useEffect(() => {
         fetchAllReports();
     }, [windowDays]);
+
+    // Debug logging for tab changes and data availability
+    useEffect(() => {
+        console.log('🔍 Tab State:', { mainTab, activeTab });
+        console.log('🔍 Resource Utilization:', resourceUtilization);
+        console.log('🔍 Has material_usage_by_product?', !!resourceUtilization?.material_usage_by_product);
+    }, [activeTab, mainTab, resourceUtilization]);
 
     const fetchAllReports = async () => {
         setLoading(true);
@@ -128,6 +143,87 @@ const Report = () => {
                 setProductionPerformance(prodAnalytics.data);
             } catch (e) {
                 console.error("Production analytics load failed:", e);
+            }
+            
+            await delay(150);
+            
+            // Load advanced analytics
+            try {
+                // Load each advanced analytics endpoint individually with error handling
+                const results = await Promise.allSettled([
+                    api.get('/analytics/production-output', { params: { 
+                        start_date: getStartDate(90), 
+                        end_date: new Date().toISOString().split('T')[0],
+                        timeframe: 'daily'
+                    }}),
+                    api.get('/analytics/resource-utilization', { params: { 
+                        start_date: getStartDate(90), 
+                        end_date: new Date().toISOString().split('T')[0]
+                    }}),
+                    api.get('/analytics/production-performance', { params: { 
+                        start_date: getStartDate(90), 
+                        end_date: new Date().toISOString().split('T')[0]
+                    }}),
+                    api.get('/analytics/predictive', { params: { forecast_days: 30 }}),
+                    api.get('/analytics/material-usage-trends', { params: { 
+                        start_date: getStartDate(90), 
+                        end_date: new Date().toISOString().split('T')[0],
+                        timeframe: 'daily'
+                    }}),
+                    api.get('/analytics/automated-stock-report'),
+                ]);
+
+                const endpointNames = [
+                    'production-output',
+                    'resource-utilization', 
+                    'production-performance',
+                    'predictive',
+                    'material-usage-trends',
+                    'automated-stock-report'
+                ];
+
+                // Process results and set state for successful calls
+                results.forEach((result, index) => {
+                    if (result.status === 'fulfilled') {
+                        switch(index) {
+                            case 0: 
+                                setProductionOutput(result.value.data);
+                                console.log('✅ Production Output loaded:', result.value.data);
+                                break;
+                            case 1: 
+                                setResourceUtilization(result.value.data);
+                                console.log('✅ Resource Utilization loaded:', result.value.data);
+                                console.log('   - Has material_usage_by_product?', !!result.value.data?.material_usage_by_product);
+                                console.log('   - Is it an array?', Array.isArray(result.value.data?.material_usage_by_product));
+                                console.log('   - Count:', result.value.data?.material_usage_by_product?.length || 0);
+                                console.log('   - Data:', result.value.data?.material_usage_by_product);
+                                break;
+                            case 2: 
+                                setAdvancedPerformance(result.value.data);
+                                console.log('✅ Production Performance loaded:', result.value.data);
+                                break;
+                            case 3: 
+                                setPredictiveAnalytics(result.value.data);
+                                console.log('✅ Predictive Analytics loaded:', result.value.data);
+                                break;
+                            case 4: 
+                                setMaterialTrends(result.value.data);
+                                console.log('✅ Material Trends loaded:', result.value.data);
+                                break;
+                            case 5: 
+                                setStockReport(result.value.data);
+                                console.log('✅ Stock Report loaded:', result.value.data);
+                                break;
+                        }
+                    } else {
+                        console.error(`❌ Failed to load ${endpointNames[index]}:`, result.reason?.response?.data || result.reason);
+                    }
+                });
+                
+                const successCount = results.filter(r => r.status === 'fulfilled').length;
+                console.log(`📊 Advanced analytics: ${successCount}/${results.length} endpoints loaded successfully`);
+            } catch (e) {
+                console.error("Advanced analytics load failed:", e);
             }
             
             console.log("All reports loaded successfully!");
@@ -290,7 +386,7 @@ const Report = () => {
                             }}
                             onClick={() => {
                                 setMainTab("production");
-                                setActiveTab("performance");
+                                setActiveTab("output-analytics");
                             }}
                         >
                             🏭 Production Reports
@@ -388,6 +484,16 @@ const Report = () => {
                         </button>
                     </li>
                     <li className="nav-item">
+                        <button className={`nav-link ${activeTab === "stock-report" ? "active" : ""}`} onClick={() => setActiveTab("stock-report")}>
+                            🚨 Stock Report
+                        </button>
+                    </li>
+                    <li className="nav-item">
+                        <button className={`nav-link ${activeTab === "material-usage" ? "active" : ""}`} onClick={() => setActiveTab("material-usage")}>
+                            📊 Material Usage
+                        </button>
+                    </li>
+                    <li className="nav-item">
                         <button className={`nav-link ${activeTab === "replenishment" ? "active" : ""}`} onClick={() => setActiveTab("replenishment")}>
                             📅 Replenishment
                         </button>
@@ -402,11 +508,6 @@ const Report = () => {
                             📈 Trends
                         </button>
                     </li>
-                    <li className="nav-item">
-                        <button className={`nav-link ${activeTab === "daily" ? "active" : ""}`} onClick={() => setActiveTab("daily")}>
-                            📅 Daily Usage
-                        </button>
-                    </li>
                 </ul>
                 )}
                 
@@ -414,23 +515,23 @@ const Report = () => {
                 {mainTab === "production" && (
                 <ul className="nav nav-tabs mb-4">
                     <li className="nav-item">
-                        <button className={`nav-link ${activeTab === "performance" ? "active" : ""}`} onClick={() => setActiveTab("performance")}>
-                            📊 Performance
+                        <button className={`nav-link ${activeTab === "output-analytics" ? "active" : ""}`} onClick={() => setActiveTab("output-analytics")}>
+                            📈 Output Analytics
                         </button>
                     </li>
                     <li className="nav-item">
-                        <button className={`nav-link ${activeTab === "progress" ? "active" : ""}`} onClick={() => setActiveTab("progress")}>
-                            ⏱️ Work Progress
+                        <button className={`nav-link ${activeTab === "resource-util" ? "active" : ""}`} onClick={() => setActiveTab("resource-util")}>
+                            📦 Resource Utilization
                         </button>
                     </li>
                     <li className="nav-item">
-                        <button className={`nav-link ${activeTab === "capacity" ? "active" : ""}`} onClick={() => setActiveTab("capacity")}>
-                            📈 Capacity Utilization
+                        <button className={`nav-link ${activeTab === "cycle-throughput" ? "active" : ""}`} onClick={() => setActiveTab("cycle-throughput")}>
+                            ⏱️ Cycle & Throughput
                         </button>
                     </li>
                     <li className="nav-item">
-                        <button className={`nav-link ${activeTab === "efficiency" ? "active" : ""}`} onClick={() => setActiveTab("efficiency")}>
-                            ⚡ Efficiency Metrics
+                        <button className={`nav-link ${activeTab === "predictive" ? "active" : ""}`} onClick={() => setActiveTab("predictive")}>
+                            🔮 Predictive Analytics
                         </button>
                     </li>
                 </ul>
@@ -1029,154 +1130,80 @@ const Report = () => {
                             )
                         )}
                         
-                        {/* Production Reports Content */}
-                        {mainTab === "production" && (
-                            <div>
-                                {/* Performance Tab */}
-                                {activeTab === "performance" && productionPerformance && (
-                                    <div className="row g-4">
-                                        <div className="col-lg-8">
-                                            <div className="card shadow-sm">
-                                                <div className="card-header bg-white border-bottom">
-                                                    <h5 className="mb-0 fw-bold">📊 Daily Production Output</h5>
-                                                </div>
-                                                <div className="card-body">
-                                                    <ResponsiveContainer width="100%" height={350}>
-                                                        <BarChart data={productionPerformance.daily_output || []}>
-                                                            <CartesianGrid strokeDasharray="3 3" />
-                                                            <XAxis dataKey="date" />
-                                                            <YAxis />
-                                                            <Tooltip />
-                                                            <Legend />
-                                                            <Bar dataKey="quantity" fill="#0d6efd" name="Output Quantity" />
-                                                        </BarChart>
-                                                    </ResponsiveContainer>
+                        {/* Stock Report Tab - Inventory */}
+                        {activeTab === "stock-report" && mainTab === "inventory" && stockReport && (
+                            <div className="card shadow-sm mb-4">
+                                <div className="card-header bg-white border-bottom">
+                                    <h5 className="mb-0 fw-bold">🚨 Automated Stock Report</h5>
+                                    <small className="text-muted">Generated: {stockReport.generated_at}</small>
+                                </div>
+                                <div className="card-body">
+                                    {/* Summary Cards */}
+                                    <div className="row mb-4">
+                                        <div className="col-md-4">
+                                            <div className="card border-danger border-3">
+                                                <div className="card-body text-center">
+                                                    <h2 className="text-danger mb-0">{stockReport.summary.critical_items}</h2>
+                                                    <p className="text-muted mb-0">Critical Items</p>
+                                                    <small className="text-danger">Immediate action required</small>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="col-lg-4">
-                                            <div className="card shadow-sm">
-                                                <div className="card-header bg-white border-bottom">
-                                                    <h5 className="mb-0 fw-bold">🎯 Stage Distribution</h5>
+                                        <div className="col-md-4">
+                                            <div className="card border-warning border-3">
+                                                <div className="card-body text-center">
+                                                    <h2 className="text-warning mb-0">{stockReport.summary.low_stock_items}</h2>
+                                                    <p className="text-muted mb-0">Low Stock Items</p>
+                                                    <small className="text-warning">Monitor closely</small>
                                                 </div>
-                                                <div className="card-body">
-                                                    <ResponsiveContainer width="100%" height={400}>
-                                                        <PieChart>
-                                                            <Pie
-                                                                data={productionPerformance.stage_breakdown || []}
-                                                                cx="50%"
-                                                                cy="45%"
-                                                                labelLine={{
-                                                                    stroke: '#666',
-                                                                    strokeWidth: 1.5
-                                                                }}
-                                                                label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
-                                                                    const RADIAN = Math.PI / 180;
-                                                                    const radius = outerRadius + 40;
-                                                                    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                                                                    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                                                                    
-                                                                    // Shorten stage names for better display
-                                                                    const shortName = name
-                                                                        .replace('Material Preparation', 'Material Prep')
-                                                                        .replace('Cutting & Shaping', 'Cutting')
-                                                                        .replace('Sanding & Surface Preparation', 'Sanding')
-                                                                        .replace('Quality Check & Packaging', 'Quality Check');
-                                                                    
-                                                                    return (
-                                                                        <text 
-                                                                            x={x} 
-                                                                            y={y} 
-                                                                            fill="#333"
-                                                                            textAnchor={x > cx ? 'start' : 'end'} 
-                                                                            dominantBaseline="central"
-                                                                            style={{ 
-                                                                                fontSize: '13px', 
-                                                                                fontWeight: '600',
-                                                                                textShadow: '0 0 3px white, 0 0 3px white'
-                                                                            }}
-                                                                        >
-                                                                            {`${shortName}: ${value}`}
-                                                                        </text>
-                                                                    );
-                                                                }}
-                                                                outerRadius={90}
-                                                                fill="#8884d8"
-                                                                dataKey="value"
-                                                                nameKey="name"
-                                                            >
-                                                                {(productionPerformance.stage_breakdown || []).map((entry, index) => (
-                                                                    <Cell 
-                                                                        key={`cell-${index}`} 
-                                                                        fill={COLORS[index % COLORS.length]}
-                                                                        stroke="#fff"
-                                                                        strokeWidth={2}
-                                                                    />
-                                                                ))}
-                                                            </Pie>
-                                                            <Tooltip 
-                                                                formatter={(value, name) => [`${value} order${value !== 1 ? 's' : ''}`, name]}
-                                                                contentStyle={{ 
-                                                                    backgroundColor: 'rgba(255, 255, 255, 0.98)', 
-                                                                    border: '2px solid #ddd',
-                                                                    borderRadius: '8px',
-                                                                    padding: '10px',
-                                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                                                                }}
-                                                            />
-                                                        </PieChart>
-                                                    </ResponsiveContainer>
+                                            </div>
+                                        </div>
+                                        <div className="col-md-4">
+                                            <div className="card border-success border-3">
+                                                <div className="card-body text-center">
+                                                    <h2 className="text-success mb-0">{stockReport.summary.healthy_items}</h2>
+                                                    <p className="text-muted mb-0">Healthy Items</p>
+                                                    <small className="text-success">Stock levels good</small>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                )}
-                                
-                                {/* Work Progress Tab */}
-                                {activeTab === "progress" && productionPerformance && (
-                                    <div className="card shadow-sm">
-                                        <div className="card-header bg-white border-bottom">
-                                            <h5 className="mb-0 fw-bold">⏱️ Work Progress by Stage</h5>
-                                        </div>
-                                        <div className="card-body">
-                                            <ResponsiveContainer width="100%" height={400}>
-                                                <BarChart data={productionPerformance.stage_workload || []}>
-                                                    <CartesianGrid strokeDasharray="3 3" />
-                                                    <XAxis dataKey="stage" angle={-45} textAnchor="end" height={120} />
-                                                    <YAxis />
-                                                    <Tooltip />
-                                                    <Legend />
-                                                    <Bar dataKey="current_workload" fill="#0d6efd" name="Current Workload" />
-                                                    <Bar dataKey="capacity" fill="#28a745" name="Capacity" />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                            
-                                            {/* Stage Status Table */}
-                                            <div className="table-responsive mt-4">
-                                                <table className="table table-sm">
-                                                    <thead>
+                                    
+                                    {/* Critical Items Table */}
+                                    {stockReport.items_by_status.critical.length > 0 && (
+                                        <div className="mb-4">
+                                            <h6 className="fw-bold text-danger mb-3">
+                                                <i className="fas fa-exclamation-circle me-2"></i>
+                                                Critical Stock Items - Immediate Action Required
+                                            </h6>
+                                            <div className="table-responsive">
+                                                <table className="table table-hover">
+                                                    <thead className="table-danger">
                                                         <tr>
-                                                            <th>Stage</th>
-                                                            <th className="text-end">Workload</th>
-                                                            <th className="text-end">Capacity</th>
-                                                            <th className="text-end">Utilization</th>
-                                                            <th>Status</th>
+                                                            <th>Material</th>
+                                                            <th>SKU</th>
+                                                            <th className="text-end">Current Stock</th>
+                                                            <th className="text-end">Safety Stock</th>
+                                                            <th className="text-end">Daily Usage</th>
+                                                            <th className="text-end">Days Left</th>
+                                                            <th>Depletion Date</th>
+                                                            <th className="text-end">Reorder Qty</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {(productionPerformance.stage_workload || []).map((stage, idx) => (
-                                                            <tr key={idx}>
-                                                                <td className="fw-semibold">{stage.stage}</td>
-                                                                <td className="text-end">{stage.current_workload}</td>
-                                                                <td className="text-end">{stage.capacity}</td>
-                                                                <td className="text-end">{stage.utilization_percentage}%</td>
-                                                                <td>
-                                                                    <span className={`badge ${
-                                                                        stage.status === 'overloaded' ? 'bg-danger' :
-                                                                        stage.status === 'busy' ? 'bg-warning' : 'bg-success'
-                                                                    }`}>
-                                                                        {stage.status}
-                                                                    </span>
+                                                        {stockReport.items_by_status.critical.map((item, idx) => (
+                                                            <tr key={idx} className="table-danger">
+                                                                <td className="fw-bold">{item.material}</td>
+                                                                <td><code>{item.sku}</code></td>
+                                                                <td className="text-end">{item.current_stock} {item.unit}</td>
+                                                                <td className="text-end">{item.safety_stock}</td>
+                                                                <td className="text-end">{item.daily_usage_rate}</td>
+                                                                <td className="text-end">
+                                                                    <span className="badge bg-danger">{item.days_until_depletion}</span>
+                                                                </td>
+                                                                <td>{item.predicted_depletion_date}</td>
+                                                                <td className="text-end fw-bold text-danger">
+                                                                    {item.suggested_reorder_qty} {item.unit}
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -1184,9 +1211,313 @@ const Report = () => {
                                                 </table>
                                             </div>
                                         </div>
+                                    )}
+                                    
+                                    {/* Low Stock Items */}
+                                    {stockReport.items_by_status.low.length > 0 && (
+                                        <div>
+                                            <h6 className="fw-bold text-warning mb-3">Low Stock Items - Monitor Closely</h6>
+                                            <div className="table-responsive">
+                                                <table className="table table-sm table-hover">
+                                                    <thead className="table-warning">
+                                                        <tr>
+                                                            <th>Material</th>
+                                                            <th className="text-end">Current Stock</th>
+                                                            <th className="text-end">Days Left</th>
+                                                            <th className="text-end">Reorder Qty</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {stockReport.items_by_status.low.slice(0, 10).map((item, idx) => (
+                                                            <tr key={idx} className="table-warning">
+                                                                <td>{item.material}</td>
+                                                                <td className="text-end">{item.current_stock} {item.unit}</td>
+                                                                <td className="text-end">
+                                                                    <span className="badge bg-warning">{item.days_until_depletion}</span>
+                                                                </td>
+                                                                <td className="text-end fw-bold">{item.suggested_reorder_qty}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Material Usage Tab - Inventory */}
+                        {activeTab === "material-usage" && mainTab === "inventory" && (
+                            resourceUtilization && resourceUtilization.material_usage_by_product ? (
+                            <div>
+                                {/* Summary Cards */}
+                                <div className="row g-3 mb-4">
+                                    {resourceUtilization.material_usage_by_product.map((product, idx) => (
+                                        <div key={idx} className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                borderLeft: `4px solid ${idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8'}` 
+                                            }}>
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-start mb-2">
+                                                        <h6 className="mb-0 fw-bold">{product.product}</h6>
+                                                        <span className="badge" style={{ 
+                                                            backgroundColor: idx === 0 ? '#fff3e0' : idx === 1 ? '#f3e5f5' : '#e8f5e9',
+                                                            color: idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8'
+                                                        }}>
+                                                            {product.total_materials} materials
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-3">
+                                                        <div className="text-muted small mb-1">Total Materials Used</div>
+                                                        <h4 className="mb-0" style={{ color: idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8' }}>
+                                                            {product.materials.reduce((sum, m) => sum + parseFloat(m.total_used || 0), 0).toFixed(2)}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Material Usage Overview - Horizontal Bar Chart */}
+                                <div className="card shadow-sm mb-4">
+                                    <div className="card-header bg-white border-bottom">
+                                        <h5 className="mb-0 fw-bold">📊 Top Materials Usage Across All Products</h5>
+                                        <small className="text-muted">Total consumption by material type</small>
                                     </div>
-                                )}
-                                
+                                    <div className="card-body">
+                                        <ResponsiveContainer width="100%" height={400}>
+                                            <BarChart 
+                                                layout="vertical"
+                                                data={(() => {
+                                                    const materialTotals = {};
+                                                    resourceUtilization.material_usage_by_product.forEach(product => {
+                                                        product.materials.forEach(mat => {
+                                                            const key = mat.material;
+                                                            if (!materialTotals[key]) {
+                                                                materialTotals[key] = {
+                                                                    material: key,
+                                                                    total: 0,
+                                                                    unit: mat.unit
+                                                                };
+                                                            }
+                                                            materialTotals[key].total += parseFloat(mat.total_used || 0);
+                                                        });
+                                                    });
+                                                    return Object.values(materialTotals)
+                                                        .sort((a, b) => b.total - a.total)
+                                                        .slice(0, 8);
+                                                })()}
+                                                margin={{ top: 5, right: 30, left: 120, bottom: 5 }}
+                                            >
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis type="number" />
+                                                <YAxis dataKey="material" type="category" width={110} />
+                                                <Tooltip 
+                                                    formatter={(value, name, props) => [
+                                                        `${value.toFixed(2)} ${props.payload.unit}`,
+                                                        'Total Used'
+                                                    ]}
+                                                />
+                                                <Bar dataKey="total" fill="#0d6efd" name="Total Usage">
+                                                    {(() => {
+                                                        const materialTotals = {};
+                                                        resourceUtilization.material_usage_by_product.forEach(product => {
+                                                            product.materials.forEach(mat => {
+                                                                const key = mat.material;
+                                                                if (!materialTotals[key]) {
+                                                                    materialTotals[key] = { material: key, total: 0, unit: mat.unit };
+                                                                }
+                                                                materialTotals[key].total += parseFloat(mat.total_used || 0);
+                                                            });
+                                                        });
+                                                        return Object.values(materialTotals)
+                                                            .sort((a, b) => b.total - a.total)
+                                                            .slice(0, 8)
+                                                            .map((entry, index) => (
+                                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                            ));
+                                                    })()}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Product Comparison - Grouped Bar Chart */}
+                                <div className="card shadow-sm mb-4">
+                                    <div className="card-header bg-white border-bottom">
+                                        <h5 className="mb-0 fw-bold">🔄 Material Usage Comparison by Product</h5>
+                                        <small className="text-muted">Side-by-side comparison of top materials</small>
+                                    </div>
+                                    <div className="card-body">
+                                        <ResponsiveContainer width="100%" height={350}>
+                                            <BarChart 
+                                                data={(() => {
+                                                    // Get all unique materials
+                                                    const allMaterials = new Set();
+                                                    resourceUtilization.material_usage_by_product.forEach(product => {
+                                                        product.materials.slice(0, 5).forEach(mat => allMaterials.add(mat.material));
+                                                    });
+                                                    
+                                                    // Create data structure
+                                                    return Array.from(allMaterials).map(material => {
+                                                        const dataPoint = { material };
+                                                        resourceUtilization.material_usage_by_product.forEach(product => {
+                                                            const mat = product.materials.find(m => m.material === material);
+                                                            dataPoint[product.product] = mat ? parseFloat(mat.total_used || 0) : 0;
+                                                        });
+                                                        return dataPoint;
+                                                    }).slice(0, 6);
+                                                })()}
+                                                margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                                            >
+                                                <CartesianGrid strokeDasharray="3 3" />
+                                                <XAxis 
+                                                    dataKey="material" 
+                                                    angle={-35} 
+                                                    textAnchor="end" 
+                                                    height={80}
+                                                    interval={0}
+                                                />
+                                                <YAxis />
+                                                <Tooltip />
+                                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                                <Bar dataKey="Dining Table" fill="#8b5e34" name="Dining Table" />
+                                                <Bar dataKey="Wooden Chair" fill="#d4a574" name="Wooden Chair" />
+                                                <Bar dataKey="Alkansya" fill="#17a2b8" name="Alkansya" />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Detailed Material Usage by Product */}
+                                <div className="row g-4">
+                                    {resourceUtilization.material_usage_by_product.map((product, idx) => (
+                                        <div key={idx} className="col-lg-4">
+                                            <div className="card shadow-sm h-100">
+                                                <div className="card-header" style={{ 
+                                                    backgroundColor: idx === 0 ? '#fff3e0' : idx === 1 ? '#f3e5f5' : '#e8f5e9',
+                                                    borderBottom: `3px solid ${idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8'}`
+                                                }}>
+                                                    <h6 className="mb-0 fw-bold" style={{ color: idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8' }}>
+                                                        {product.product}
+                                                    </h6>
+                                                    <small className="text-muted">{product.total_materials} materials tracked</small>
+                                                </div>
+                                                <div className="card-body p-0">
+                                                    {/* Pie Chart for Material Distribution */}
+                                                    <div className="p-3 bg-light">
+                                                        <ResponsiveContainer width="100%" height={300}>
+                                                            <PieChart>
+                                                                <Pie
+                                                                    data={product.materials.map(mat => ({
+                                                                        name: mat.material,
+                                                                        value: parseFloat(mat.total_used || 0)
+                                                                    }))}
+                                                                    cx="50%"
+                                                                    cy="40%"
+                                                                    labelLine={false}
+                                                                    label={false}
+                                                                    outerRadius={70}
+                                                                    fill="#8884d8"
+                                                                    dataKey="value"
+                                                                >
+                                                                    {product.materials.map((entry, index) => (
+                                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                                    ))}
+                                                                </Pie>
+                                                                <Tooltip 
+                                                                    formatter={(value, name) => [
+                                                                        `${value.toFixed(2)} units`,
+                                                                        name
+                                                                    ]}
+                                                                />
+                                                                <Legend 
+                                                                    verticalAlign="bottom" 
+                                                                    height={80}
+                                                                    wrapperStyle={{ 
+                                                                        paddingTop: '10px',
+                                                                        fontSize: '11px',
+                                                                        lineHeight: '1.2'
+                                                                    }}
+                                                                    iconSize={8}
+                                                                    formatter={(value, entry) => {
+                                                                        const percent = ((entry.payload.value / product.materials.reduce((sum, m) => sum + parseFloat(m.total_used || 0), 0)) * 100).toFixed(0);
+                                                                        return `${value.substring(0, 20)}${value.length > 20 ? '...' : ''} (${percent}%)`;
+                                                                    }}
+                                                                />
+                                                            </PieChart>
+                                                        </ResponsiveContainer>
+                                                    </div>
+                                                    
+                                                    {/* Material List */}
+                                                    <div className="table-responsive">
+                                                        <table className="table table-sm table-hover mb-0">
+                                                            <thead className="table-light">
+                                                                <tr>
+                                                                    <th className="small">Material</th>
+                                                                    <th className="text-end small">Used</th>
+                                                                    <th className="text-end small">Avg</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {product.materials.map((mat, midx) => (
+                                                                    <tr key={midx}>
+                                                                        <td className="small">
+                                                                            <span className="badge me-1" style={{ 
+                                                                                backgroundColor: COLORS[midx % COLORS.length],
+                                                                                width: '8px',
+                                                                                height: '8px',
+                                                                                borderRadius: '50%',
+                                                                                display: 'inline-block'
+                                                                            }}></span>
+                                                                            {mat.material}
+                                                                        </td>
+                                                                        <td className="text-end small fw-bold">
+                                                                            {parseFloat(mat.total_used || 0).toFixed(2)} {mat.unit}
+                                                                        </td>
+                                                                        <td className="text-end small text-muted">
+                                                                            {parseFloat(mat.avg_used || 0).toFixed(2)}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            ) : (
+                                <div className="alert alert-warning">
+                                    <h5 className="alert-heading">📊 Material Usage Data Not Available</h5>
+                                    {!resourceUtilization ? (
+                                        <p>Loading resource utilization data...</p>
+                                    ) : (
+                                        <>
+                                            <p>No material usage data found for the selected period.</p>
+                                            <hr/>
+                                            <p className="mb-0"><strong>Possible reasons:</strong></p>
+                                            <ul className="mb-0">
+                                                <li>Database hasn't been seeded with inventory usage data</li>
+                                                <li>No production orders have been processed yet</li>
+                                                <li>The selected date range has no data</li>
+                                            </ul>
+                                            <hr/>
+                                            <p className="mb-0"><strong>To fix:</strong> Run <code>php artisan db:seed</code> in the backend</p>
+                                        </>
+                                    )}
+                                </div>
+                            )
+                        )}
+                        
+                        {/* Production Reports Content */}
+                        {mainTab === "production" && (
+                            <div>
                                 {/* Capacity Utilization Tab */}
                                 {activeTab === "capacity" && productionPerformance && productionPerformance.capacity_utilization && (
                                     <div className="row g-4">
@@ -1260,6 +1591,646 @@ const Report = () => {
                                                         </div>
                                                     )}
                                                 </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Output Analytics Tab - NEW */}
+                                {activeTab === "output-analytics" && productionOutput && (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">📈 Production Output by Product</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            {/* Summary Cards */}
+                                            <div className="row mb-4">
+                                                <div className="col-md-4">
+                                                    <div className="card" style={{ backgroundColor: '#fff3e0', border: 'none' }}>
+                                                        <div className="card-body text-center">
+                                                            <h6 className="text-muted mb-2">🪑 Dining Table</h6>
+                                                            <h2 className="mb-1" style={{ color: '#8b5e34' }}>{productionOutput.products.table.totals.total_output}</h2>
+                                                            <small className="text-muted">Avg: {productionOutput.products.table.totals.avg_per_period} per period</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-4">
+                                                    <div className="card" style={{ backgroundColor: '#f3e5f5', border: 'none' }}>
+                                                        <div className="card-body text-center">
+                                                            <h6 className="text-muted mb-2">🪑 Wooden Chair</h6>
+                                                            <h2 className="mb-1" style={{ color: '#d4a574' }}>{productionOutput.products.chair.totals.total_output}</h2>
+                                                            <small className="text-muted">Avg: {productionOutput.products.chair.totals.avg_per_period} per period</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-4">
+                                                    <div className="card" style={{ backgroundColor: '#e8f5e9', border: 'none' }}>
+                                                        <div className="card-body text-center">
+                                                            <h6 className="text-muted mb-2">🐷 Alkansya</h6>
+                                                            <h2 className="mb-1" style={{ color: '#17a2b8' }}>{productionOutput.products.alkansya.totals.total_output}</h2>
+                                                            <small className="text-muted">Avg: {productionOutput.products.alkansya.totals.avg_per_period} per period</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Top Performing Products */}
+                                            <div className="card bg-light mb-4">
+                                                <div className="card-body">
+                                                    <h6 className="fw-bold mb-3">🏆 Top Performing Products</h6>
+                                                    {productionOutput.top_performing.map((product, idx) => (
+                                                        <div key={idx} className="mb-3">
+                                                            <div className="d-flex justify-content-between align-items-center mb-1">
+                                                                <span className="fw-bold">{product.product}</span>
+                                                                <span className="badge bg-success">{product.output} units</span>
+                                                            </div>
+                                                            <div className="progress" style={{ height: '10px' }}>
+                                                                <div
+                                                                    className="progress-bar"
+                                                                    style={{ 
+                                                                        width: `${product.efficiency}%`,
+                                                                        backgroundColor: idx === 0 ? '#28a745' : idx === 1 ? '#17a2b8' : '#6c757d'
+                                                                    }}
+                                                                ></div>
+                                                            </div>
+                                                            <small className="text-muted">{product.efficiency}% efficiency</small>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Line Chart - Production Trends */}
+                                            <h6 className="fw-bold mb-3">📊 Production Output Trends</h6>
+                                            <ResponsiveContainer width="100%" height={400}>
+                                                <LineChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                                                    <XAxis 
+                                                        dataKey="period" 
+                                                        stroke="#666"
+                                                        angle={-15}
+                                                        textAnchor="end"
+                                                        height={80}
+                                                    />
+                                                    <YAxis stroke="#666" />
+                                                    <Tooltip 
+                                                        contentStyle={{ 
+                                                            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                                            border: '2px solid #8b5e34',
+                                                            borderRadius: '8px',
+                                                        }}
+                                                    />
+                                                    <Legend />
+                                                    <Line 
+                                                        data={productionOutput.products.table.output_trend} 
+                                                        type="monotone" 
+                                                        dataKey="output" 
+                                                        stroke="#8b5e34"
+                                                        strokeWidth={3}
+                                                        name="🪑 Dining Table"
+                                                        dot={{ r: 4, fill: '#8b5e34' }}
+                                                    />
+                                                    <Line 
+                                                        data={productionOutput.products.chair.output_trend} 
+                                                        type="monotone" 
+                                                        dataKey="output" 
+                                                        stroke="#d4a574"
+                                                        strokeWidth={3}
+                                                        name="🪑 Wooden Chair"
+                                                        dot={{ r: 4, fill: '#d4a574' }}
+                                                    />
+                                                    <Line 
+                                                        data={productionOutput.products.alkansya.output_trend} 
+                                                        type="monotone" 
+                                                        dataKey="output" 
+                                                        stroke="#17a2b8"
+                                                        strokeWidth={3}
+                                                        name="🐷 Alkansya"
+                                                        dot={{ r: 4, fill: '#17a2b8' }}
+                                                    />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Resource Utilization Tab - NEW */}
+                                {activeTab === "resource-util" && (
+                                    resourceUtilization && resourceUtilization.material_usage_by_product ? (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">📦 Resource Utilization & Material Efficiency</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            <h6 className="fw-bold mb-3">Material Usage by Product</h6>
+                                            <div className="row mb-4">
+                                                {resourceUtilization.material_usage_by_product.map((product, idx) => (
+                                                    <div key={idx} className="col-md-4 mb-3">
+                                                        <div className="card h-100">
+                                                            <div className="card-header bg-light">
+                                                                <h6 className="mb-0">{product.product}</h6>
+                                                                <small className="text-muted">{product.total_materials} materials used</small>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive">
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th className="small">Material</th>
+                                                                                <th className="text-end small">Used</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {product.materials.slice(0, 5).map((mat, midx) => (
+                                                                                <tr key={midx}>
+                                                                                    <td className="small">{mat.material}</td>
+                                                                                    <td className="text-end small fw-bold">{mat.total_used} {mat.unit}</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            
+                                            {/* Material Efficiency Chart */}
+                                            {resourceUtilization.efficiency && resourceUtilization.efficiency.length > 0 && (
+                                                <div>
+                                                    <h6 className="fw-bold mb-3">📊 Material Usage Efficiency (Actual vs Estimated)</h6>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={resourceUtilization.efficiency}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="product" />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="estimated_usage" fill="#ffc107" name="Estimated Usage" />
+                                                            <Bar dataKey="actual_usage" fill="#17a2b8" name="Actual Usage" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                    
+                                                    {/* Efficiency Table */}
+                                                    <div className="table-responsive mt-3">
+                                                        <table className="table table-hover">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Product</th>
+                                                                    <th className="text-end">Estimated</th>
+                                                                    <th className="text-end">Actual</th>
+                                                                    <th className="text-end">Efficiency</th>
+                                                                    <th className="text-end">Variance</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {resourceUtilization.efficiency.map((item, idx) => (
+                                                                    <tr key={idx}>
+                                                                        <td className="fw-bold">{item.product}</td>
+                                                                        <td className="text-end">{item.estimated_usage}</td>
+                                                                        <td className="text-end">{item.actual_usage}</td>
+                                                                        <td className="text-end">
+                                                                            <span className={`badge ${
+                                                                                item.efficiency_percentage >= 95 ? 'bg-success' :
+                                                                                item.efficiency_percentage >= 85 ? 'bg-warning' : 'bg-danger'
+                                                                            }`}>
+                                                                                {item.efficiency_percentage}%
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="text-end">
+                                                                            <span className={item.variance > 0 ? 'text-danger' : 'text-success'}>
+                                                                                {item.variance > 0 ? '+' : ''}{item.variance}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    ) : (
+                                        <div className="alert alert-warning">
+                                            <h5 className="alert-heading">📦 Resource Utilization Data Not Available</h5>
+                                            {!resourceUtilization ? (
+                                                <p>Loading resource utilization data...</p>
+                                            ) : (
+                                                <>
+                                                    <p>No material usage data found for the selected period.</p>
+                                                    <hr/>
+                                                    <p className="mb-0"><strong>Possible reasons:</strong></p>
+                                                    <ul className="mb-0">
+                                                        <li>Database hasn't been seeded with inventory usage data</li>
+                                                        <li>No production orders have been processed yet</li>
+                                                        <li>The selected date range has no data</li>
+                                                    </ul>
+                                                    <hr/>
+                                                    <p className="mb-0"><strong>To fix:</strong> Run <code>php artisan db:seed</code> in the backend</p>
+                                                </>
+                                            )}
+                                        </div>
+                                    )
+                                )}
+                                
+                                {/* Cycle & Throughput Tab - NEW */}
+                                {activeTab === "cycle-throughput" && advancedPerformance && (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">⏱️ Cycle Time & Throughput Analysis</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            <div className="row">
+                                                <div className="col-md-6 mb-4">
+                                                    <h6 className="fw-bold mb-3">Cycle Time Analysis (Days)</h6>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={advancedPerformance.cycle_time_analysis}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="product_type" />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="avg_cycle_time_days" fill="#8b5e34" name="Avg Cycle Time" />
+                                                            <Bar dataKey="min_cycle_time_days" fill="#28a745" name="Min Time" />
+                                                            <Bar dataKey="max_cycle_time_days" fill="#dc3545" name="Max Time" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                                <div className="col-md-6 mb-4">
+                                                    <h6 className="fw-bold mb-3">Throughput Rate</h6>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={advancedPerformance.throughput_rate}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="product_type" />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="throughput_per_day" fill="#17a2b8" name="Per Day" />
+                                                            <Bar dataKey="throughput_per_week" fill="#8b5e34" name="Per Week" />
+                                                            <Bar dataKey="throughput_per_month" fill="#d4a574" name="Per Month" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Performance Tables */}
+                                            <div className="row mt-4">
+                                                <div className="col-md-6">
+                                                    <h6 className="fw-bold mb-3">Cycle Time Details</h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-sm table-hover">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Product</th>
+                                                                    <th className="text-end">Avg Days</th>
+                                                                    <th className="text-end">Min</th>
+                                                                    <th className="text-end">Max</th>
+                                                                    <th className="text-end">Completed</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {advancedPerformance.cycle_time_analysis.map((item, idx) => (
+                                                                    <tr key={idx}>
+                                                                        <td className="fw-bold">{item.product_type}</td>
+                                                                        <td className="text-end">{item.avg_cycle_time_days}</td>
+                                                                        <td className="text-end text-success">{item.min_cycle_time_days}</td>
+                                                                        <td className="text-end text-danger">{item.max_cycle_time_days}</td>
+                                                                        <td className="text-end">{item.total_completed}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-6">
+                                                    <h6 className="fw-bold mb-3">Throughput Details</h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-sm table-hover">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Product</th>
+                                                                    <th className="text-end">Per Day</th>
+                                                                    <th className="text-end">Per Week</th>
+                                                                    <th className="text-end">Per Month</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {advancedPerformance.throughput_rate.map((item, idx) => (
+                                                                    <tr key={idx}>
+                                                                        <td className="fw-bold">{item.product_type}</td>
+                                                                        <td className="text-end">{item.throughput_per_day}</td>
+                                                                        <td className="text-end">{item.throughput_per_week}</td>
+                                                                        <td className="text-end">{item.throughput_per_month}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Predictive Analytics Tab - NEW */}
+                                {activeTab === "predictive" && predictiveAnalytics && (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">🔮 Predictive Analytics & Forecasting</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            {/* Capacity Forecast */}
+                                            {predictiveAnalytics.production_capacity_forecast && predictiveAnalytics.production_capacity_forecast.length > 0 && (
+                                                <div className="mb-4">
+                                                    <h6 className="fw-bold mb-3">Production Capacity Forecast (30 Days)</h6>
+                                                    <ResponsiveContainer width="100%" height={350}>
+                                                        <BarChart data={predictiveAnalytics.production_capacity_forecast}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="product_type" />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Bar dataKey="forecasted_output_30_days" fill="#8b5e34" name="Forecasted Output (30 days)" />
+                                                            <Bar dataKey="weekly_capacity" fill="#17a2b8" name="Weekly Capacity" />
+                                                        </BarChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Trend Analysis */}
+                                            {predictiveAnalytics.trend_analysis && (
+                                                <div className="row mb-4">
+                                                    <div className="col-md-6">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="text-muted mb-2">Overall Trend</h6>
+                                                                <h3 className="mb-0">
+                                                                    <span className={`badge ${
+                                                                        predictiveAnalytics.trend_analysis.overall_trend === 'increasing' ? 'bg-success' :
+                                                                        predictiveAnalytics.trend_analysis.overall_trend === 'decreasing' ? 'bg-danger' :
+                                                                        'bg-secondary'
+                                                                    }`}>
+                                                                        {predictiveAnalytics.trend_analysis.overall_trend.toUpperCase()}
+                                                                    </span>
+                                                                </h3>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="col-md-6">
+                                                        <div className="card bg-light">
+                                                            <div className="card-body text-center">
+                                                                <h6 className="text-muted mb-2">Avg Monthly Output</h6>
+                                                                <h3 className="mb-0 text-primary">{predictiveAnalytics.trend_analysis.avg_monthly_output}</h3>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Monthly Trends Chart */}
+                                            {predictiveAnalytics.trend_analysis && predictiveAnalytics.trend_analysis.monthly_trends && (
+                                                <div className="mb-4">
+                                                    <h6 className="fw-bold mb-3">Monthly Trend Analysis</h6>
+                                                    <ResponsiveContainer width="100%" height={300}>
+                                                        <LineChart data={predictiveAnalytics.trend_analysis.monthly_trends}>
+                                                            <CartesianGrid strokeDasharray="3 3" />
+                                                            <XAxis dataKey="month" />
+                                                            <YAxis />
+                                                            <Tooltip />
+                                                            <Legend />
+                                                            <Line 
+                                                                type="monotone" 
+                                                                dataKey="total_output" 
+                                                                stroke="#17a2b8"
+                                                                strokeWidth={3}
+                                                                name="Total Output"
+                                                                dot={{ r: 5 }}
+                                                            />
+                                                            <Line 
+                                                                type="monotone" 
+                                                                dataKey="avg_efficiency" 
+                                                                stroke="#28a745"
+                                                                strokeWidth={3}
+                                                                name="Avg Efficiency %"
+                                                                dot={{ r: 5 }}
+                                                            />
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Replenishment Needs */}
+                                            {predictiveAnalytics.inventory_replenishment_needs && predictiveAnalytics.inventory_replenishment_needs.length > 0 && (
+                                                <div>
+                                                    <h6 className="fw-bold mb-3 text-danger">
+                                                        <i className="fas fa-exclamation-triangle me-2"></i>
+                                                        Materials Needing Replenishment
+                                                    </h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-hover">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Material</th>
+                                                                    <th>SKU</th>
+                                                                    <th className="text-end">Current Stock</th>
+                                                                    <th className="text-end">Days Left</th>
+                                                                    <th>Urgency</th>
+                                                                    <th className="text-end">Recommended Order</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {predictiveAnalytics.inventory_replenishment_needs.map((item, idx) => (
+                                                                    <tr key={idx} className={item.urgency === 'critical' ? 'table-danger' : 'table-warning'}>
+                                                                        <td className="fw-bold">{item.material}</td>
+                                                                        <td><code>{item.sku}</code></td>
+                                                                        <td className="text-end">{item.current_stock} {item.unit}</td>
+                                                                        <td className="text-end">
+                                                                            <span className={`badge ${
+                                                                                item.days_until_depletion <= 3 ? 'bg-danger' :
+                                                                                item.days_until_depletion <= 7 ? 'bg-warning' : 'bg-info'
+                                                                            }`}>
+                                                                                {item.days_until_depletion} days
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span className={`badge ${item.urgency === 'critical' ? 'bg-danger' : 'bg-warning'}`}>
+                                                                                {item.urgency}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="text-end fw-bold text-danger">
+                                                                            {item.recommended_order_qty} {item.unit}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Stock Report Tab - NEW (Inventory) */}
+                                {activeTab === "stock-report" && stockReport && (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">🚨 Automated Stock Report</h5>
+                                            <small className="text-muted">Generated: {stockReport.generated_at}</small>
+                                        </div>
+                                        <div className="card-body">
+                                            {/* Summary Cards */}
+                                            <div className="row mb-4">
+                                                <div className="col-md-4">
+                                                    <div className="card border-danger border-3">
+                                                        <div className="card-body text-center">
+                                                            <h2 className="text-danger mb-0">{stockReport.summary.critical_items}</h2>
+                                                            <p className="text-muted mb-0">Critical Items</p>
+                                                            <small className="text-danger">Immediate action required</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-4">
+                                                    <div className="card border-warning border-3">
+                                                        <div className="card-body text-center">
+                                                            <h2 className="text-warning mb-0">{stockReport.summary.low_stock_items}</h2>
+                                                            <p className="text-muted mb-0">Low Stock Items</p>
+                                                            <small className="text-warning">Monitor closely</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="col-md-4">
+                                                    <div className="card border-success border-3">
+                                                        <div className="card-body text-center">
+                                                            <h2 className="text-success mb-0">{stockReport.summary.healthy_items}</h2>
+                                                            <p className="text-muted mb-0">Healthy Items</p>
+                                                            <small className="text-success">Stock levels good</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Critical Items Table */}
+                                            {stockReport.items_by_status.critical.length > 0 && (
+                                                <div className="mb-4">
+                                                    <h6 className="fw-bold text-danger mb-3">
+                                                        <i className="fas fa-exclamation-circle me-2"></i>
+                                                        Critical Stock Items - Immediate Action Required
+                                                    </h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-hover">
+                                                            <thead className="table-danger">
+                                                                <tr>
+                                                                    <th>Material</th>
+                                                                    <th>SKU</th>
+                                                                    <th className="text-end">Current Stock</th>
+                                                                    <th className="text-end">Safety Stock</th>
+                                                                    <th className="text-end">Daily Usage</th>
+                                                                    <th className="text-end">Days Left</th>
+                                                                    <th>Depletion Date</th>
+                                                                    <th className="text-end">Reorder Qty</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {stockReport.items_by_status.critical.map((item, idx) => (
+                                                                    <tr key={idx} className="table-danger">
+                                                                        <td className="fw-bold">{item.material}</td>
+                                                                        <td><code>{item.sku}</code></td>
+                                                                        <td className="text-end">{item.current_stock} {item.unit}</td>
+                                                                        <td className="text-end">{item.safety_stock}</td>
+                                                                        <td className="text-end">{item.daily_usage_rate}</td>
+                                                                        <td className="text-end">
+                                                                            <span className="badge bg-danger">{item.days_until_depletion}</span>
+                                                                        </td>
+                                                                        <td>{item.predicted_depletion_date}</td>
+                                                                        <td className="text-end fw-bold text-danger">
+                                                                            {item.suggested_reorder_qty} {item.unit}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Low Stock Items */}
+                                            {stockReport.items_by_status.low.length > 0 && (
+                                                <div>
+                                                    <h6 className="fw-bold text-warning mb-3">Low Stock Items - Monitor Closely</h6>
+                                                    <div className="table-responsive">
+                                                        <table className="table table-sm table-hover">
+                                                            <thead className="table-warning">
+                                                                <tr>
+                                                                    <th>Material</th>
+                                                                    <th className="text-end">Current Stock</th>
+                                                                    <th className="text-end">Days Left</th>
+                                                                    <th className="text-end">Reorder Qty</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {stockReport.items_by_status.low.slice(0, 10).map((item, idx) => (
+                                                                    <tr key={idx} className="table-warning">
+                                                                        <td>{item.material}</td>
+                                                                        <td className="text-end">{item.current_stock} {item.unit}</td>
+                                                                        <td className="text-end">
+                                                                            <span className="badge bg-warning">{item.days_until_depletion}</span>
+                                                                        </td>
+                                                                        <td className="text-end fw-bold">{item.suggested_reorder_qty}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Material Usage Tab - NEW (Inventory) */}
+                                {activeTab === "material-usage" && resourceUtilization && resourceUtilization.material_usage_by_product && (
+                                    <div className="card shadow-sm mb-4">
+                                        <div className="card-header bg-white border-bottom">
+                                            <h5 className="mb-0 fw-bold">📊 Material Usage Trends by Product</h5>
+                                        </div>
+                                        <div className="card-body">
+                                            <div className="row">
+                                                {resourceUtilization.material_usage_by_product.map((product, idx) => (
+                                                    <div key={idx} className="col-md-4 mb-3">
+                                                        <div className="card h-100 border-2" style={{ borderColor: idx === 0 ? '#8b5e34' : idx === 1 ? '#d4a574' : '#17a2b8' }}>
+                                                            <div className="card-header" style={{ 
+                                                                backgroundColor: idx === 0 ? '#fff3e0' : idx === 1 ? '#f3e5f5' : '#e8f5e9'
+                                                            }}>
+                                                                <h6 className="mb-0 fw-bold">{product.product}</h6>
+                                                                <small className="text-muted">{product.total_materials} materials tracked</small>
+                                                            </div>
+                                                            <div className="card-body">
+                                                                <div className="table-responsive">
+                                                                    <table className="table table-sm">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th className="small">Material</th>
+                                                                                <th className="text-end small">Total Used</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {product.materials.slice(0, 6).map((mat, midx) => (
+                                                                                <tr key={midx}>
+                                                                                    <td className="small">{mat.material}</td>
+                                                                                    <td className="text-end small fw-bold">
+                                                                                        {mat.total_used} {mat.unit}
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>

@@ -74,41 +74,29 @@ class OrderTracking extends Model
         }
     }
 
-    // Update current stage based on progress percentage (public method)
+    // Update current stage based on actual production data (NOT time-based)
     public function updateCurrentStageBasedOnProgress($progress = null)
     {
-        if ($progress === null) {
-            $progress = $this->getProgressPercentageAttribute();
-        }
+        // DO NOT auto-update stage based on time/progress
+        // Stage should only update when admin/staff actually completes a process
+        // This prevents auto-advancing when dates change
         
-        if ($this->tracking_type === 'alkansya') {
-            $stages = ['Design', 'Preparation', 'Cutting', 'Assembly', 'Finishing', 'Quality Control'];
-            $stageProgress = [16, 33, 50, 66, 83, 100]; // Progress thresholds for each stage
+        // Only update if there's actual production data
+        $production = Production::where('order_id', $this->order_id)
+            ->where('product_id', $this->product_id)
+            ->first();
+        
+        if ($production) {
+            // Use the actual current stage from production (set by admin when completing processes)
+            $this->current_stage = $production->current_stage;
+            $this->status = $production->status === 'Completed' ? 'completed' : 
+                           ($production->status === 'In Progress' ? 'in_production' : 'pending');
             
-            for ($i = 0; $i < count($stages); $i++) {
-                if ($progress <= $stageProgress[$i]) {
-                    $this->current_stage = $stages[$i];
-                    $this->status = $progress >= 100 ? 'completed' : ($progress > 0 ? 'in_production' : 'pending');
-                    break;
-                }
-            }
-        } else {
-            // For tables and chairs - 2 weeks production (matches actual production stages)
-            $stages = ['Material Preparation', 'Cutting & Shaping', 'Assembly', 'Sanding & Surface Preparation', 'Finishing', 'Quality Check & Packaging'];
-            $stageProgress = [10, 30, 60, 75, 95, 100]; // Progress thresholds for each stage
-            
-            for ($i = 0; $i < count($stages); $i++) {
-                if ($progress <= $stageProgress[$i]) {
-                    $this->current_stage = $stages[$i];
-                    $this->status = $progress >= 100 ? 'completed' : ($progress > 0 ? 'in_production' : 'pending');
-                    break;
-                }
+            // Save changes if they're different
+            if ($this->isDirty(['current_stage', 'status'])) {
+                $this->save();
             }
         }
-        
-        // Save changes if they're different
-        if ($this->isDirty(['current_stage', 'status'])) {
-            $this->save();
-        }
+        // If no production exists, don't change anything - keep current stage as is
     }
 }

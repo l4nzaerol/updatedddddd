@@ -3,9 +3,9 @@ import { getAnalytics } from "../../api/productionApi";
 import { getAdminOverview } from "../../api/inventoryApi";
 import KPICards from "./Analytics/KPICards";
 import DailyOutputChart from "./Analytics/DailyOutputChart";
-import StagePieChart from "./Analytics/StagePieChart";
 import TopProductsChart from "./Analytics/TopProductsChart";
 import TopUsersChart from "./Analytics/TopUsersChart";
+import TopStaffChart from "./Analytics/TopStaffChart";
 
 const AdminDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
@@ -72,16 +72,16 @@ const AdminDashboard = () => {
 
             {/* Main Charts Row */}
             <div className="row mt-4">
-              {/* Production Stage Breakdown - Full Width */}
+              {/* Daily Output - Full Width */}
               <div className="col-12 mb-4">
-                <StagePieChart data={analytics?.stage_breakdown || []} />
+                <DailyOutputChart data={analytics?.daily_output || []} />
               </div>
             </div>
 
             {/* Secondary Charts Row */}
             <div className="row mb-4">
               <div className="col-lg-4 mb-4">
-                <DailyOutputChart data={analytics?.daily_output || []} />
+                <TopStaffChart data={analytics?.top_staff || []} />
               </div>
               <div className="col-lg-4 mb-4">
                 <TopProductsChart data={analytics?.top_products || []} />

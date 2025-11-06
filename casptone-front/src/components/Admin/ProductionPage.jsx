@@ -38,6 +38,19 @@ const COLORS = ["#f39c12", "#2980b9", "#8e44ad", "#27ae60"];
 
 const authHeaders = () => ({});
 
+// Helper function to get stage descriptions
+const getStageDescription = (stageName) => {
+  const descriptions = {
+    "Material Preparation": "Selecting and preparing high-quality wood materials, checking inventory, and organizing materials for production.",
+    "Cutting & Shaping": "Cutting wood pieces to precise measurements and shaping components according to design specifications.",
+    "Assembly": "Joining and assembling all components together, ensuring structural integrity and proper alignment.",
+    "Sanding & Surface Preparation": "Smoothing all surfaces, removing imperfections, and preparing the furniture for finishing treatments.",
+    "Finishing": "Applying stains, varnish, or paint to protect and enhance the wood's natural beauty.",
+    "Quality Check & Packaging": "Thorough inspection for quality assurance, final touch-ups, and careful packaging for delivery."
+  };
+  return descriptions[stageName] || "Production process in progress";
+};
+
 export default function ProductionTrackingSystem() {
   const navigate = useNavigate();
   const [productions, setProductions] = useState([]);
@@ -48,6 +61,8 @@ export default function ProductionTrackingSystem() {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("current"); // 'current', 'ready', 'alkansya', 'completion', 'analytics'
+  const [selectedOrder, setSelectedOrder] = useState("all"); // Filter by order
   const [analyticsData, setAnalyticsData] = useState({
     stage_breakdown: [],
     kpis: {},
@@ -55,6 +70,30 @@ export default function ProductionTrackingSystem() {
     resource_allocation: [],
     stage_workload: []
   });
+  
+  // Delay tracking modal state
+  const [showDelayModal, setShowDelayModal] = useState(false);
+  const [delayModalData, setDelayModalData] = useState({
+    productionId: null,
+    processId: null,
+    processName: '',
+    delayReason: '',
+    estimatedEndDate: null,
+    actualCompletionDate: null
+  });
+  
+  // Current time state for real-time delay detection
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update current time every 10 seconds for real-time delay detection
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+      console.log('Time updated for delay detection:', new Date().toISOString());
+    }, 10000); // Update every 10 seconds
+    
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetchProductions();
@@ -86,7 +125,7 @@ export default function ProductionTrackingSystem() {
 
   useEffect(() => {
     applyFilters();
-  }, [productions, search, statusFilter, dateRange]);
+  }, [productions, search, statusFilter, selectedOrder, dateRange]);
 
   const fetchProductions = async () => {
     setLoading(true);
@@ -234,9 +273,14 @@ export default function ProductionTrackingSystem() {
       const q = search.toLowerCase();
       data = data.filter((p) =>
         (p.product_name || "").toLowerCase().includes(q) || 
-        (p.id && String(p.id).includes(q)) || 
+        (p.id && String(p.id).includes(q)) ||
+        (p.order_id && String(p.order_id).includes(q)) ||
         (p.date || "").includes(q)
       );
+    }
+    
+    if (selectedOrder !== "all") {
+      data = data.filter((p) => p.order_id && String(p.order_id) === String(selectedOrder));
     }
     
     if (statusFilter !== "all") {
@@ -371,6 +415,189 @@ export default function ProductionTrackingSystem() {
     }
   };
 
+  const handleProcessStatusChange = async (productionId, processId, processName, currentStatus, estimatedEndDate) => {
+    try {
+      console.log('=== PROCESS STATUS CHANGE TRIGGERED ===');
+      console.log('Current Status:', currentStatus);
+      console.log('Estimated End Date:', estimatedEndDate);
+      
+      // If marking as complete, check for delays
+      if (currentStatus !== 'completed') {
+        const now = new Date(); // Always get fresh current time
+        const estimatedEnd = estimatedEndDate ? new Date(estimatedEndDate) : null;
+        
+        console.log('Delay Check:', {
+          processName,
+          now: now.toISOString(),
+          nowTime: now.getTime(),
+          estimatedEnd: estimatedEnd?.toISOString(),
+          estimatedEndTime: estimatedEnd?.getTime(),
+          isDelayed: estimatedEnd && now > estimatedEnd,
+          timeDiff: estimatedEnd ? (now.getTime() - estimatedEnd.getTime()) : 'N/A'
+        });
+        
+        const isDelayed = estimatedEnd && now > estimatedEnd;
+        
+        // If delayed, show modal to collect reason
+        if (isDelayed) {
+          console.log('✅ Process is DELAYED - showing modal');
+          console.log('Modal Data:', {
+            productionId,
+            processId,
+            processName,
+            estimatedEndDate: estimatedEnd,
+            actualCompletionDate: now
+          });
+          
+          setDelayModalData({
+            productionId,
+            processId,
+            processName,
+            delayReason: '',
+            estimatedEndDate: estimatedEnd,
+            actualCompletionDate: now
+          });
+          setShowDelayModal(true);
+          console.log('Modal state set to TRUE');
+          return; // Wait for modal submission
+        } else {
+          console.log('❌ Process is NOT delayed - proceeding normally');
+        }
+        
+        // Not delayed, proceed with normal confirmation
+        const confirmed = window.confirm(
+          `Are you sure you want to mark "${processName}" as completed?\n\n` +
+          `This will update the production progress and move to the next stage.`
+        );
+        
+        if (!confirmed) {
+          return; // User cancelled
+        }
+      }
+      
+      const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
+      await completeProcessUpdate(productionId, processId, processName, newStatus, null);
+      
+    } catch (err) {
+      console.error("Update process error:", err);
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || "Failed to update process status";
+      setError(errorMessage);
+      
+      // Refresh to revert UI state
+      await fetchProductions();
+    }
+  };
+  
+  const completeProcessUpdate = async (productionId, processId, processName, newStatus, delayInfo) => {
+    try {
+      console.log(`Updating process ${processId} of production ${productionId} to status: ${newStatus}`);
+      
+      const payload = { 
+        status: newStatus,
+        ...(delayInfo && {
+          delay_reason: delayInfo.reason,
+          is_delayed: true,
+          actual_completion_date: delayInfo.actualCompletionDate?.toISOString()
+        })
+      };
+      
+      console.log('=== PAYLOAD BEING SENT ===');
+      console.log('URL:', `/productions/${productionId}/processes/${processId}`);
+      console.log('Payload:', JSON.stringify(payload, null, 2));
+      console.log('Has delay info:', !!delayInfo);
+      
+      const res = await api.patch(`/productions/${productionId}/processes/${processId}`, payload);
+      
+      console.log('Process update response:', res.data);
+      
+      // Refresh productions to get updated data
+      await fetchProductions();
+      await fetchAnalytics();
+      
+      // Show success message
+      const message = newStatus === 'completed' 
+        ? `✅ ${processName} marked as completed!${delayInfo ? ' (Delay recorded)' : ''}`
+        : `↩️ ${processName} marked as pending.`;
+      
+      // Use a non-blocking notification
+      setError('');
+      const successDiv = document.createElement('div');
+      successDiv.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+      successDiv.style.zIndex = '9999';
+      successDiv.innerHTML = `${message} <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>`;
+      document.body.appendChild(successDiv);
+      setTimeout(() => successDiv.remove(), 3000);
+      
+    } catch (err) {
+      console.error("Update process error:", err);
+      const errorMessage = err.response?.data?.message || err.response?.data?.error || "Failed to update process status";
+      setError(errorMessage);
+      throw err;
+    }
+  };
+  
+  const handleDelayModalSubmit = async () => {
+    if (!delayModalData.delayReason.trim()) {
+      alert('Please provide a reason for the delay.');
+      return;
+    }
+    
+    console.log('=== SUBMITTING DELAY MODAL ===');
+    console.log('Delay Reason:', delayModalData.delayReason);
+    console.log('Production ID:', delayModalData.productionId);
+    console.log('Process ID:', delayModalData.processId);
+    
+    try {
+      // First close the modal immediately
+      setShowDelayModal(false);
+      
+      await completeProcessUpdate(
+        delayModalData.productionId,
+        delayModalData.processId,
+        delayModalData.processName,
+        'completed',
+        {
+          reason: delayModalData.delayReason,
+          actualCompletionDate: delayModalData.actualCompletionDate
+        }
+      );
+      
+      console.log('✅ Process completed with delay reason');
+      console.log('Refreshing data...');
+      
+      // Force refresh to get updated data
+      await fetchProductions();
+      await fetchAnalytics();
+      
+      console.log('✅ Data refreshed successfully');
+      
+      // Reset modal data after successful submission
+      setDelayModalData({
+        productionId: null,
+        processId: null,
+        processName: '',
+        delayReason: '',
+        estimatedEndDate: null,
+        actualCompletionDate: null
+      });
+      
+      console.log('Delay modal closed successfully');
+    } catch (err) {
+      console.error('❌ Error in delay modal submit:', err);
+      console.error('Error response:', err.response);
+      console.error('Error data:', err.response?.data);
+      console.error('Error status:', err.response?.status);
+      console.error('Error message:', err.message);
+      
+      // Show detailed error message
+      const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown error';
+      alert(`Failed to submit delay reason: ${errorMsg}\n\nPlease check console for details.`);
+      
+      // Reopen modal on error
+      setShowDelayModal(true);
+    }
+  };
+
   const bulkExportCSV = () => {
     const columns = ["id", "product_name", "date", "stage", "status", "quantity", "resources_used", "notes"];
     const rows = filtered.map((r) => ({
@@ -408,9 +635,8 @@ export default function ProductionTrackingSystem() {
   };
 
   return (
-
     <AppLayout>
-    <div className="container-fluid py-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+      <div className="container-fluid py-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
       {/* Header Section */}
       <button className="btn btn-outline-secondary mb-3" onClick={() => navigate("/dashboard")}>
                     ← Back to Dashboard
@@ -452,11 +678,85 @@ export default function ProductionTrackingSystem() {
         </div>
       )}
 
-      {/* Simple Filters (compact, like Orders page) */}
+      {/* Tab Navigation */}
+      <div className="card mb-3 shadow-sm">
+        <div className="card-body py-2">
+          <ul className="nav nav-tabs border-0">
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'current' ? 'active bg-primary text-white' : 'text-primary'}`}
+                onClick={() => setActiveTab('current')}
+                style={{ border: 'none', fontWeight: '500' }}
+              >
+                <i className="fas fa-cogs me-2"></i>
+                Current Production
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'ready' ? 'active bg-success text-white' : 'text-success'}`}
+                onClick={() => setActiveTab('ready')}
+                style={{ border: 'none', fontWeight: '500' }}
+              >
+                <i className="fas fa-truck me-2"></i>
+                Ready To Deliver Table and Chair
+                <span className="badge bg-danger ms-2">
+                  {filtered.filter(p => 
+                    p.status === 'Completed' && 
+                    p.overall_progress >= 100 && 
+                    p.product_type !== 'alkansya' &&
+                    p.order?.status !== 'ready_for_delivery' && 
+                    p.order?.status !== 'delivered'
+                  ).length}
+                </span>
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'completed' ? 'active bg-success text-white' : 'text-success'}`}
+                onClick={() => setActiveTab('completed')}
+                style={{ border: 'none', fontWeight: '500' }}
+              >
+                <i className="fas fa-check-circle me-2"></i>
+                Completed Productions
+                <span className="badge bg-light text-dark ms-2">
+                  {filtered.filter(p => 
+                    p.status === 'Completed' && 
+                    p.product_type !== 'alkansya'
+                  ).length}
+                </span>
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'completion' ? 'active bg-warning text-dark' : 'text-warning'}`}
+                onClick={() => setActiveTab('completion')}
+                style={{ border: 'none', fontWeight: '500' }}
+              >
+                <i className="fas fa-exclamation-triangle me-2"></i>
+                Process Completion
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'analytics' ? 'active bg-info text-white' : 'text-info'}`}
+                onClick={() => setActiveTab('analytics')}
+                style={{ border: 'none', fontWeight: '500' }}
+              >
+                <i className="fas fa-chart-bar me-2"></i>
+                Production Analytics
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Filters */}
       <div className="card mb-3 shadow-sm">
         <div className="card-body py-3">
           <div className="row g-2 align-items-end">
-            <div className="col-md-4">
+            <div className="col-md-3">
+              <label className="form-label small mb-1">Search</label>
               <input 
                 className="form-control" 
                 placeholder="Search product, prod ID, order ID, or date" 
@@ -465,13 +765,28 @@ export default function ProductionTrackingSystem() {
               />
             </div>
             <div className="col-md-2">
+              <label className="form-label small mb-1">Order Filter</label>
+              <select 
+                className="form-select" 
+                value={selectedOrder} 
+                onChange={(e) => setSelectedOrder(e.target.value)}
+                aria-label="Order filter"
+              >
+                <option value="all">All Orders</option>
+                {[...new Set(productions.filter(p => p.order_id).map(p => p.order_id))].map(orderId => (
+                  <option key={orderId} value={orderId}>Order #{orderId}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-md-2">
+              <label className="form-label small mb-1">Status</label>
               <select 
                 className="form-select" 
                 value={statusFilter} 
                 onChange={(e) => setStatusFilter(e.target.value)}
                 aria-label="Status filter"
               >
-                <option value="all">All</option>
+                <option value="all">All Status</option>
                 <option value="Pending">Pending</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Completed">Completed</option>
@@ -479,6 +794,7 @@ export default function ProductionTrackingSystem() {
               </select>
             </div>
             <div className="col-md-2">
+              <label className="form-label small mb-1">Start Date</label>
               <input 
                 type="date" 
                 className="form-control" 
@@ -488,6 +804,7 @@ export default function ProductionTrackingSystem() {
               />
             </div>
             <div className="col-md-2">
+              <label className="form-label small mb-1">End Date</label>
               <input 
                 type="date" 
                 className="form-control" 
@@ -496,32 +813,42 @@ export default function ProductionTrackingSystem() {
                 aria-label="End date"
               />
             </div>
-            <div className="col-md-2">
-              <div className="d-flex gap-2">
-                <button 
-                  className="btn btn-outline-secondary w-100" 
-                  onClick={() => { setSearch(""); setStatusFilter("all"); setDateRange({ start: "", end: "" }); }}
-                >
-                  Reset
-                </button>
-                <button className="btn btn-primary w-100" onClick={() => { applyFilters(); }}>
-                  Apply
-                </button>
-              </div>
+            <div className="col-md-1">
+              <button 
+                className="btn btn-outline-secondary w-100" 
+                onClick={() => { setSearch(""); setStatusFilter("all"); setSelectedOrder("all"); setDateRange({ start: "", end: "" }); applyFilters(); }}
+                title="Reset filters"
+              >
+                <i className="fas fa-redo"></i>
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="row">
-        {/* Current Production Processes */}
-        <div className="col-lg-6 mb-4">
+      {/* Current Production Tab */}
+      {activeTab === 'current' && (
+        <div className="row">
+        {/* Current Production Processes - Full Width */}
+        <div className="col-12">
           <div className="card h-100 shadow-sm">
             <div className="card-header bg-primary text-white">
-              <h5 className="card-title mb-0">
-                Current Production Processes 
-                <span className="badge bg-light text-primary ms-2">{filtered.filter(p => p.status === 'In Progress').length}</span>
-              </h5>
+              <div className="d-flex justify-content-between align-items-center">
+                <h5 className="card-title mb-0">
+                  <i className="fas fa-cogs me-2"></i>
+                  Current Production Processes 
+                  <span className="badge bg-light text-primary ms-2">{filtered.filter(p => p.status === 'In Progress').length}</span>
+                </h5>
+                <div className="d-flex gap-2 align-items-center">
+                  <small className="text-muted">
+                    <i className="fas fa-clock me-1"></i>
+                    Updated: {currentTime.toLocaleTimeString()}
+                  </small>
+                  <button className="btn btn-light btn-sm" onClick={() => { setCurrentTime(new Date()); fetchProductions(); }}>
+                    <i className="fas fa-sync-alt me-1"></i> Refresh
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="card-body">
               
@@ -545,162 +872,331 @@ export default function ProductionTrackingSystem() {
                 </div>
               )}
               
-              <div className="timeline-list" style={{ maxHeight: 500, overflowY: "auto" }}>
-                {filtered.filter(p => p.status === 'In Progress').map((prod) => (
-                  <div key={prod.id} className="card mb-3 border-start border-4" 
-                       style={{ borderColor: prod.status === "Completed" ? "#27ae60" : 
-                                            prod.status === "Hold" ? "#f39c12" : "#2980b9" }}>
-                    <div className="card-body p-3">
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div className="flex-grow-1">
-                          <div className="small text-muted mb-1">
-                            {prod.date ? new Date(prod.date).toLocaleDateString() : "No date"}
+              <div className="timeline-list">
+                {filtered.filter(p => p.status === 'In Progress').map((prod, prodIndex) => {
+                  // Calculate estimated completion dates for each process
+                  const calculateEstimatedDates = () => {
+                    let currentDate = prod.date ? new Date(prod.date) : new Date();
+                    return prod.processes?.map((pr, idx) => {
+                      if (pr.completed_at) {
+                        return { start: pr.started_at, end: pr.completed_at };
+                      }
+                      
+                      // For pending processes, check if previous process is completed
+                      if (idx > 0) {
+                        const prevProcess = prod.processes[idx - 1];
+                        if (prevProcess.completed_at) {
+                          // Start from when previous process was completed
+                          currentDate = new Date(prevProcess.completed_at);
+                        }
+                      }
+                      
+                      const startDate = pr.started_at ? new Date(pr.started_at) : new Date(currentDate);
+                      const endDate = new Date(startDate);
+                      endDate.setMinutes(endDate.getMinutes() + (pr.estimated_duration_minutes || 0));
+                      currentDate = endDate;
+                      return { start: startDate, end: endDate };
+                    }) || [];
+                  };
+                  
+                  const estimatedDates = calculateEstimatedDates();
+                  // Calculate total estimated days correctly - sum all minutes first, then convert
+                  const totalEstimatedMinutes = prod.processes?.reduce((sum, pr) => {
+                    return sum + (pr.estimated_duration_minutes || 0);
+                  }, 0) || 0;
+                  const totalEstimatedDays = Math.ceil(totalEstimatedMinutes / (60 * 24));
+                  
+                  // Calculate final estimated completion date
+                  const finalProcess = prod.processes?.[prod.processes.length - 1];
+                  const finalEstimatedDate = estimatedDates[estimatedDates.length - 1]?.end;
+                  
+                  return (
+                  <div 
+                    key={prod.id} 
+                    className="card mb-4 shadow border" 
+                    style={{ 
+                      overflow: 'hidden',
+                      backgroundColor: prodIndex % 2 === 0 ? '#ffffff' : '#f8f9fa',
+                      borderRadius: '12px',
+                      borderColor: prodIndex % 2 === 0 ? '#dee2e6' : '#adb5bd'
+                    }}
+                  >
+                    {/* Minimalist Header */}
+                    <div 
+                      className="card-header border-bottom py-3" 
+                      style={{ 
+                        backgroundColor: prodIndex % 2 === 0 ? '#ffffff' : '#f8f9fa',
+                        borderLeft: '5px solid #0d6efd'
+                      }}
+                    >
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="text-muted small mb-1">
+                            <i className="fas fa-calendar-alt me-1"></i>
+                            {prod.date ? new Date(prod.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : "No date"}
                           </div>
-                          <div className="h6 mb-1">{prod.product_name}</div>
-                          <div className="small text-muted">
-                            Qty: <strong>{prod.quantity || 0}</strong> • Prod ID: <strong>{prod.id}</strong>
+                          <h5 className="mb-1 fw-bold">{prod.product_name}</h5>
+                          <div className="text-muted small">
+                            <span className="me-3"><i className="fas fa-box me-1"></i>Qty: <strong>{prod.quantity || 0}</strong></span>
+                            <span className="me-3"><i className="fas fa-barcode me-1"></i>Prod ID: <strong>{prod.id}</strong></span>
                             {prod.order_id && (
-                              <>
-                                {' '}• <span className="text-primary fw-bold">Order #{prod.order_id}</span>
-                              </>
-                            )}
-                            {prod.order?.user?.name && (
-                              <>
-                                {' '}• Customer: <strong>{prod.order.user.name}</strong>
-                              </>
+                              <span className="text-primary fw-bold"><i className="fas fa-shopping-cart me-1"></i>Order #{prod.order_id}</span>
                             )}
                           </div>
+                          {prod.order?.user?.name && (
+                            <div className="text-muted small mt-1">
+                              <i className="fas fa-user me-1"></i>Customer: <strong>{prod.order.user.name}</strong>
+                            </div>
+                          )}
                         </div>
                         <div className="text-end">
-                          <span className={`badge ${
+                          <span className={`badge fs-6 px-3 py-2 ${
                             prod.status === "Completed" ? "bg-success" : 
                             prod.status === "Hold" ? "bg-warning text-dark" : 
-                            prod.status === "In Progress" ? "bg-info text-dark" : "bg-secondary"
+                            prod.status === "In Progress" ? "bg-primary" : "bg-secondary"
                           }`}>
                             {prod.status}
                           </span>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-2">
-                        <label className="form-label small">Current Process:</label>
-                        <div className="d-flex align-items-center gap-2">
-                          <div className="badge bg-primary text-white px-3 py-2 flex-grow-1">
-                            {prod.current_stage || 'N/A'}
-                          </div>
-                          {prod.current_process && (
-                            <span className="badge bg-info text-capitalize">
-                              {prod.current_process.status}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Gantt-like view for processes if available */}
-                      {Array.isArray(prod.processes) && prod.processes.length > 0 && (
-                        <div className="mt-3">
-                          <div className="small fw-bold mb-1">Process Timeline</div>
-                          <div className="d-flex flex-column gap-2">
-                            {prod.processes.map((pr) => (
-                              <div key={pr.id} className="d-flex align-items-center gap-2">
-                                <div style={{ width: 130 }} className="small">{pr.process_name}</div>
-                                <div className="progress flex-grow-1" style={{ height: 10 }}>
-                                  <div
-                                    className={`progress-bar ${pr.status === 'completed' ? 'bg-success' : pr.status === 'in_progress' ? 'bg-info' : 'bg-secondary'}`}
-                                    style={{ width: pr.status === 'completed' ? '100%' : pr.status === 'in_progress' ? '50%' : '8%' }}
-                                  ></div>
-                                </div>
-                                <span className="badge bg-light text-dark small text-capitalize">{pr.status}</span>
+                          <div className="mt-2">
+                            <div className="small text-muted">
+                              <i className="fas fa-tasks me-1"></i>
+                              {prod.processes?.filter(p => p.status === 'completed').length || 0} / {prod.processes?.length || 0} Complete
+                            </div>
+                            <div className="small text-muted mt-1">
+                              <i className="fas fa-hourglass-half me-1"></i>
+                              Estimated Completion: <strong>{totalEstimatedDays} days</strong>
+                            </div>
+                            {finalEstimatedDate && (
+                              <div className="small mt-1">
+                                <span className="badge bg-info text-white">
+                                  <i className="fas fa-flag-checkered me-1"></i>
+                                  Target: {new Date(finalEstimatedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </span>
                               </div>
-                            ))}
+                            )}
                           </div>
                         </div>
-                      )}
-                      
-                      {/* BOM Materials for Current Process */}
-                      {prod.bom && prod.bom.length > 0 && (
-                        <div className="mt-3">
-                          <div className="small fw-bold mb-2">📦 Required Materials (BOM):</div>
-                          <div className="table-responsive">
-                            <table className="table table-sm table-bordered mb-0">
-                              <thead className="table-light">
-                                <tr>
-                                  <th className="small">Material</th>
-                                  <th className="small text-end">Qty/Unit</th>
-                                  <th className="small text-end">Total Needed</th>
-                                  <th className="small text-end">In Stock</th>
-                                  <th className="small text-center">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {prod.bom.map((material, idx) => {
-                                  const totalNeeded = material.qty_per_unit * (prod.quantity || 1);
-                                  const inStock = material.quantity_on_hand || 0;
-                                  const isAvailable = inStock >= totalNeeded;
-                                  return (
-                                    <tr key={idx}>
-                                      <td className="small">
-                                        <div className="fw-bold">{material.name}</div>
-                                        <div className="text-muted" style={{fontSize: '0.75rem'}}>{material.sku}</div>
-                                      </td>
-                                      <td className="small text-end">{material.qty_per_unit} {material.unit}</td>
-                                      <td className="small text-end fw-bold">{totalNeeded} {material.unit}</td>
-                                      <td className="small text-end">{inStock} {material.unit}</td>
-                                      <td className="text-center">
-                                        {isAvailable ? (
-                                          <span className="badge bg-success" style={{fontSize: '0.7rem'}}>✓ Available</span>
-                                        ) : (
-                                          <span className="badge bg-danger" style={{fontSize: '0.7rem'}}>⚠ Low Stock</span>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
+                      </div>
+                    </div>
+
+                    {/* Minimalist Process List */}
+                    <div className="card-body p-0">
+                      {Array.isArray(prod.processes) && prod.processes.length > 0 && (
+                        <div className="list-group list-group-flush">
+                          {prod.processes.map((pr, index) => {
+                            const estimatedDays = Math.floor(pr.estimated_duration_minutes / (60 * 24));
+                            const estimatedHours = Math.floor((pr.estimated_duration_minutes % (60 * 24)) / 60);
+                            const isCompleted = pr.status === 'completed';
+                            const isInProgress = pr.status === 'in_progress';
+                            
+                            const dates = estimatedDates[index] || {};
+                            const startDate = dates.start ? new Date(dates.start) : null;
+                            const endDate = dates.end ? new Date(dates.end) : null;
+                            
+                            return (
+                              <div 
+                                key={pr.id} 
+                                className={`list-group-item border-0 py-3 ${
+                                  isCompleted ? 'bg-success bg-opacity-10' : isInProgress ? 'bg-primary bg-opacity-10' : ''
+                                }`}
+                                style={{ 
+                                  borderLeft: isCompleted ? '4px solid #28a745' : isInProgress ? '4px solid #0d6efd' : '4px solid #dee2e6',
+                                  backgroundColor: prodIndex % 2 === 0 
+                                    ? (isCompleted ? '#e8f5e9' : isInProgress ? '#e3f2fd' : '#ffffff')
+                                    : (isCompleted ? '#e0f2e0' : isInProgress ? '#dae8f5' : '#f8f9fa')
+                                }}
+                              >
+                                <div className="d-flex align-items-center justify-content-between">
+                                  <div className="flex-grow-1">
+                                    <div className="d-flex align-items-center gap-3">
+                                      {/* Step Number */}
+                                      <div 
+                                        className={`rounded-circle d-flex align-items-center justify-content-center fw-bold ${
+                                          isCompleted ? 'bg-success text-white' : 
+                                          isInProgress ? 'bg-primary text-white' : 
+                                          'bg-secondary bg-opacity-25 text-secondary'
+                                        }`}
+                                        style={{ width: '36px', height: '36px', minWidth: '36px' }}
+                                      >
+                                        {isCompleted ? <i className="fas fa-check"></i> : index + 1}
+                                      </div>
+                                      
+                                      {/* Process Info */}
+                                      <div className="flex-grow-1">
+                                        <div className={`fw-semibold mb-1 ${
+                                          isCompleted ? 'text-muted text-decoration-line-through' : 'text-dark'
+                                        }`}>
+                                          {pr.process_name}
+                                        </div>
+                                        <div className="small text-muted">
+                                          <div className="mb-1">
+                                            <i className="fas fa-clock me-1"></i>
+                                            <strong>Duration:</strong> 
+                                            {estimatedDays > 0 && ` ${estimatedDays}d`}
+                                            {estimatedHours > 0 && ` ${estimatedHours}h`}
+                                            {estimatedDays === 0 && estimatedHours === 0 && ` ${pr.estimated_duration_minutes}m`}
+                                          </div>
+                                          
+                                          {startDate && (
+                                            <div className="mb-1">
+                                              <i className="fas fa-play-circle me-1 text-info"></i>
+                                              <strong>Start:</strong> {startDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                            </div>
+                                          )}
+                                          
+                                          {endDate && (
+                                            <div className={isCompleted ? 'text-success' : ''}>
+                                              <i className={`fas ${isCompleted ? 'fa-check-circle' : 'fa-calendar-check'} me-1`}></i>
+                                              <strong>{isCompleted ? 'Completed:' : 'Est. Complete:'}</strong> {endDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}
+                                            </div>
+                                          )}
+                                          
+                                          {pr.delay_reason && (
+                                            <div className="mt-2 p-2 bg-warning bg-opacity-25 rounded">
+                                              <div className="small text-danger fw-bold">
+                                                <i className="fas fa-exclamation-circle me-1"></i>Delay Reason:
+                                              </div>
+                                              <div className="small text-dark">{pr.delay_reason}</div>
+                                              {pr.completed_by_name && (
+                                                <div className="small text-muted mt-1">
+                                                  <i className="fas fa-user me-1"></i>Completed by: <strong>{pr.completed_by_name}</strong>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                          
+                                          {isCompleted && pr.completed_by_name && !pr.delay_reason && (
+                                            <div className="mt-1 small text-success">
+                                              <i className="fas fa-user-check me-1"></i>By: <strong>{pr.completed_by_name}</strong>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Action Button with Delay Warning */}
+                                  <div className="text-end">
+                                    {!isCompleted && endDate && currentTime > endDate && (
+                                      <div className="badge bg-danger text-white mb-2 d-block animate__animated animate__flash">
+                                        <i className="fas fa-exclamation-triangle me-1"></i>
+                                        DELAYED!
+                                      </div>
+                                    )}
+                                    {isCompleted ? (
+                                      <button
+                                        className="btn btn-sm btn-outline-secondary"
+                                        onClick={() => handleProcessStatusChange(prod.id, pr.id, pr.process_name, pr.status, endDate)}
+                                        title="Mark as pending"
+                                      >
+                                        <i className="fas fa-undo me-1"></i> Undo
+                                      </button>
+                                    ) : (
+                                      <button
+                                        className="btn btn-sm btn-success"
+                                        onClick={() => handleProcessStatusChange(prod.id, pr.id, pr.process_name, pr.status, endDate)}
+                                        title="Mark as completed"
+                                      >
+                                        <i className="fas fa-check me-1"></i> Complete
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
-                      
+                    </div>
+                    
+                    {/* Progress Footer */}
+                    <div 
+                      className="card-footer border-0 py-3" 
+                      style={{ 
+                        backgroundColor: prodIndex % 2 === 0 ? '#f8f9fa' : '#e9ecef'
+                      }}
+                    >
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <small className="text-muted fw-semibold">Overall Progress</small>
+                        <small className="text-muted">
+                          {Math.round((prod.processes?.filter(p => p.status === 'completed').length || 0) / (prod.processes?.length || 1) * 100)}%
+                        </small>
+                      </div>
+                      <div className="progress" style={{ height: '8px' }}>
+                        <div 
+                          className="progress-bar bg-success" 
+                          role="progressbar" 
+                          style={{ width: `${Math.round((prod.processes?.filter(p => p.status === 'completed').length || 0) / (prod.processes?.length || 1) * 100)}%` }}
+                          aria-valuenow={Math.round((prod.processes?.filter(p => p.status === 'completed').length || 0) / (prod.processes?.length || 1) * 100)}
+                          aria-valuemin="0" 
+                          aria-valuemax="100"
+                        ></div>
+                      </div>
                       {prod.notes && (
-                        <div className="mt-1 small">
+                        <div className="mt-2 small text-muted">
+                          <i className="fas fa-sticky-note me-1"></i>
                           <strong>Notes:</strong> {prod.notes}
                         </div>
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
         </div>
+        </div>
+      )}
 
-        {/* Ready to Deliver */}
-        <div className="col-lg-6 mb-4">
+      {/* Ready to Deliver Tab */}
+      {activeTab === 'ready' && (
+        <div className="row">
+          <div className="col-12">
           <div className="card h-100 shadow-sm">
             <div className="card-header bg-warning text-dark">
-              <h5 className="card-title mb-0">
-                Ready to Deliver
-                <span className="badge bg-light text-dark ms-2">
-                  {filtered.filter(p => 
-                    p.status === 'Completed' && 
-                    p.overall_progress >= 100 && 
-                    p.order?.status !== 'ready_for_delivery' && 
-                    p.order?.status !== 'delivered'
-                  ).length}
-                </span>
-              </h5>
+              <div className="d-flex justify-content-between align-items-center">
+                <h5 className="card-title mb-0">
+                  <i className="fas fa-truck me-2"></i>
+                  Ready to Deliver (Table & Chair Only)
+                  <span className="badge bg-light text-dark ms-2">
+                    {filtered.filter(p => 
+                      p.status === 'Completed' && 
+                      p.overall_progress >= 100 && 
+                      p.product_type !== 'alkansya' &&
+                      p.order?.status !== 'ready_for_delivery' && 
+                      p.order?.status !== 'delivered'
+                    ).length}
+                  </span>
+                </h5>
+                <button className="btn btn-dark btn-sm" onClick={fetchProductions}>
+                  <i className="fas fa-sync-alt me-1"></i> Refresh
+                </button>
+              </div>
             </div>
             <div className="card-body">
-              <div className="timeline-list" style={{ maxHeight: 500, overflowY: "auto" }}>
-                {filtered
-                  .filter(p => 
-                    p.status === 'Completed' && 
-                    p.overall_progress >= 100 && 
-                    p.order?.status !== 'ready_for_delivery' && 
-                    p.order?.status !== 'delivered'
-                  )
-                  .map(prod => (
+              <div className="timeline-list">
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.overall_progress >= 100 && 
+                  p.product_type !== 'alkansya' &&
+                  p.order?.status !== 'ready_for_delivery' && 
+                  p.order?.status !== 'delivered'
+                ).length === 0 && (
+                  <div className="text-center py-5 text-muted">
+                    <i className="fas fa-truck-loading fa-3x mb-3"></i>
+                    <div className="h5">No furniture orders are currently ready to deliver.</div>
+                    <div className="small">Completed Table/Chair orders will appear here when production is finished.</div>
+                  </div>
+                )}
+
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.overall_progress >= 100 && 
+                  p.product_type !== 'alkansya' &&
+                  p.order?.status !== 'ready_for_delivery' && 
+                  p.order?.status !== 'delivered'
+                ).map(prod => (
                     <div key={prod.id} className="card mb-3 border-start border-4" style={{ borderColor: '#f39c12' }}>
                       <div className="card-body p-3">
                         <div className="d-flex justify-content-between align-items-start">
@@ -749,69 +1245,379 @@ export default function ProductionTrackingSystem() {
                       </div>
                     </div>
                   ))}
-
-                {filtered.filter(p => 
-                  p.status === 'Completed' && 
-                  p.overall_progress >= 100 && 
-                  p.order?.status !== 'ready_for_delivery' && 
-                  p.order?.status !== 'delivered'
-                ).length === 0 && (
-                  <div className="text-center py-4 text-muted">
-                    <i className="fas fa-truck-loading fa-3x mb-3"></i>
-                    <div>No orders are currently ready to deliver.</div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
         </div>
+        </div>
+      )}
 
-      </div>
-
-      {/* Charts and Analytics */}
-      <div className="row">
-        <div className="col-12">
-          {/* Charts */}
-          <div className="card mb-4 shadow-sm">
+      {/* Completed Productions Tab */}
+      {activeTab === 'completed' && (
+        <div className="row">
+          <div className="col-12">
+          <div className="card h-100 shadow-sm">
             <div className="card-header bg-success text-white">
-              <h5 className="card-title mb-0">Analytics Dashboard</h5>
+              <div className="d-flex justify-content-between align-items-center">
+                <h5 className="card-title mb-0">
+                  <i className="fas fa-check-circle me-2"></i>
+                  Completed Table & Chair Productions
+                  <span className="badge bg-light text-dark ms-2">
+                    {filtered.filter(p => 
+                      p.status === 'Completed' && 
+                      p.product_type !== 'alkansya'
+                    ).length}
+                  </span>
+                </h5>
+                <button className="btn btn-light btn-sm" onClick={fetchProductions}>
+                  <i className="fas fa-sync-alt me-1"></i> Refresh
+                </button>
+              </div>
             </div>
             <div className="card-body">
-              <div className="row">
-                {/* Work Progression Chart */}
-                <div className="col-lg-6 mb-4">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-body">
-                      <h6>Work Progression (Wooden Chair & Dining Table)</h6>
-                      <div style={{ width: "100%", height: 260 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={dailyOutput} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-                            <XAxis dataKey="date" />
-                            <YAxis />
-                            <Tooltip />
-                            <Legend />
-                            <Bar dataKey="Wooden Chair" fill="#8b5e34" name="Wooden Chair" />
-                            <Bar dataKey="Dining Table" fill="#d4a574" name="Dining Table" />
-                          </BarChart>
-                        </ResponsiveContainer>
+              <div className="timeline-list">
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.product_type !== 'alkansya'
+                ).length === 0 && (
+                  <div className="text-center py-5 text-muted">
+                    <i className="fas fa-check-circle fa-3x mb-3"></i>
+                    <div className="h5">No completed productions yet.</div>
+                    <div className="small">Completed Table & Chair productions will appear here.</div>
+                  </div>
+                )}
+
+                {filtered.filter(p => 
+                  p.status === 'Completed' && 
+                  p.product_type !== 'alkansya'
+                ).map(prod => (
+                    <div key={prod.id} className="card mb-3 border-start border-4 border-success">
+                      <div className="card-body p-3">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <div className="small text-muted mb-1">
+                              Completed: {prod.actual_completion_date ? new Date(prod.actual_completion_date).toLocaleDateString() : 'N/A'}
+                            </div>
+                            <h6 className="mb-2 fw-bold">
+                              <span className="badge bg-primary me-2">#{prod.id}</span>
+                              {prod.product_name} 
+                              {prod.order_id && (
+                                <span className="badge bg-info ms-2">Order #{prod.order_id}</span>
+                              )}
+                            </h6>
+                            <div className="mb-2">
+                              <span className="badge bg-secondary me-2">Qty: {prod.quantity}</span>
+                              <span className="badge bg-success">
+                                <i className="fas fa-check me-1"></i>
+                                Completed
+                              </span>
+                              {prod.overall_progress >= 100 && (
+                                <span className="badge bg-success ms-2">
+                                  <i className="fas fa-percentage me-1"></i>
+                                  100% Complete
+                                </span>
+                              )}
+                            </div>
+                            <div className="small text-muted">
+                              <i className="fas fa-calendar-alt me-1"></i>
+                              Started: {prod.production_started_at ? new Date(prod.production_started_at).toLocaleDateString() : 'N/A'}
+                            </div>
+                            {prod.estimated_completion_date && (
+                              <div className="small text-muted">
+                                <i className="fas fa-clock me-1"></i>
+                                Est. Completion: {new Date(prod.estimated_completion_date).toLocaleDateString()}
+                              </div>
+                            )}
+                            {prod.order?.status && (
+                              <div className="small mt-2">
+                                <span className="text-muted">Order Status: </span>
+                                <span className={`badge ${
+                                  prod.order.status === 'delivered' ? 'bg-success' :
+                                  prod.order.status === 'ready_for_delivery' ? 'bg-warning' :
+                                  'bg-info'
+                                }`}>
+                                  {prod.order.status === 'delivered' ? 'Delivered' :
+                                   prod.order.status === 'ready_for_delivery' ? 'Ready for Delivery' :
+                                   prod.order.status}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="d-flex flex-column gap-2">
+                            {prod.order_id && prod.order?.status !== 'delivered' && (
+                              <>
+                                {prod.order?.status !== 'ready_for_delivery' && (
+                                  <button
+                                    className="btn btn-warning btn-sm"
+                                    onClick={() => markOrderReadyForDelivery(prod.order_id)}
+                                    title="Mark Order as Ready for Delivery"
+                                  >
+                                    <i className="fas fa-truck me-1"></i>
+                                    Mark Ready
+                                  </button>
+                                )}
+                                <button
+                                  className="btn btn-success btn-sm"
+                                  onClick={() => markOrderDelivered(prod.order_id)}
+                                  title="Mark Order as Delivered"
+                                >
+                                  <i className="fas fa-check me-1"></i>
+                                  Mark Delivered
+                                </button>
+                              </>
+                            )}
+                            {prod.order?.status === 'delivered' && (
+                              <span className="badge bg-success">
+                                <i className="fas fa-check-double me-1"></i>
+                                Delivered
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-                
-                {/* Stage Breakdown Cards */}
-                <div className="col-lg-6 mb-4">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-body">
-                      <StageBreakdownCards stageData={stageData} />
-                    </div>
-                  </div>
-                </div>
+                  ))}
               </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      )}
 
-              <hr />
+      {/* Process Completion Tab */}
+      {activeTab === 'completion' && (
+        <div className="row">
+          <div className="col-12">
+          {/* Delay Tracking & Completion Analytics */}
+          <div className="card shadow-sm mb-4">
+            <div className="card-header bg-danger text-white">
+              <h5 className="card-title mb-0">
+                <i className="fas fa-exclamation-triangle me-2"></i>
+                Delay Tracking & Process Completion
+              </h5>
+            </div>
+            <div className="card-body">
+              <div className="table-responsive">
+                <table className="table table-hover">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Production ID</th>
+                      <th>Order</th>
+                      <th>Product</th>
+                      <th>Process</th>
+                      <th>Status</th>
+                      <th>Completed By</th>
+                      <th>Expected Date</th>
+                      <th>Actual Date</th>
+                      <th>Delay Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productions.flatMap(prod => 
+                      (prod.processes || [])
+                        .filter(pr => pr.status === 'completed')
+                        .map(pr => {
+                          // Check if process was delayed by comparing dates
+                          const hasDelayReason = !!(pr.delay_reason && pr.delay_reason.trim());
+                          const expectedDate = pr.started_at ? new Date(new Date(pr.started_at).getTime() + (pr.estimated_duration_minutes || 0) * 60000) : null;
+                          const actualDate = pr.completed_at ? new Date(pr.completed_at) : null;
+                          const wasLate = expectedDate && actualDate && actualDate > expectedDate;
+                          const isDelayed = hasDelayReason || wasLate;
+                          
+                          console.log('Process delay check:', {
+                            process: pr.process_name,
+                            hasDelayReason,
+                            expectedDate: expectedDate?.toISOString(),
+                            actualDate: actualDate?.toISOString(),
+                            wasLate,
+                            isDelayed,
+                            delay_reason: pr.delay_reason,
+                            is_delayed_flag: pr.is_delayed
+                          });
+                          
+                          return (
+                            <tr key={`${prod.id}-${pr.id}`} className={isDelayed ? 'table-warning' : ''}>
+                              <td>
+                                <span className="badge bg-primary">#{prod.id}</span>
+                              </td>
+                              <td>
+                                {prod.order_id ? (
+                                  <span className="badge bg-info">Order #{prod.order_id}</span>
+                                ) : (
+                                  <span className="text-muted small">No Order</span>
+                                )}
+                              </td>
+                              <td>
+                                <strong>{prod.product_name}</strong>
+                              </td>
+                              <td>{pr.process_name}</td>
+                              <td>
+                                <span className={`badge ${
+                                  pr.status === 'completed' ? 'bg-success' : 
+                                  pr.status === 'in_progress' ? 'bg-primary' : 
+                                  'bg-secondary'
+                                }`}>
+                                  {pr.status === 'in_progress' ? 'In Progress' : 
+                                   pr.status === 'completed' ? 'Completed' : 'Pending'}
+                                </span>
+                              </td>
+                              <td>
+                                {pr.completed_by_name ? (
+                                  <div>
+                                    <i className="fas fa-user-check me-1 text-success"></i>
+                                    <strong>{pr.completed_by_name}</strong>
+                                    <div className="small text-muted">
+                                      {pr.completed_at ? new Date(pr.completed_at).toLocaleString('en-US', { 
+                                        month: 'short', 
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      }) : ''}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted">-</span>
+                                )}
+                              </td>
+                              <td>
+                                {pr.started_at ? (
+                                  <div className="small">
+                                    {new Date(new Date(pr.started_at).getTime() + (pr.estimated_duration_minutes || 0) * 60000).toLocaleDateString()}
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td>
+                                {pr.completed_at ? (
+                                  <div className="small">
+                                    {new Date(pr.completed_at).toLocaleDateString()}
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td>
+                                {isDelayed ? (
+                                  <div>
+                                    <div className="badge bg-danger mb-1">
+                                      <i className="fas fa-exclamation-triangle me-1"></i>
+                                      DELAYED
+                                    </div>
+                                    {pr.delay_reason && pr.delay_reason.trim() && (
+                                      <div className="text-danger small mt-1" style={{ maxWidth: '250px' }}>
+                                        <strong>Reason:</strong> {pr.delay_reason}
+                                      </div>
+                                    )}
+                                    {!pr.delay_reason && wasLate && (
+                                      <div className="text-muted small mt-1">
+                                        <em>Completed late (no reason provided)</em>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="badge bg-success">
+                                    <i className="fas fa-check me-1"></i>On Time
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                    {productions.flatMap(prod => 
+                      (prod.processes || []).filter(pr => pr.status === 'completed')
+                    ).length === 0 && (
+                      <tr>
+                        <td colSpan="8" className="text-center text-muted py-4">
+                          <i className="fas fa-info-circle fa-2x mb-2"></i>
+                          <div>No completed processes yet</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          </div>
+        </div>
+      )}
 
-              {/* KPIs */}
+      {/* Production Analytics Tab */}
+      {activeTab === 'analytics' && (
+        <div className="row">
+          <div className="col-12">
+          {/* Stage Completion Summary */}
+          <div className="card shadow-sm mb-4">
+            <div className="card-header bg-info text-white">
+              <h5 className="card-title mb-0">
+                <i className="fas fa-chart-bar me-2"></i>
+                Stage Completion Summary
+              </h5>
+            </div>
+            <div className="card-body">
+              <div className="table-responsive">
+                <table className="table table-hover">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Stage Name</th>
+                      <th>Total Completed</th>
+                      <th>On Time</th>
+                      <th>Delayed</th>
+                      <th>Performance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {STAGES.map(stageName => {
+                      const stageProcesses = productions.flatMap(prod => 
+                        (prod.processes || []).filter(pr => 
+                          pr.process_name === stageName && pr.status === 'completed'
+                        )
+                      );
+                      const totalCompleted = stageProcesses.length;
+                      const onTime = stageProcesses.filter(pr => !pr.delay_reason || !pr.delay_reason.trim()).length;
+                      const delayed = stageProcesses.filter(pr => pr.delay_reason && pr.delay_reason.trim()).length;
+                      const performance = totalCompleted > 0 ? Math.round((onTime / totalCompleted) * 100) : 0;
+                      
+                      return (
+                        <tr key={stageName}>
+                          <td><strong>{stageName}</strong></td>
+                          <td>
+                            <span className="badge bg-primary">{totalCompleted}</span>
+                          </td>
+                          <td>
+                            <span className="badge bg-success">{onTime}</span>
+                          </td>
+                          <td>
+                            <span className="badge bg-danger">{delayed}</span>
+                          </td>
+                          <td>
+                            <div className="d-flex align-items-center gap-2">
+                              <div className="progress flex-grow-1" style={{ height: '20px', minWidth: '100px' }}>
+                                <div 
+                                  className={`progress-bar ${performance >= 80 ? 'bg-success' : performance >= 50 ? 'bg-warning' : 'bg-danger'}`}
+                                  style={{ width: `${performance}%` }}
+                                >
+                                  {performance}%
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary and Stage Workload */}
+          <div className="card shadow-sm mb-4">
+            <div className="card-header bg-success text-white">
+              <h5 className="card-title mb-0">
+                <i className="fas fa-chart-line me-2"></i>
+                Summary & Stage Workload
+              </h5>
+            </div>
+            <div className="card-body">
               <div className="row">
                 <div className="col-md-4">
                   <div className="p-3 bg-light rounded">
@@ -866,7 +1672,7 @@ export default function ProductionTrackingSystem() {
             </div>
           </div>
 
-          {/* Resource Allocation Suggestions */}
+          {/* Resource Allocation Suggestions - moved from Process Completion tab */}
           <div className="card shadow-sm">
             <div className="card-header bg-warning text-dark">
               <div className="d-flex justify-content-between align-items-center">
@@ -882,7 +1688,6 @@ export default function ProductionTrackingSystem() {
               </div>
             </div>
             <div className="card-body">
-              
               <div className="table-responsive">
                 <table className="table table-hover">
                   <thead className="table-light">
@@ -897,7 +1702,7 @@ export default function ProductionTrackingSystem() {
                     {suggestions.map((s) => (
                       <tr key={s.stage}>
                         <td>
-                          <span className="fw-bold">{s.stage}</span>
+                          <strong>{s.stage}</strong>
                           {s.priority === 'high' && (
                             <i className="fas fa-exclamation-triangle text-danger ms-2" title="High Priority Alert"></i>
                           )}
@@ -928,10 +1733,93 @@ export default function ProductionTrackingSystem() {
               </div>
             </div>
           </div>
+          </div>
         </div>
+      )}
+      
+      {/* Delay Reason Modal */}
+      {console.log('Rendering modal check - showDelayModal:', showDelayModal)}
+      {showDelayModal ? (
+        <>
+          {console.log('✅ MODAL IS RENDERING NOW')}
+          <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999 }} tabIndex="-1" onClick={(e) => e.target === e.currentTarget && setShowDelayModal(false)}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content shadow-lg">
+              <div className="modal-header bg-warning text-dark">
+                <h5 className="modal-title">
+                  <i className="fas fa-exclamation-triangle me-2"></i>
+                  Process Delayed - Explanation Required
+                </h5>
+                <button 
+                  type="button" 
+                  className="btn-close" 
+                  onClick={() => setShowDelayModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="alert alert-warning mb-3">
+                  <div className="d-flex align-items-center mb-2">
+                    <i className="fas fa-exclamation-circle fa-2x text-danger me-3"></i>
+                    <div>
+                      <strong className="text-danger fs-5">This process is delayed!</strong>
+                      <div className="small">Please provide an explanation below</div>
+                    </div>
+                  </div>
+                  <hr />
+                  <strong>Process:</strong> {delayModalData.processName}
+                  <br />
+                  <strong>Expected Completion:</strong> {delayModalData.estimatedEndDate?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  <br />
+                  <strong>Actual Completion:</strong> {delayModalData.actualCompletionDate?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  <br />
+                  <strong className="text-danger">Delay:</strong> {Math.ceil((delayModalData.actualCompletionDate - delayModalData.estimatedEndDate) / (1000 * 60 * 60 * 24))} days late
+                </div>
+                
+                <div className="mb-3">
+                  <label htmlFor="delayReason" className="form-label fw-bold">
+                    Please explain the reason for this delay: <span className="text-danger">*</span>
+                  </label>
+                  <textarea
+                    id="delayReason"
+                    className="form-control"
+                    rows="4"
+                    placeholder="E.g., Material shortage, equipment malfunction, staff shortage, quality issues, etc."
+                    value={delayModalData.delayReason}
+                    onChange={(e) => setDelayModalData({...delayModalData, delayReason: e.target.value})}
+                    required
+                  ></textarea>
+                  <div className="form-text">
+                    This information will be visible to customers and management for transparency.
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setShowDelayModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-warning" 
+                  onClick={handleDelayModalSubmit}
+                  disabled={!delayModalData.delayReason.trim()}
+                >
+                  <i className="fas fa-save me-1"></i>
+                  Submit & Complete Process
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </>
+      ) : (
+        console.log('❌ Modal NOT showing - showDelayModal is false')
+      )}
       </div>
-    </div>
-    
     </AppLayout>
   );
 }
+

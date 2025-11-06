@@ -27,6 +27,14 @@ use Illuminate\Support\Facades\DB;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
+// Advanced Analytics Routes (Public for testing - move inside auth if needed)
+Route::get('/analytics/production-output', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getProductionOutputAnalytics']);
+Route::get('/analytics/resource-utilization', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getResourceUtilization']);
+Route::get('/analytics/production-performance', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getProductionPerformance']);
+Route::get('/analytics/predictive', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getPredictiveAnalytics']);
+Route::get('/analytics/material-usage-trends', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getMaterialUsageTrends']);
+Route::get('/analytics/automated-stock-report', [\App\Http\Controllers\AdvancedAnalyticsController::class, 'getAutomatedStockReport']);
+
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -90,6 +98,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/inventory/daily-usage', [InventoryController::class, 'getDailyUsage']);
     Route::get('/inventory/consumption-trends', [InventoryController::class, 'getConsumptionTrends']);
     Route::get('/inventory/dashboard', [InventoryController::class, 'getDashboardData']);
+    Route::post('/inventory/alkansya-daily-output', [InventoryController::class, 'addAlkansyaDailyOutput']);
     
     // Price Calculator Routes
     Route::post('/price-calculator/calculate', [PriceCalculatorController::class, 'calculatePrice']);

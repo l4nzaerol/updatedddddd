@@ -2,17 +2,43 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Spinner, Badge, Collapse, Card, ProgressBar } from "react-bootstrap";
-import { FaBox, FaClock, FaTruck, FaCheckCircle } from "react-icons/fa";
+import { FaBox, FaClock, FaTruck, FaCheckCircle, FaHammer, FaTools, FaPaintBrush, FaCut } from "react-icons/fa";
 
 const API = "http://localhost:8000/api";
-const stages = [
-  "Design",
-  "Preparation", 
-  "Cutting",
-  "Assembly",
-  "Finishing",
-  "Quality Control"
-];
+
+// Stage descriptions and estimated days
+const stageDetails = {
+  "Material Preparation": {
+    description: "Selecting and preparing high-quality wood materials, checking inventory, and organizing materials for production.",
+    estimatedDays: 1,
+    icon: "📦"
+  },
+  "Cutting & Shaping": {
+    description: "Cutting wood pieces to precise measurements and shaping components according to design specifications.",
+    estimatedDays: 2,
+    icon: "✂️"
+  },
+  "Assembly": {
+    description: "Joining and assembling all components together, ensuring structural integrity and proper alignment.",
+    estimatedDays: 3,
+    icon: "🔨"
+  },
+  "Sanding & Surface Preparation": {
+    description: "Smoothing all surfaces, removing imperfections, and preparing the furniture for finishing treatments.",
+    estimatedDays: 2,
+    icon: "⚙️"
+  },
+  "Finishing": {
+    description: "Applying stains, varnish, or paint to protect and enhance the wood's natural beauty.",
+    estimatedDays: 3,
+    icon: "🎨"
+  },
+  "Quality Check & Packaging": {
+    description: "Thorough inspection for quality assurance, final touch-ups, and careful packaging for delivery.",
+    estimatedDays: 1,
+    icon: "✅"
+  }
+};
 
 const OrderTable = () => {
   const [orders, setOrders] = useState([]);
@@ -47,11 +73,37 @@ const OrderTable = () => {
   const fetchTracking = async (orderId) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`${API}/order-tracking/${orderId}/customer`, {
+      console.log(`🔍 [OrderTable] Fetching tracking for order #${orderId}...`);
+      const res = await axios.get(`${API}/orders/${orderId}/tracking`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      console.log(`✅ [OrderTable] Tracking data received for order #${orderId}:`, res.data);
+      
+      // Log process details
+      if (res.data.trackings) {
+        res.data.trackings.forEach(tracking => {
+          console.log(`📦 Product: ${tracking.product_name}`, {
+            is_tracked: tracking.is_tracked_product,
+            has_processes: !!tracking.processes,
+            process_count: tracking.processes?.length || 0
+          });
+          
+          if (tracking.processes) {
+            const delayed = tracking.processes.filter(p => p.delay_reason);
+            if (delayed.length > 0) {
+              console.log(`⚠️ DELAYED PROCESSES FOUND:`, delayed.map(p => ({
+                name: p.process_name,
+                reason: p.delay_reason,
+                completed_by: p.completed_by_name
+              })));
+            }
+          }
+        });
+      }
+      
       setTracking((prev) => ({ ...prev, [orderId]: res.data }));
     } catch (e) {
+      console.error(`❌ [OrderTable] Failed to fetch tracking for order #${orderId}:`, e);
       setTracking((prev) => ({ ...prev, [orderId]: { error: "Failed to fetch tracking" } }));
     }
   };
@@ -155,11 +207,10 @@ const OrderTable = () => {
                     </div>
 
                     {/* === ACCEPTANCE STATUS === */}
-                    {/* Only show for Table and Chair orders (production tracking type) */}
-                    {order.acceptance_status && track && track.tracking_type === 'production' && (
+                    {order.acceptance_status && (
                       <div className="mt-3">
                         <h6 className="fw-bold">Order Acceptance Status</h6>
-                        <div className="alert alert-info">
+                        <div className={`alert ${order.acceptance_status === 'accepted' ? 'alert-success' : order.acceptance_status === 'rejected' ? 'alert-danger' : 'alert-info'}`}>
                           {order.acceptance_status === 'pending' && (
                             <>
                               <FaClock className="me-2" />
@@ -168,7 +219,7 @@ const OrderTable = () => {
                           )}
                           {order.acceptance_status === 'accepted' && (
                             <>
-                              <FaCheckCircle className="me-2 text-success" />
+                              <FaCheckCircle className="me-2" />
                               Your order has been <strong>accepted</strong> and is now in production!
                             </>
                           )}
@@ -182,50 +233,127 @@ const OrderTable = () => {
                       </div>
                     )}
 
-                    {/* === ORDER TRACKING DETAILS === */}
-                    {/* Show tracking based on product type */}
-                    {track && !track.error && order.acceptance_status === 'accepted' && (
+                    {/* === PRODUCTION TRACKING === */}
+                    {/* Show current production stage for Table and Chair orders */}
+                    {track && !track.error && order.acceptance_status === 'accepted' && track.trackings && (
                       <div className="mt-4">
-                        {/* Production Tracking for Table and Chair only */}
-                        {track.tracking_type === 'production' && track.data && track.data.overall && (
-                          <div>
-                            <h6 className="fw-bold">Production Tracking</h6>
-                            <div className="d-flex justify-content-between small mb-1">
-                              <span>Progress</span>
-                              <span>ETA: {track.data.overall.eta}</span>
-                            </div>
-                            <ProgressBar
-                              now={track.data.overall.progress_pct}
-                              label={`${track.data.overall.progress_pct}%`}
-                            />
+                        <h6 className="fw-bold">Production Tracking</h6>
 
-                            <div className="row mt-3">
-                              {track.data.stage_summary && track.data.stage_summary.length > 0 ? (
-                                track.data.stage_summary.map((stage) => (
-                                  <div className="col-md-4 mb-2" key={stage.stage}>
-                                    <div className="p-2 border rounded bg-light">
-                                      <div className="fw-bold text-primary">{stage.stage}</div>
-                                      <div className="small text-muted">
-                                        <span className="badge bg-warning me-1">Pending: {stage.pending}</span>
-                                      </div>
-                                      <div className="small text-muted">
-                                        <span className="badge bg-info me-1">In Progress: {stage.in_progress}</span>
-                                      </div>
-                                      <div className="small text-muted">
-                                        <span className="badge bg-success me-1">Completed: {stage.completed}</span>
+                        {/* Current Production Stage for each item */}
+                        {track.trackings.filter(t => t.is_tracked_product).length > 0 && (
+                          <div className="mt-3">
+                            {track.trackings
+                              .filter(t => t.is_tracked_product)
+                              .map((item, idx) => {
+                                const currentStage = item.current_stage || 'Pending';
+                                const stageInfo = stageDetails[currentStage] || {
+                                  description: 'Production in progress',
+                                  estimatedDays: 1,
+                                  icon: '🔧'
+                                };
+
+                                return (
+                                  <div key={idx} className="card border-primary mb-3">
+                                    <div className="card-header bg-primary text-white">
+                                      <div className="d-flex justify-content-between align-items-center">
+                                        <div>
+                                          <strong>{item.product_name}</strong>
+                                        </div>
+                                        <Badge bg={item.status === 'completed' ? 'success' : item.status === 'in_production' ? 'light' : 'secondary'}>
+                                          {item.status === 'in_production' ? 'In Progress' : item.status}
+                                        </Badge>
                                       </div>
                                     </div>
+                                    <div className="card-body">
+                                      <div className="mb-3">
+                                        <h5 className="text-primary mb-2">
+                                          <span className="me-2" style={{ fontSize: '1.5rem' }}>{stageInfo.icon}</span>
+                                          Current Stage: {currentStage}
+                                        </h5>
+                                        <p className="text-muted mb-2">
+                                          {stageInfo.description}
+                                        </p>
+                                        <div className="d-flex align-items-center">
+                                          <FaClock className="me-2 text-info" />
+                                          <span className="fw-bold">
+                                            Estimated Duration: {stageInfo.estimatedDays} {stageInfo.estimatedDays === 1 ? 'day' : 'days'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      
+                                      {item.estimated_completion_date && (
+                                        <div className="alert alert-info mb-0">
+                                          <FaTruck className="me-2" />
+                                          <strong>Estimated Completion:</strong> {new Date(item.estimated_completion_date).toLocaleDateString()}
+                                        </div>
+                                      )}
+
+                                      {/* === PREVIOUS COMPLETED STAGES WITH DELAYS === */}
+                                      {item.processes && item.processes.length > 0 && (
+                                        <div className="mt-3">
+                                          <h6 className="text-muted mb-2">
+                                            <FaHammer className="me-2" />
+                                            Previous Stages
+                                          </h6>
+                                          {item.processes
+                                            .filter(p => p.status === 'completed')
+                                            .map((process, pidx) => {
+                                              const isDelayed = process.delay_reason && process.delay_reason.trim();
+                                              return (
+                                                <div key={pidx} className={`card mb-2 ${isDelayed ? 'border-warning' : 'border-success'}`}>
+                                                  <div className="card-body p-2">
+                                                    <div className="d-flex align-items-start">
+                                                      <div className="me-2">
+                                                        {isDelayed ? (
+                                                          <span className="text-warning">⚠️</span>
+                                                        ) : (
+                                                          <FaCheckCircle className="text-success" />
+                                                        )}
+                                                      </div>
+                                                      <div className="flex-grow-1">
+                                                        <div className="d-flex justify-content-between align-items-start">
+                                                          <strong className="small">{process.process_name}</strong>
+                                                          {isDelayed && (
+                                                            <Badge bg="danger">DELAYED</Badge>
+                                                          )}
+                                                        </div>
+                                                        {process.completed_at && (
+                                                          <div className="small text-muted">
+                                                            Completed: {new Date(process.completed_at).toLocaleDateString()}
+                                                          </div>
+                                                        )}
+                                                        {isDelayed && (
+                                                          <div className="alert alert-warning p-2 mt-2 mb-0">
+                                                            <div className="small">
+                                                              <strong>Delay Reason:</strong> {process.delay_reason}
+                                                            </div>
+                                                            {process.completed_by_name && (
+                                                              <div className="small text-muted">
+                                                                Completed by: {process.completed_by_name}
+                                                              </div>
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                ))
-                              ) : (
-                                <div className="col-12">
-                                  <div className="alert alert-info">
-                                    <FaClock className="me-2" />
-                                    Production tracking will be updated as work progresses.
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                                );
+                              })}
+                          </div>
+                        )}
+
+                        {/* Show message if no tracked products */}
+                        {track.trackings.filter(t => t.is_tracked_product).length === 0 && (
+                          <div className="alert alert-info">
+                            <FaClock className="me-2" />
+                            This order contains items that don't require detailed production tracking.
                           </div>
                         )}
                       </div>
