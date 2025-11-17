@@ -64,7 +64,20 @@ const OrderTable = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      setOrders(response.data || []);
+      const ordersData = response.data || [];
+      
+      // Debug logging for receipt confirmation
+      ordersData.forEach(order => {
+        if (order.status === 'ready_for_delivery') {
+          console.log(`📦 [OrderTable] Order #${order.id} ready for delivery:`, {
+            status: order.status,
+            receipt_confirmed: order.receipt_confirmed,
+            not_received_reason: order.not_received_reason
+          });
+        }
+      });
+
+      setOrders(ordersData);
     } catch (err) {
       setError("Failed to load orders. Please try again.");
     } finally {
@@ -227,38 +240,32 @@ const OrderTable = () => {
                     )}
                   </div>
                 </div>
-                <div className="d-flex align-items-center gap-2">
-                  <Badge bg={getStatusVariant(order.status)} className="me-2">{order.status}</Badge>
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <Badge bg={getStatusVariant(order.status)}>{order.status}</Badge>
                   {order.payment_status && (
                     <Badge bg={order.payment_status==='paid' ? 'success' : (order.payment_status==='cod_pending' ? 'warning' : 'secondary')}>
                       {order.payment_status}
                     </Badge>
                   )}
                   {canCancelOrder(order) && (
-                    <Button 
-                      variant="outline-danger" 
-                      size="sm"
+                    <Badge 
+                      bg="danger"
+                      as="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         cancelOrder(order.id);
                       }}
                       title="Cancel this order"
                       style={{
-                        borderRadius: '8px',
-                        borderWidth: '1px',
-                        borderColor: '#dc3545',
-                        backgroundColor: 'white',
-                        color: '#dc3545',
-                        padding: '0.375rem 0.75rem',
-                        fontSize: '0.875rem',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease',
-                        minWidth: '120px'
+                        cursor: 'pointer',
+                        border: 'none',
+                        padding: '0.35em 0.65em',
+                        fontSize: '0.875rem'
                       }}
                     >
                       <FaTimes className="me-1" />
                       Cancel Order
-                    </Button>
+                    </Badge>
                   )}
                 </div>
               </Card.Header>
@@ -274,8 +281,95 @@ const OrderTable = () => {
                       </div>
                     </div>
 
+                    {/* === RECEIPT CONFIRMATION === */}
+                    {order.status === 'ready_for_delivery' && (order.receipt_confirmed === null || order.receipt_confirmed === undefined) && (
+                      <div className="alert alert-info mb-3">
+                        <div className="text-center">
+                          <FaTruck className="mb-3" style={{ fontSize: '3rem', color: '#0dcaf0' }} />
+                          <h5 className="mb-3">Your order is ready for delivery!</h5>
+                          <p className="mb-4">Have you received your order?</p>
+                          <div className="d-flex justify-content-center gap-3 flex-wrap">
+                            <Button
+                              variant="success"
+                              size="lg"
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem("token");
+                                  const response = await axios.post(
+                                    `${API}/orders/${order.id}/confirm-receipt`,
+                                    { received: true },
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  toast.success("Order receipt confirmed!", {
+                                    description: "Thank you for confirming. Your order is now marked as completed.",
+                                    duration: 4000,
+                                  });
+                                  await fetchOrders();
+                                } catch (err) {
+                                  toast.error("Failed to confirm receipt", {
+                                    description: err.response?.data?.message || "Please try again.",
+                                    duration: 4000,
+                                  });
+                                }
+                              }}
+                            >
+                              <FaCheckCircle className="me-2" />
+                              Yes, I Received It
+                            </Button>
+                            <Button
+                              variant="warning"
+                              size="lg"
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem("token");
+                                  const response = await axios.post(
+                                    `${API}/orders/${order.id}/confirm-receipt`,
+                                    { received: false },
+                                    { headers: { Authorization: `Bearer ${token}` } }
+                                  );
+                                  toast.info("Noted", {
+                                    description: "We have noted that you have not received the order. Our team will investigate and contact you soon.",
+                                    duration: 5000,
+                                  });
+                                  await fetchOrders();
+                                } catch (err) {
+                                  toast.error("Failed to submit", {
+                                    description: err.response?.data?.message || "Please try again.",
+                                    duration: 4000,
+                                  });
+                                }
+                              }}
+                            >
+                              <FaTimes className="me-2" />
+                              No, I Haven't Received It
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* === NOT RECEIVED REASON === */}
+                    {order.status === 'ready_for_delivery' && order.receipt_confirmed === false && order.not_received_reason && (
+                      <div className="alert alert-warning mb-3">
+                        <div className="d-flex align-items-start">
+                          <FaTimes className="me-3 mt-1" style={{ fontSize: '2rem' }} />
+                          <div className="flex-grow-1">
+                            <h6 className="alert-heading mb-2">Order Not Delivered</h6>
+                            <p className="mb-0">
+                              <strong>Reason:</strong> {order.not_received_reason}
+                            </p>
+                            {order.not_received_at && (
+                              <small className="text-muted d-block mt-2">
+                                Updated: {new Date(order.not_received_at).toLocaleString()}
+                              </small>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* === ORDER ITEMS === */}
-                    <h6 className="fw-bold">Order Items</h6>
+                    <h6 className="fw-bold mb-3">Order Items</h6>
                     {order.items.map((item) => (
                       <div
                         key={item.id}
@@ -294,7 +388,25 @@ const OrderTable = () => {
                         </span>
                       </div>
                     ))}
-
+                    
+                    {/* Shipping Fee and Total - Right Aligned */}
+                    <div className="d-flex justify-content-between border-bottom py-2">
+                      <span>Shipping Fee:</span>
+                      <span className={order.shipping_fee > 0 ? 'fw-bold text-success' : 'fw-bold text-success'}>
+                        {order.shipping_fee > 0 ? (
+                          `₱${Number(order.shipping_fee || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                        ) : (
+                          'FREE'
+                        )}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between py-2">
+                      <span className="fw-bold">Total:</span>
+                      <span className="fw-bold text-primary">
+                        ₱{Number(order.total_price || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    
                     {/* === BASIC INFO === */}
                     <div className="mt-3 text-muted small">
                       <p>

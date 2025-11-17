@@ -21,6 +21,7 @@ return new class extends Migration
                 'PURCHASE',
                 'CONSUMPTION', 
                 'ADJUSTMENT',
+                'STOCK_ADJUSTMENT',
                 'RETURN',
                 'PRODUCTION_OUTPUT',
                 'DAILY_OUTPUT',
@@ -30,7 +31,13 @@ return new class extends Migration
                 'ALKANSYA_CONSUMPTION',
                 'STOCK_TRANSFER',
                 'DEFECT_RETURN',
-                'SALES_RETURN'
+                'SALES_RETURN',
+                'PRODUCTION_USAGE',
+                'ALKANSYA_PRODUCTION',
+                'ORDER_CONSUMPTION',
+                'ORDER_PRODUCTION',
+                'MANUAL_ADJUSTMENT',
+                'QUALITY_CHECK'
             ]);
             
             $table->decimal('quantity', 10, 2);

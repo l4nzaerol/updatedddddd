@@ -69,9 +69,11 @@ const ProductionTracking = () => {
       console.log('💾 Setting orders state with:', ordersWithTracking.length, 'orders');
       setOrders(ordersWithTracking);
       
-      // Log each order's tracking details
+      // Log each order's tracking details and status
       ordersWithTracking.forEach(order => {
-        console.log(`📋 Order #${order.id} tracking details:`, {
+        console.log(`📋 Order #${order.id} details:`, {
+          status: order.status,
+          receipt_confirmed: order.receipt_confirmed,
           has_tracking: !!order.tracking,
           has_trackings_array: !!order.tracking?.trackings,
           trackings_count: order.tracking?.trackings?.length || 0,
@@ -330,40 +332,38 @@ const ProductionTracking = () => {
                           <span className={`badge bg-${getStatusColor(orderStatus.status)} fs-6 px-3 py-2`}>
                             {orderStatus.message}
                           </span>
-                            <div>
-                            <strong>Total: ₱{Number(order.total_price).toLocaleString()}</strong>
+                            <div className="text-end text-muted small">
+                              <p className="mb-1">
+                                <strong>Shipping Fee:</strong>{" "}
+                                <span className={order.shipping_fee > 0 ? '' : 'text-success'}>
+                                  {order.shipping_fee > 0 ? (
+                                    `₱${Number(order.shipping_fee || 0).toLocaleString()}`
+                                  ) : (
+                                    'FREE'
+                                  )}
+                                </span>
+                              </p>
+                              <p className="mb-0">
+                                <strong>Total:</strong>{" "}
+                                <span className="text-primary">
+                                  ₱{Number(order.total_price).toLocaleString()}
+                                </span>
+                              </p>
                             </div>
                             {canCancelOrder(order) && (
-                              <button
-                                className="btn btn-outline-danger btn-sm"
+                              <span
+                                className="badge bg-danger"
                                 onClick={() => cancelOrder(order.id)}
                                 title="Cancel this order"
                                 style={{
-                                  borderRadius: '8px',
-                                  borderWidth: '1px',
-                                  borderColor: '#dc3545',
-                                  backgroundColor: 'white',
-                                  color: '#dc3545',
-                                  padding: '0.375rem 0.75rem',
-                                  fontSize: '0.875rem',
-                                  fontWeight: '500',
-                                  transition: 'all 0.2s ease',
-                                  minWidth: '120px'
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.target.style.backgroundColor = '#dc3545';
-                                  e.target.style.color = 'white';
-                                  e.target.style.transform = 'translateY(-1px)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.target.style.backgroundColor = 'white';
-                                  e.target.style.color = '#dc3545';
-                                  e.target.style.transform = 'translateY(0)';
+                                  cursor: 'pointer',
+                                  padding: '0.35em 0.65em',
+                                  fontSize: '0.875rem'
                                 }}
                               >
                                 <FaTimes className="me-1" />
                                 Cancel Order
-                              </button>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -525,6 +525,107 @@ const ProductionTracking = () => {
                                   </div>
                                 )}
                               </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Ready for Delivery - Receipt Confirmation */}
+                      {(() => {
+                        const isReadyForDelivery = order.status === 'ready_for_delivery';
+                        const isNotConfirmed = order.receipt_confirmed === null || order.receipt_confirmed === undefined;
+                        const shouldShow = isReadyForDelivery && isNotConfirmed;
+                        
+                        // Debug logging
+                        if (isReadyForDelivery) {
+                          console.log('Order ready for delivery:', {
+                            orderId: order.id,
+                            status: order.status,
+                            receipt_confirmed: order.receipt_confirmed,
+                            shouldShow: shouldShow
+                          });
+                        }
+                        
+                        return shouldShow;
+                      })() && (
+                        <div className="alert alert-info mb-4">
+                          <div className="text-center">
+                            <FaTruck className="text-info mb-3" style={{ fontSize: '3rem' }} />
+                            <h4 className="text-info mb-3">Your order is ready for delivery!</h4>
+                            <p className="mb-4">Have you received your order?</p>
+                            <div className="d-flex justify-content-center gap-3">
+                              <button
+                                className="btn btn-success btn-lg px-5"
+                                onClick={async () => {
+                                  try {
+                                    const token = localStorage.getItem("token");
+                                    const response = await axios.post(
+                                      `http://localhost:8000/api/orders/${order.id}/confirm-receipt`,
+                                      { received: true },
+                                      { headers: { Authorization: `Bearer ${token}` } }
+                                    );
+                                    toast.success("Order receipt confirmed!", {
+                                      description: "Thank you for confirming. Your order is now marked as completed.",
+                                      duration: 4000,
+                                    });
+                                    await fetchOrders();
+                                  } catch (err) {
+                                    toast.error("Failed to confirm receipt", {
+                                      description: err.response?.data?.message || "Please try again.",
+                                      duration: 4000,
+                                    });
+                                  }
+                                }}
+                              >
+                                <FaCheckCircle className="me-2" />
+                                Yes, I Received It
+                              </button>
+                              <button
+                                className="btn btn-warning btn-lg px-5"
+                                onClick={async () => {
+                                  try {
+                                    const token = localStorage.getItem("token");
+                                    const response = await axios.post(
+                                      `http://localhost:8000/api/orders/${order.id}/confirm-receipt`,
+                                      { received: false },
+                                      { headers: { Authorization: `Bearer ${token}` } }
+                                    );
+                                    toast.info("Noted", {
+                                      description: "We have noted that you have not received the order. Our team will investigate and contact you soon.",
+                                      duration: 5000,
+                                    });
+                                    await fetchOrders();
+                                  } catch (err) {
+                                    toast.error("Failed to submit", {
+                                      description: err.response?.data?.message || "Please try again.",
+                                      duration: 4000,
+                                    });
+                                  }
+                                }}
+                              >
+                                <FaTimes className="me-2" />
+                                No, I Haven't Received It
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Not Received - Show Reason if Available */}
+                      {order.status === 'ready_for_delivery' && order.receipt_confirmed === false && order.not_received_reason && (
+                        <div className="alert alert-warning mb-4">
+                          <div className="d-flex align-items-start">
+                            <FaExclamationTriangle className="me-3 mt-1" style={{ fontSize: '2rem' }} />
+                            <div className="flex-grow-1">
+                              <h5 className="alert-heading mb-2">Order Not Delivered</h5>
+                              <p className="mb-0">
+                                <strong>Reason:</strong> {order.not_received_reason}
+                              </p>
+                              {order.not_received_at && (
+                                <small className="text-muted d-block mt-2">
+                                  Updated: {new Date(order.not_received_at).toLocaleString()}
+                                </small>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -767,26 +868,34 @@ const ProductionTracking = () => {
                       {/* Order Items Summary */}
                       <div className="pt-3 border-top">
                         <h6 className="text-muted mb-3">Order Items:</h6>
-                        <div className="row">
+                        <div>
                           {order.items?.map((item) => (
-                            <div key={item.id} className="col-md-6 mb-2">
-                              <div className="d-flex justify-content-between align-items-center p-2 bg-light rounded">
-                                <div>
-                                  <strong>{item.product?.name}</strong>
-                                  <br />
-                                  <small className="text-muted">Qty: {item.quantity}</small>
-                                </div>
-                                <div className="text-end">
-                                  <div className="fw-bold text-primary">
-                                    ₱{(item.product?.price * item.quantity).toLocaleString()}
-                                  </div>
-                                  <small className="text-muted">
-                                    ₱{item.product?.price?.toLocaleString()} each
-                                  </small>
-                                </div>
-                              </div>
+                            <div key={item.id} className="d-flex justify-content-between border-bottom py-2">
+                              <span>
+                                {item.product?.name} × {item.quantity}
+                              </span>
+                              <span className="fw-bold text-success">
+                                ₱{(item.product?.price * item.quantity).toLocaleString()}
+                              </span>
                             </div>
                           ))}
+                        </div>
+                        {/* Shipping Fee and Total - Right Aligned */}
+                        <div className="d-flex justify-content-between border-bottom py-2">
+                          <span>Shipping Fee:</span>
+                          <span className={order.shipping_fee > 0 ? 'fw-bold text-success' : 'fw-bold text-success'}>
+                            {order.shipping_fee > 0 ? (
+                              `₱${Number(order.shipping_fee || 0).toLocaleString()}`
+                            ) : (
+                              'FREE'
+                            )}
+                          </span>
+                        </div>
+                        <div className="d-flex justify-content-between py-2">
+                          <span className="fw-bold">Total:</span>
+                          <span className="fw-bold text-primary">
+                            ₱{Number(order.total_price || 0).toLocaleString()}
+                          </span>
                         </div>
                       </div>
                     </div>

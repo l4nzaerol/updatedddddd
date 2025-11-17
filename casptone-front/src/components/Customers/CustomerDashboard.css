@@ -55,6 +55,18 @@ body {
   padding: 0;
 }
 
+/* Ensure contact section maintains its styling */
+.enhanced-customer-dashboard .contact-section {
+  padding: 1rem 0 !important;
+  margin: 0 !important;
+  background: #f8f6f0 !important;
+}
+
+.enhanced-customer-dashboard .contact-container {
+  padding: 0 2rem !important;
+  margin: 0 auto !important;
+}
+
 /* Ensure banner and products sections connect seamlessly */
 .promotional-banner-section + .products-section-enhanced {
   margin-top: 0;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { useNavigate } from "react-router-dom";
 
@@ -63,6 +63,20 @@ const aggregate = (rows, timeframe) => {
 export default function DailyOutputChart({ data }) {
   const navigate = useNavigate();
   const [timeframe, setTimeframe] = useState("daily"); // daily | weekly | monthly | yearly
+  const [chartHeight, setChartHeight] = useState(280);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const updateDimensions = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      // Make chart taller on mobile for better visibility
+      setChartHeight(mobile ? 350 : 280);
+    };
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
 
   const title = useMemo(() => ({
     daily: "Daily Production Output",
@@ -90,21 +104,21 @@ export default function DailyOutputChart({ data }) {
   }, [series]);
 
   return (
-    <div className="card shadow-sm h-100" style={{ borderTop: '3px solid #8b5e34' }}>
-      <div className="card-body p-4">
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h5 className="card-title mb-1 fw-bold" style={{color:'#8b5e34'}}>
+    <div className="card shadow-sm h-100 daily-output-chart-card" style={{ borderTop: '3px solid #8b5e34' }}>
+      <div className="card-body p-2 p-sm-3 p-md-4">
+        <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-2 mb-md-3">
+          <div className="mb-2 mb-md-0">
+            <h5 className="card-title mb-1 fw-bold daily-chart-title" style={{color:'#8b5e34', fontSize: 'clamp(0.9rem, 3vw, 1.25rem)'}}>
               <i className="fas fa-chart-line me-2"></i>
               {title}
             </h5>
-            <p className="text-muted small mb-0">
+            <p className="text-muted small mb-0 daily-chart-subtitle" style={{fontSize: 'clamp(0.7rem, 2vw, 0.875rem)'}}>
               Includes completed Alkansya, Tables & Chairs
             </p>
           </div>
           <select 
-            className="form-select form-select-sm" 
-            style={{width: 140}} 
+            className="form-select form-select-sm daily-chart-select" 
+            style={{width: 'clamp(100px, 25vw, 140px)', fontSize: 'clamp(0.75rem, 2vw, 0.875rem)'}} 
             value={timeframe} 
             onChange={(e)=>setTimeframe(e.target.value)}
           >
@@ -116,10 +130,10 @@ export default function DailyOutputChart({ data }) {
         </div>
 
         {/* Summary Stats */}
-        <div className="row g-2 mb-3">
+        <div className="row g-1 g-md-2 mb-2 mb-md-3">
           <div className="col-4">
             <div 
-              className="text-center p-2 rounded" 
+              className="text-center p-1 p-md-2 rounded daily-stat-card" 
               style={{ 
                 backgroundColor: '#e8f5e9',
                 cursor: 'pointer',
@@ -136,14 +150,14 @@ export default function DailyOutputChart({ data }) {
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div className="small text-muted">🐷 Alkansya</div>
-              <div className="h5 mb-0 fw-bold" style={{ color: '#17a2b8' }}>{totals.alkansya}</div>
-              <div className="small text-muted">Avg: {totals.avgAlkansya}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.65rem, 2vw, 0.75rem)'}}>🐷 Alkansya</div>
+              <div className="h5 mb-0 fw-bold daily-stat-value" style={{ color: '#17a2b8', fontSize: 'clamp(0.9rem, 3vw, 1.25rem)' }}>{totals.alkansya}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.6rem, 1.8vw, 0.7rem)'}}>Avg: {totals.avgAlkansya}</div>
             </div>
           </div>
           <div className="col-4">
             <div 
-              className="text-center p-2 rounded" 
+              className="text-center p-1 p-md-2 rounded daily-stat-card" 
               style={{ 
                 backgroundColor: '#fff3e0',
                 cursor: 'pointer',
@@ -160,14 +174,14 @@ export default function DailyOutputChart({ data }) {
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div className="small text-muted">🪑 Furniture</div>
-              <div className="h5 mb-0 fw-bold" style={{ color: '#8b5e34' }}>{totals.furniture}</div>
-              <div className="small text-muted">Avg: {totals.avgFurniture}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.65rem, 2vw, 0.75rem)'}}>🪑 Furniture</div>
+              <div className="h5 mb-0 fw-bold daily-stat-value" style={{ color: '#8b5e34', fontSize: 'clamp(0.9rem, 3vw, 1.25rem)' }}>{totals.furniture}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.6rem, 1.8vw, 0.7rem)'}}>Avg: {totals.avgFurniture}</div>
             </div>
           </div>
           <div className="col-4">
             <div 
-              className="text-center p-2 rounded" 
+              className="text-center p-1 p-md-2 rounded daily-stat-card" 
               style={{ 
                 backgroundColor: '#f3e5f5',
                 cursor: 'pointer',
@@ -184,25 +198,26 @@ export default function DailyOutputChart({ data }) {
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <div className="small text-muted">📊 Total</div>
-              <div className="h5 mb-0 fw-bold text-success">{totals.total}</div>
-              <div className="small text-muted">Avg: {totals.avgTotal}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.65rem, 2vw, 0.75rem)'}}>📊 Total</div>
+              <div className="h5 mb-0 fw-bold daily-stat-value text-success" style={{fontSize: 'clamp(0.9rem, 3vw, 1.25rem)'}}>{totals.total}</div>
+              <div className="small text-muted" style={{fontSize: 'clamp(0.6rem, 1.8vw, 0.7rem)'}}>Avg: {totals.avgTotal}</div>
             </div>
           </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={series} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-            <XAxis 
-              dataKey="label" 
-              stroke="#666" 
-              style={{ fontSize: '11px' }}
+        <div className="daily-chart-container" style={{ width: '100%', height: chartHeight, minHeight: isMobile ? '350px' : '200px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={series} margin={{ top: 10, right: 10, left: isMobile ? -10 : -15, bottom: isMobile ? 50 : 40 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+              <XAxis 
+                dataKey="label" 
+                stroke="#666" 
+              style={{ fontSize: 'clamp(9px, 2vw, 11px)' }}
               angle={-15}
               textAnchor="end"
-              height={60}
+              height={isMobile ? 50 : 60}
             />
-            <YAxis stroke="#666" style={{ fontSize: '11px' }} />
+              <YAxis stroke="#666" style={{ fontSize: 'clamp(9px, 2vw, 11px)' }} />
             <Tooltip 
               contentStyle={{ 
                 backgroundColor: 'rgba(255, 255, 255, 0.98)',
@@ -218,7 +233,12 @@ export default function DailyOutputChart({ data }) {
               }}
             />
             <Legend 
-              wrapperStyle={{ paddingTop: '10px' }}
+              wrapperStyle={{ 
+                paddingTop: '10px', 
+                fontSize: isMobile ? '10px' : '14px',
+                lineHeight: isMobile ? '1.2' : '1.5'
+              }}
+              iconSize={isMobile ? 8 : 12}
               formatter={(value) => {
                 if (value === 'alkansya') return '🐷 Alkansya';
                 if (value === 'furniture') return '🪑 Table & Chair';
@@ -238,13 +258,14 @@ export default function DailyOutputChart({ data }) {
               type="monotone" 
               dataKey="furniture" 
               stroke="#8b5e34" 
-              strokeWidth={3} 
-              dot={{ r: 4, fill: '#8b5e34', strokeWidth: 2, stroke: '#fff' }}
-              activeDot={{ r: 6 }}
+              strokeWidth={isMobile ? 2 : 3} 
+              dot={{ r: isMobile ? 3 : 4, fill: '#8b5e34', strokeWidth: 2, stroke: '#fff' }}
+              activeDot={{ r: isMobile ? 5 : 6 }}
               name="furniture"
             />
           </LineChart>
         </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

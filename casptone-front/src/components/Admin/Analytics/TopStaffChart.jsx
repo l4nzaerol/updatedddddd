@@ -1,8 +1,18 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 const TopStaffChart = ({ data }) => {
   const COLORS = ['#8b5e34', '#a67c52', '#c19a6b', '#d4a574', '#e6b98c'];
+  const [chartHeight, setChartHeight] = useState(250);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      setChartHeight(window.innerWidth < 768 ? 220 : 250);
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   return (
     <div className="card shadow-sm" style={{ borderTop: '3px solid #8b5e34', height: '100%' }}>
@@ -20,7 +30,7 @@ const TopStaffChart = ({ data }) => {
           </div>
         ) : (
           <>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
                 <XAxis 
                   dataKey="name" 

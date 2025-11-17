@@ -3,6 +3,7 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { Spinner } from "react-bootstrap";
 import ProductCatalog from "./ProductCatalog";
+import "../LandingPage.css";
 import "./CustomerDashboard.css";
 import bannerImage from "../../assets/images/unick_banner.png";
 
@@ -109,6 +110,98 @@ const CustomerDashboard = ({ searchTerm = "" }) => {
           )}
         </div>
 
+        {/* Map Section */}
+        <motion.section 
+          className="map-section-minimal"
+          initial={{ opacity: 0, y: 50 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          viewport={{ once: true }}
+        >
+          <div className="map-section-container">
+            <div className="map-wrapper-minimal-top">
+              <div className="map-header-minimal">
+                <i className="fas fa-map-marker-alt"></i>
+                <span>Visit Our Location</span>
+              </div>
+              <div className="map-iframe-wrapper">
+                <iframe
+                  src="https://www.google.com/maps?q=14.2624446,121.1529838&hl=en&z=17&output=embed"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="UNICK Furniture Location"
+                ></iframe>
+              </div>
+              <a 
+                href="https://www.google.com/maps/place/Wood+Shop+UNICK/@14.2624446,121.1529838,17z/data=!3m1!4b1!4m6!3m5!1s0x3397d9138f7bc95d:0x9278fe89a256038d!8m2!3d14.2624446!4d121.1529838!16s%2Fg%2F11w9ytl522?entry=ttu" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="map-link-minimal"
+              >
+                <i className="fas fa-external-link-alt"></i>
+                Open in Google Maps
+              </a>
+            </div>
+          </div>
+        </motion.section>
+
+        {/* Contact Information Section */}
+        <motion.section 
+            className="contact-section"
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+        >
+            <div className="contact-container">
+                <div className="company-brand">
+                    <h2 className="company-name">UNICK FURNITURE</h2>
+                    <p className="company-tagline">Wooden Crafts | Wooden Table</p>
+                </div>
+                
+                <div className="contact-details-center">
+                    <div className="contact-item">
+                        <i className="fab fa-viber"></i>
+                        <span>Viber: 09351851259</span>
+                    </div>
+                    <div className="contact-item">
+                        <i className="fas fa-envelope"></i>
+                        <span>unickenterprisesinc@gmail.com</span>
+                    </div>
+                </div>
+                
+                <div className="social-links">
+                    <a 
+                        href="https://web.facebook.com/unick.furnitures" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="social-link facebook-link"
+                    >
+                        <img 
+                            src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTI0IDEyLjA3M0MyNCA1LjQwNCAxOC42MjcgMCAxMiAwUzAgNS40MDQgMCAxMi4wNzNDMCAxOC4wOTkgNC4zODcgMjMuMDk0IDEwLjEyNSAyNFYxNS41NjJINy4wNzhWMTIuMDczSDEwLjEyNVY5LjQxM0MxMC4xMjUgNi4zOTcgMTEuOTE1IDQuNzE5IDE0LjY1NyA0LjcxOUMxNS45MzYgNC43MTkgMTcuMjgxIDQuOTk0IDE3LjI4MSA0Ljk5NFY4LjA2MkgxNS44MzlDMTQuNDMxIDguMDYyIDEzLjkzOCA4Ljk5MyAxMy45MzggMTAuMDE2VjEyLjA3M0gxNy4xNzJMMTYuNjg4IDE1LjU2MkgxMy45MzhWMjRDMTkuNjEzIDIzLjA5NCAyNCAxOC4wOTkgMjQgMTIuMDczWiIgZmlsbD0iIzE4NzdGMiIvPgo8L3N2Zz4K" 
+                            alt="Facebook" 
+                            className="social-logo"
+                        />
+                    </a>
+                    <a 
+                        href="https://www.tiktok.com/@unick_woodenalkansya?_r=1&_d=secCgYIASAHKAESPgo8Qbb1vMQ0yijdYoBZM40bzN0HWfPG%2F7OwN6Y7Ocjt%2BWH%2FmVrLdul6mQdaIxs5e1EF4bx1M2%2FEUXo7kC%2FMGgA%3D&_svg=1&checksum=ea80af720995a6f7e327bfe48e56d6df4620fbe7474f35cc17964b3ed0b7ee11&item_author_type=2&sec_uid=MS4wLjABAAAA0LtQ-Jz6f3xXo3M4-F25oBMVn3hRXU3h-4yB9SZQBUYEqNOnYCCkFle4J6CVXMk9&sec_user_id=MS4wLjABAAAAvUNsW0lNYhQh4GOzrIuKaB5mu2UIA0u4ZxNYDCsBYwdEJU5mdlmG-W6x8Fe31Rbq&share_app_id=1180&share_author_id=7190151741848618010&share_link_id=6C827862-82D2-4684-91A3-450DA05E67CB&share_scene=1&sharer_language=en&social_share_type=5&source=h5_t&timestamp=1760535502&tt_from=copy&u_code=df02gl186593ee&ug_btm=b2878%2Cb5836&user_id=6881305392279323649&utm_campaign=client_share&utm_medium=ios&utm_source=copy" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="social-link tiktok-link"
+                    >
+                        <img 
+                            src="https://img.freepik.com/premium-photo/square-tiktok-logo-isolated-white-background_469489-1029.jpg?semt=ais_hybrid&w=740&q=80" 
+                            alt="TikTok" 
+                            className="social-logo"
+                        />
+                    </a>
+                </div>
+            </div>
+        </motion.section>
 
       </div>
     );

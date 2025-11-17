@@ -153,8 +153,13 @@ class OrderAcceptanceController extends Controller
                 }
 
                 // Determine product type and tracking requirements
+                // Made-to-order products always require tracking
                 $productType = $isAlkansya ? 'alkansya' : 
-                    (str_contains(strtolower($product->name), 'table') ? 'table' : 'chair');
+                    (str_contains(strtolower($product->name ?? $product->product_name ?? ''), 'table') ? 'table' : 
+                    (str_contains(strtolower($product->name ?? $product->product_name ?? ''), 'chair') ? 'chair' : 'custom'));
+                
+                // Made-to-order products always require production tracking
+                $requiresTracking = $isMadeToOrder;
 
                 // Create production record
                 // IMPORTANT: Production starts at 0% progress when order is accepted
@@ -162,23 +167,23 @@ class OrderAcceptanceController extends Controller
                     'order_id' => $order->id,
                     'user_id' => $admin->id,
                     'product_id' => $product->id,
-                    'product_name' => $product->name,
+                    'product_name' => $product->name ?? $product->product_name,
                     'date' => now()->format('Y-m-d'),
                     'current_stage' => $isAlkansya ? 'Ready for Delivery' : 'Material Preparation',
                     'status' => $isAlkansya ? 'Completed' : 'In Progress',
                     'quantity' => $item->quantity,
                     'priority' => 'medium',
-                    'requires_tracking' => !$isAlkansya,
+                    'requires_tracking' => $requiresTracking, // Made-to-order products always require tracking
                     'product_type' => $productType,
                     'production_started_at' => now(), // Set to now when order is accepted
                     'estimated_completion_date' => $isAlkansya ? now() : now()->addWeeks(2),
                     'overall_progress' => $isAlkansya ? 100 : 0, // Alkansya is instant, others start at 0%
                 ]);
 
-                \Log::info("Production #{$production->id} created successfully");
+                \Log::info("Production #{$production->id} created successfully with requires_tracking: " . ($requiresTracking ? 'true' : 'false'));
 
-                // Create production processes for non-alkansya items
-                if (!$isAlkansya) {
+                // Create production processes for made-to-order items (non-alkansya)
+                if ($requiresTracking && !$isAlkansya) {
                     \Log::info("Creating 6 production processes for production #{$production->id}");
                     $this->createProductionProcesses($production);
                     \Log::info("Production processes created");

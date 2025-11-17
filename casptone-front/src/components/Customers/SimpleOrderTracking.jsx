@@ -606,21 +606,36 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
                 </h4>
               </div>
               <div className="card-body">
-                <div className="row">
+                <div>
                   {order.items.map((item) => (
-                    <div key={item.id} className="col-md-6 mb-3">
-                      <div className="card h-100">
-                        <div className="card-body">
-                          <h5 className="card-title">{item.product?.name}</h5>
-                          <p className="card-text">
-                            <strong>Quantity:</strong> {item.quantity}<br/>
-                            <strong>Unit Price:</strong> ₱{item.product?.price?.toLocaleString()}<br/>
-                            <strong>Total:</strong> ₱{(item.product?.price * item.quantity).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
+                    <div key={item.id} className="d-flex justify-content-between border-bottom py-2">
+                      <span>
+                        {item.product?.name} × {item.quantity}
+                      </span>
+                      <span className="fw-bold text-success">
+                        ₱{(item.product?.price * item.quantity).toLocaleString()}
+                      </span>
                     </div>
                   ))}
+                </div>
+                {/* Shipping Fee and Total - Right Aligned */}
+                <div className="mt-2 pt-2 border-top">
+                  <div className="d-flex justify-content-between border-bottom py-2">
+                    <span>Shipping Fee:</span>
+                    <span className={order.shipping_fee > 0 ? 'fw-bold text-success' : 'fw-bold text-success'}>
+                      {order.shipping_fee > 0 ? (
+                        `₱${Number(order.shipping_fee || 0).toLocaleString()}`
+                      ) : (
+                        'FREE'
+                      )}
+                    </span>
+                  </div>
+                  <div className="d-flex justify-content-between py-2">
+                    <span className="fw-bold">Total:</span>
+                    <span className="fw-bold text-primary">
+                      ₱{Number(order.total_price || 0).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -751,14 +766,19 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <h5 className="text-primary mb-0">Order Information</h5>
                   {canCancelOrder(order) && (
-                    <button
-                      className="btn btn-outline-danger btn-sm"
+                    <span
+                      className="badge bg-danger"
                       onClick={cancelOrder}
                       title="Cancel this order"
+                      style={{
+                        cursor: 'pointer',
+                        padding: '0.35em 0.65em',
+                        fontSize: '0.875rem'
+                      }}
                     >
                       <FaTimes className="me-1" />
                       Cancel Order
-                    </button>
+                    </span>
                   )}
                 </div>
                 <div className="row">
@@ -766,9 +786,24 @@ const SimpleOrderTracking = ({ orderId: propOrderId }) => {
                     <p><strong>Order Date:</strong> {new Date(order.created_at).toLocaleDateString()}</p>
                     <p><strong>Payment Method:</strong> {(order.payment_method || 'COD').toUpperCase()}</p>
                     <p><strong>Payment Status:</strong> {order.payment_status || 'Unpaid'}</p>
+                    <p>
+                      <strong>Shipping Fee:</strong>{" "}
+                      <span className={order.shipping_fee > 0 ? '' : 'text-success'}>
+                        {order.shipping_fee > 0 ? (
+                          `₱${Number(order.shipping_fee || 0).toLocaleString()}`
+                        ) : (
+                          'FREE'
+                        )}
+                      </span>
+                    </p>
+                    <p>
+                      <strong>Total Amount:</strong>{" "}
+                      <span className="text-primary">
+                        ₱{Number(order.total_price).toLocaleString()}
+                      </span>
+                    </p>
                   </div>
                   <div className="col-md-6">
-                    <p><strong>Total Amount:</strong> ₱{Number(order.total_price).toLocaleString()}</p>
                     {order.transaction_ref && (
                       <p><strong>Reference:</strong> {order.transaction_ref}</p>
                     )}

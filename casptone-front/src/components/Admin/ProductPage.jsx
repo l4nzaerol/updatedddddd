@@ -245,7 +245,17 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // Try to parse error response
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: `HTTP error! status: ${response.status}` };
+      }
+      
+      const error = new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      error.response = { data: errorData, status: response.status };
+      throw error;
     }
 
     return response.json();
@@ -430,9 +440,21 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
 
   const validateForm = () => {
     const newErrors = {};
-    if (!formData.product_name.trim()) newErrors.product_name = "Product name is required";
+    if (!formData.product_name.trim()) {
+      newErrors.product_name = "Product name is required";
+    }
+    
+    // Validate: Stocked Products must have "Alkansya" in the name
+    if (formData.category_name === "Stocked Products") {
+      const productNameLower = formData.product_name.toLowerCase().trim();
+      if (!productNameLower.includes('alkansya')) {
+        newErrors.product_name = "Stocked Products must have 'Alkansya' in the product name";
+      }
+    }
+    
     if (!formData.product_code.trim()) newErrors.product_code = "Product code is required";
     if (formData.price < 0) newErrors.price = "Price cannot be negative";
+    if (formData.price === 0 || !formData.price) newErrors.price = "Price must be greater than 0";
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -443,15 +465,22 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
 
     setSaving(true);
     try {
+      // Prepare data for backend - ensure both 'name' and 'product_name' are set
+      const productData = {
+        ...formData,
+        name: formData.product_name, // Backend might expect 'name' field
+        product_name: formData.product_name, // Also send product_name
+      };
+      
       if (product) {
         await apiCall(`/products/${product.id}`, {
           method: 'PUT',
-          body: JSON.stringify(formData)
+          body: JSON.stringify(productData)
         });
       } else {
         await apiCall('/products', {
           method: 'POST',
-          body: JSON.stringify(formData)
+          body: JSON.stringify(productData)
         });
       }
 
@@ -471,8 +500,16 @@ const ProductFormModal = ({ show, onHide, product, onSave }) => {
       onHide();
     } catch (error) {
       console.error("Save failed:", error);
+      // Extract error message from response
+      let errorMessage = "Unable to save the product. Please check your inputs and try again.";
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast.error("❌ Product Save Failed", {
-        description: "Unable to save the product. Please check your inputs and try again.",
+        description: errorMessage,
         duration: 5000,
         style: {
           background: '#fee2e2',

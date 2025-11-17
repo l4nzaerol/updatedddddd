@@ -55,7 +55,7 @@ const Report = () => {
         },
         { 
             id: "sales", 
-            name: "Sales Analytics", 
+            name: "Sales Reports", 
             component: SalesAnalytics,
             icon: "💰",
             description: "Revenue analysis and customer behavior insights"

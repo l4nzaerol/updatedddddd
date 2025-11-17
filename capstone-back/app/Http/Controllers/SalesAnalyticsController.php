@@ -27,7 +27,17 @@ class SalesAnalyticsController extends Controller
 
         // Overall sales metrics - only include paid, delivered, and completed orders
         // Exclude COD orders (cod_pending) as they haven't been actually paid yet
-        $totalRevenue = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
+        $totalRevenue = Order::where(function($query) use ($startDateTime, $endDateTime) {
+                $query->whereBetween('checkout_date', [$startDateTime, $endDateTime])
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          // Include orders without checkout_date but with accepted_at or created_at in range
+                          $q->whereNull('checkout_date')
+                            ->where(function($subQ) use ($startDateTime, $endDateTime) {
+                                $subQ->whereBetween('accepted_at', [$startDateTime, $endDateTime])
+                                     ->orWhereBetween('created_at', [$startDateTime, $endDateTime]);
+                            });
+                      });
+            })
             ->whereIn('status', ['ready_for_delivery', 'delivered', 'completed'])
             ->where('payment_status', 'paid')
             ->where('acceptance_status', 'accepted') // Only accepted orders
@@ -35,12 +45,72 @@ class SalesAnalyticsController extends Controller
             ->where('payment_method', '!=', 'cod') // Exclude COD orders
             ->sum('total_price');
 
-        $totalOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])->count();
-        $paidOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
-            ->where('payment_status', 'paid')
+        // Count all accepted orders (including manual orders that might not have checkout_date)
+        // For overview cards, use accepted_at as primary date, fallback to created_at if accepted_at is null
+        // This ensures manual orders are included
+        $totalOrders = Order::where('acceptance_status', 'accepted')
+            ->whereNotNull('accepted_at')
+            ->where(function($query) use ($startDateTime, $endDateTime) {
+                // Use accepted_at as primary date field (most accurate for when order was accepted)
+                $query->whereBetween('accepted_at', [$startDateTime, $endDateTime])
+                      // Fallback to checkout_date if accepted_at is not in range but checkout_date is
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNotNull('checkout_date')
+                            ->whereBetween('checkout_date', [$startDateTime, $endDateTime])
+                            ->where(function($subQ) use ($startDateTime, $endDateTime) {
+                                $subQ->whereNull('accepted_at')
+                                     ->orWhereNotBetween('accepted_at', [$startDateTime, $endDateTime]);
+                            });
+                      })
+                      // Fallback to created_at if neither accepted_at nor checkout_date are in range
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNull('checkout_date')
+                            ->whereNull('accepted_at')
+                            ->whereBetween('created_at', [$startDateTime, $endDateTime]);
+                      });
+            })
             ->count();
-        $pendingOrders = Order::whereBetween('checkout_date', [$startDateTime, $endDateTime])
+            
+        $paidOrders = Order::where('acceptance_status', 'accepted')
+            ->whereNotNull('accepted_at')
+            ->where('payment_status', 'paid')
+            ->where(function($query) use ($startDateTime, $endDateTime) {
+                $query->whereBetween('accepted_at', [$startDateTime, $endDateTime])
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNotNull('checkout_date')
+                            ->whereBetween('checkout_date', [$startDateTime, $endDateTime])
+                            ->where(function($subQ) use ($startDateTime, $endDateTime) {
+                                $subQ->whereNull('accepted_at')
+                                     ->orWhereNotBetween('accepted_at', [$startDateTime, $endDateTime]);
+                            });
+                      })
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNull('checkout_date')
+                            ->whereNull('accepted_at')
+                            ->whereBetween('created_at', [$startDateTime, $endDateTime]);
+                      });
+            })
+            ->count();
+            
+        $pendingOrders = Order::where('acceptance_status', 'accepted')
+            ->whereNotNull('accepted_at')
             ->where('status', 'pending')
+            ->where(function($query) use ($startDateTime, $endDateTime) {
+                $query->whereBetween('accepted_at', [$startDateTime, $endDateTime])
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNotNull('checkout_date')
+                            ->whereBetween('checkout_date', [$startDateTime, $endDateTime])
+                            ->where(function($subQ) use ($startDateTime, $endDateTime) {
+                                $subQ->whereNull('accepted_at')
+                                     ->orWhereNotBetween('accepted_at', [$startDateTime, $endDateTime]);
+                            });
+                      })
+                      ->orWhere(function($q) use ($startDateTime, $endDateTime) {
+                          $q->whereNull('checkout_date')
+                            ->whereNull('accepted_at')
+                            ->whereBetween('created_at', [$startDateTime, $endDateTime]);
+                      });
+            })
             ->count();
 
         // Average order value - calculate based on all orders

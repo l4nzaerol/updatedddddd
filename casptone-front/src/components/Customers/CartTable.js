@@ -1,7 +1,9 @@
 // src/components/CartTable.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import api from "../../api/client";
+import philippineLocations from "../../data/philippineLocations.json";
+import { calculateTotalShippingFee } from "../../utils/shipping";
 
 const CartTable = () => {
   const [cartItems, setCartItems] = useState([]);
@@ -29,376 +31,6 @@ const CartTable = () => {
   const [cityError, setCityError] = useState("");
   const [barangayError, setBarangayError] = useState("");
   const [houseUnitError, setHouseUnitError] = useState("");
-
-
-  // Philippine location data
-  const philippineLocations = {
-    provinces: [
-      { id: "metro-manila", name: "Metro Manila" },
-      { id: "laguna", name: "Laguna" },
-      { id: "cavite", name: "Cavite" },
-      { id: "rizal", name: "Rizal" },
-      { id: "bulacan", name: "Bulacan" },
-      { id: "pampanga", name: "Pampanga" },
-      { id: "bataan", name: "Bataan" },
-      { id: "nueva-ecija", name: "Nueva Ecija" },
-      { id: "tarlac", name: "Tarlac" },
-      { id: "zambales", name: "Zambales" },
-      { id: "aurora", name: "Aurora" },
-      { id: "batangas", name: "Batangas" },
-      { id: "quezon", name: "Quezon" },
-      { id: "mindoro-oriental", name: "Mindoro Oriental" },
-      { id: "mindoro-occidental", name: "Mindoro Occidental" },
-      { id: "marinduque", name: "Marinduque" },
-      { id: "romblon", name: "Romblon" },
-      { id: "palawan", name: "Palawan" },
-      { id: "albay", name: "Albay" },
-      { id: "camarines-sur", name: "Camarines Sur" },
-      { id: "camarines-norte", name: "Camarines Norte" },
-      { id: "catanduanes", name: "Catanduanes" },
-      { id: "masbate", name: "Masbate" },
-      { id: "sorsogon", name: "Sorsogon" },
-      { id: "aklan", name: "Aklan" },
-      { id: "antique", name: "Antique" },
-      { id: "capiz", name: "Capiz" },
-      { id: "iloilo", name: "Iloilo" },
-      { id: "negros-occidental", name: "Negros Occidental" },
-      { id: "guimaras", name: "Guimaras" },
-      { id: "bohol", name: "Bohol" },
-      { id: "cebu", name: "Cebu" },
-      { id: "negros-oriental", name: "Negros Oriental" },
-      { id: "siquijor", name: "Siquijor" },
-      { id: "bilaran", name: "Bilaran" },
-      { id: "samar", name: "Samar" },
-      { id: "leyte", name: "Leyte" },
-      { id: "southern-leyte", name: "Southern Leyte" },
-      { id: "eastern-samar", name: "Eastern Samar" },
-      { id: "northern-samar", name: "Northern Samar" },
-      { id: "biliran", name: "Biliran" },
-      { id: "zamboanga-del-norte", name: "Zamboanga del Norte" },
-      { id: "zamboanga-del-sur", name: "Zamboanga del Sur" },
-      { id: "zamboanga-sibugay", name: "Zamboanga Sibugay" },
-      { id: "bukidnon", name: "Bukidnon" },
-      { id: "camiguin", name: "Camiguin" },
-      { id: "lanao-del-norte", name: "Lanao del Norte" },
-      { id: "misamis-occidental", name: "Misamis Occidental" },
-      { id: "misamis-oriental", name: "Misamis Oriental" },
-      { id: "davao-del-norte", name: "Davao del Norte" },
-      { id: "davao-del-sur", name: "Davao del Sur" },
-      { id: "davao-oriental", name: "Davao Oriental" },
-      { id: "davao-de-oro", name: "Davao de Oro" },
-      { id: "davao-occidental", name: "Davao Occidental" },
-      { id: "compostela-valley", name: "Compostela Valley" },
-      { id: "north-cotabato", name: "North Cotabato" },
-      { id: "south-cotabato", name: "South Cotabato" },
-      { id: "sultan-kudarat", name: "Sultan Kudarat" },
-      { id: "sarangani", name: "Sarangani" },
-      { id: "agusan-del-norte", name: "Agusan del Norte" },
-      { id: "agusan-del-sur", name: "Agusan del Sur" },
-      { id: "surigao-del-norte", name: "Surigao del Norte" },
-      { id: "surigao-del-sur", name: "Surigao del Sur" },
-      { id: "dinagat-islands", name: "Dinagat Islands" },
-      { id: "basilan", name: "Basilan" },
-      { id: "lanao-del-sur", name: "Lanao del Sur" },
-      { id: "maguindanao", name: "Maguindanao" },
-      { id: "sulu", name: "Sulu" },
-      { id: "tawi-tawi", name: "Tawi-Tawi" },
-      { id: "abra", name: "Abra" },
-      { id: "benguet", name: "Benguet" },
-      { id: "ifugao", name: "Ifugao" },
-      { id: "kalinga", name: "Kalinga" },
-      { id: "mountain-province", name: "Mountain Province" },
-      { id: "apayao", name: "Apayao" },
-      { id: "ilocos-norte", name: "Ilocos Norte" },
-      { id: "ilocos-sur", name: "Ilocos Sur" },
-      { id: "la-union", name: "La Union" },
-      { id: "pangasinan", name: "Pangasinan" },
-      { id: "cagayan", name: "Cagayan" },
-      { id: "isabela", name: "Isabela" },
-      { id: "nueva-vizcaya", name: "Nueva Vizcaya" },
-      { id: "quirino", name: "Quirino" }
-    ],
-    cities: {
-      "metro-manila": [
-        { id: "manila", name: "Manila" },
-        { id: "quezon-city", name: "Quezon City" },
-        { id: "caloocan", name: "Caloocan" },
-        { id: "las-pinas", name: "Las Piñas" },
-        { id: "makati", name: "Makati" },
-        { id: "malabon", name: "Malabon" },
-        { id: "mandaluyong", name: "Mandaluyong" },
-        { id: "marikina", name: "Marikina" },
-        { id: "muntinlupa", name: "Muntinlupa" },
-        { id: "navotas", name: "Navotas" },
-        { id: "paranaque", name: "Parañaque" },
-        { id: "pasay", name: "Pasay" },
-        { id: "pasig", name: "Pasig" },
-        { id: "pateros", name: "Pateros" },
-        { id: "san-juan", name: "San Juan" },
-        { id: "taguig", name: "Taguig" },
-        { id: "valenzuela", name: "Valenzuela" }
-      ],
-      "laguna": [
-        { id: "calamba", name: "Calamba" },
-        { id: "san-pablo", name: "San Pablo" },
-        { id: "santa-rosa", name: "Santa Rosa" },
-        { id: "biñan", name: "Biñan" },
-        { id: "cabuyao", name: "Cabuyao" },
-        { id: "san-pedro", name: "San Pedro" },
-        { id: "los-banos", name: "Los Baños" },
-        { id: "alaminos", name: "Alaminos" },
-        { id: "bay", name: "Bay" },
-        { id: "calauan", name: "Calauan" },
-        { id: "cavinti", name: "Cavinti" },
-        { id: "famy", name: "Famy" },
-        { id: "kalayaan", name: "Kalayaan" },
-        { id: "liliw", name: "Liliw" },
-        { id: "lumban", name: "Lumban" },
-        { id: "mabitac", name: "Mabitac" },
-        { id: "magdalena", name: "Magdalena" },
-        { id: "majayjay", name: "Majayjay" },
-        { id: "nagcarlan", name: "Nagcarlan" },
-        { id: "paete", name: "Paete" },
-        { id: "pagsanjan", name: "Pagsanjan" },
-        { id: "pakil", name: "Pakil" },
-        { id: "pandan", name: "Pandan" },
-        { id: "pila", name: "Pila" },
-        { id: "rizal", name: "Rizal" },
-        { id: "siniloan", name: "Siniloan" },
-        { id: "victoria", name: "Victoria" }
-      ],
-      "cavite": [
-        { id: "dasmarinas", name: "Dasmarinas" },
-        { id: "imus", name: "Imus" },
-        { id: "bacoor", name: "Bacoor" },
-        { id: "general-trias", name: "General Trias" },
-        { id: "kawit", name: "Kawit" },
-        { id: "noveleta", name: "Noveleta" },
-        { id: "rosario", name: "Rosario" },
-        { id: "silang", name: "Silang" },
-        { id: "tanza", name: "Tanza" },
-        { id: "trece-martires", name: "Trece Martires" },
-        { id: "alfonso", name: "Alfonso" },
-        { id: "amadeo", name: "Amadeo" },
-        { id: "carmona", name: "Carmona" },
-        { id: "general-emilio-aguinaldo", name: "General Emilio Aguinaldo" },
-        { id: "general-mariano-alvarez", name: "General Mariano Alvarez" },
-        { id: "indang", name: "Indang" },
-        { id: "magallanes", name: "Magallanes" },
-        { id: "maragondon", name: "Maragondon" },
-        { id: "mendez", name: "Mendez" },
-        { id: "naic", name: "Naic" },
-        { id: "tagaytay", name: "Tagaytay" }
-      ]
-    },
-    barangays: {
-      "manila": [
-        { id: "binondo", name: "Binondo" },
-        { id: "quiapo", name: "Quiapo" },
-        { id: "sampaloc", name: "Sampaloc" },
-        { id: "san-miguel", name: "San Miguel" },
-        { id: "ermita", name: "Ermita" },
-        { id: "intramuros", name: "Intramuros" },
-        { id: "malate", name: "Malate" },
-        { id: "paco", name: "Paco" },
-        { id: "pandacan", name: "Pandacan" },
-        { id: "port-area", name: "Port Area" },
-        { id: "santa-ana", name: "Santa Ana" },
-        { id: "santa-cruz", name: "Santa Cruz" },
-        { id: "santa-mesa", name: "Santa Mesa" },
-        { id: "tondo", name: "Tondo" }
-      ],
-      "quezon-city": [
-        { id: "diliman", name: "Diliman" },
-        { id: "commonwealth", name: "Commonwealth" },
-        { id: "batasan-hills", name: "Batasan Hills" },
-        { id: "bagong-silangan", name: "Bagong Silangan" },
-        { id: "novaliches", name: "Novaliches" },
-        { id: "fairview", name: "Fairview" },
-        { id: "lagro", name: "Lagro" },
-        { id: "project-4", name: "Project 4" },
-        { id: "project-6", name: "Project 6" },
-        { id: "project-7", name: "Project 7" },
-        { id: "project-8", name: "Project 8" },
-        { id: "sangandaan", name: "Sangandaan" },
-        { id: "sauyo", name: "Sauyo" },
-        { id: "talipapa", name: "Talipapa" },
-        { id: "tandang-sora", name: "Tandang Sora" },
-        { id: "ubelt", name: "UBelt" }
-      ],
-      "calamba": [
-        { id: "barangay-1", name: "Barangay 1" },
-        { id: "barangay-2", name: "Barangay 2" },
-        { id: "barangay-3", name: "Barangay 3" },
-        { id: "barangay-4", name: "Barangay 4" },
-        { id: "barangay-5", name: "Barangay 5" },
-        { id: "barangay-6", name: "Barangay 6" },
-        { id: "barangay-7", name: "Barangay 7" },
-        { id: "barangay-8", name: "Barangay 8" },
-        { id: "barangay-9", name: "Barangay 9" },
-        { id: "barangay-10", name: "Barangay 10" },
-        { id: "bagong-kalsada", name: "Bagong Kalsada" },
-        { id: "banlic", name: "Banlic" },
-        { id: "barandal", name: "Barandal" },
-        { id: "batino", name: "Batino" },
-        { id: "bubukal", name: "Bubukal" },
-        { id: "bucal", name: "Bucal" },
-        { id: "bunting", name: "Bunting" },
-        { id: "burol", name: "Burol" },
-        { id: "camaligan", name: "Camaligan" },
-        { id: "canlubang", name: "Canlubang" },
-        { id: "halang", name: "Halang" },
-        { id: "hornalan", name: "Hornalan" },
-        { id: "kay-anlog", name: "Kay Anlog" },
-        { id: "la-mesa", name: "La Mesa" },
-        { id: "lawa", name: "Lawa" },
-        { id: "lecheng", name: "Lecheng" },
-        { id: "lingga", name: "Lingga" },
-        { id: "looc", name: "Looc" },
-        { id: "mabato", name: "Mabato" },
-        { id: "majada-labas", name: "Majada Labas" },
-        { id: "makiling", name: "Makiling" },
-        { id: "mapagong", name: "Mapagong" },
-        { id: "masili", name: "Masili" },
-        { id: "maunong", name: "Maunong" },
-        { id: "mayapa", name: "Mayapa" },
-        { id: "paciano-rizal", name: "Paciano Rizal" },
-        { id: "palingon", name: "Palingon" },
-        { id: "palo-alto", name: "Palo Alto" },
-        { id: "pansol", name: "Pansol" },
-        { id: "parian", name: "Parian" },
-        { id: "prinza", name: "Prinza" },
-        { id: "pulo", name: "Pulo" },
-        { id: "puntod", name: "Puntod" },
-        { id: "real", name: "Real" },
-        { id: "saimsim", name: "Saimsim" },
-        { id: "sampiruhan", name: "Sampiruhan" },
-        { id: "san-cristobal", name: "San Cristobal" },
-        { id: "san-jose", name: "San Jose" },
-        { id: "sirang-lupa", name: "Sirang Lupa" },
-        { id: "sucol", name: "Sucol" },
-        { id: "turbina", name: "Turbina" },
-        { id: "ulango", name: "Ulango" },
-        { id: "uzon", name: "Uzon" }
-      ],
-      "cabuyao": [
-        { id: "banaybanay", name: "Banaybanay" },
-        { id: "banlic", name: "Banlic" },
-        { id: "bigaa", name: "Bigaa" },
-        { id: "butong", name: "Butong" },
-        { id: "casile", name: "Casile" },
-        { id: "diezmo", name: "Diezmo" },
-        { id: "gulod", name: "Gulod" },
-        { id: "mamatid", name: "Mamatid" },
-        { id: "marinig", name: "Marinig" },
-        { id: "niugan", name: "Niugan" },
-        { id: "pittland", name: "Pittland" },
-        { id: "pulo", name: "Pulo" },
-        { id: "puntod", name: "Puntod" },
-        { id: "salinas", name: "Salinas" },
-        { id: "sala", name: "Sala" },
-        { id: "san-isidro", name: "San Isidro" },
-        { id: "silic", name: "Silic" },
-        { id: "tuntungin-pulo", name: "Tuntungin-Pulo" },
-        { id: "ulango", name: "Ulango" },
-        { id: "villa-norbert", name: "Villa Norbert" }
-      ],
-      "santa-rosa": [
-        { id: "aplaya", name: "Aplaya" },
-        { id: "balibago", name: "Balibago" },
-        { id: "caingin", name: "Caingin" },
-        { id: "dila", name: "Dila" },
-        { id: "dita", name: "Dita" },
-        { id: "don-jose", name: "Don Jose" },
-        { id: "ibaba", name: "Ibaba" },
-        { id: "kanluran", name: "Kanluran" },
-        { id: "labas", name: "Labas" },
-        { id: "macabling", name: "Macabling" },
-        { id: "malitlit", name: "Malitlit" },
-        { id: "malusak", name: "Malusak" },
-        { id: "market-area", name: "Market Area" },
-        { id: "pooc", name: "Pooc" },
-        { id: "pulong-santa-cruz", name: "Pulong Santa Cruz" },
-        { id: "santo-domingo", name: "Santo Domingo" },
-        { id: "sinalhan", name: "Sinalhan" },
-        { id: "tagapo", name: "Tagapo" }
-      ],
-      "biñan": [
-        { id: "biñan", name: "Biñan" },
-        { id: "bungahan", name: "Bungahan" },
-        { id: "canlalay", name: "Canlalay" },
-        { id: "casile", name: "Casile" },
-        { id: "de-la-paz", name: "De La Paz" },
-        { id: "ganado", name: "Ganado" },
-        { id: "langkiwa", name: "Langkiwa" },
-        { id: "loma", name: "Loma" },
-        { id: "malaban", name: "Malaban" },
-        { id: "malamig", name: "Malamig" },
-        { id: "mamplasan", name: "Mamplasan" },
-        { id: "platero", name: "Platero" },
-        { id: "poblacion", name: "Poblacion" },
-        { id: "pulo", name: "Pulo" },
-        { id: "san-antonio", name: "San Antonio" },
-        { id: "san-francisco", name: "San Francisco" },
-        { id: "san-jose", name: "San Jose" },
-        { id: "san-vicente", name: "San Vicente" },
-        { id: "santo-tomas", name: "Santo Tomas" },
-        { id: "soro-soro", name: "Soro-Soro" },
-        { id: "tambak", name: "Tambak" },
-        { id: "timbao", name: "Timbao" },
-        { id: "tubigan", name: "Tubigan" },
-        { id: "zapote", name: "Zapote" }
-      ],
-      "dasmarinas": [
-        { id: "burol", name: "Burol" },
-        { id: "langkaan", name: "Langkaan" },
-        { id: "paliparan", name: "Paliparan" },
-        { id: "saluysoy", name: "Saluysoy" },
-        { id: "san-agustin", name: "San Agustin" },
-        { id: "san-dionisio", name: "San Dionisio" },
-        { id: "san-jose", name: "San Jose" },
-        { id: "san-miguel", name: "San Miguel" },
-        { id: "san-nicolas", name: "San Nicolas" },
-        { id: "santa-cristina", name: "Santa Cristina" },
-        { id: "santa-cruz", name: "Santa Cruz" },
-        { id: "santa-fe", name: "Santa Fe" },
-        { id: "santa-lucia", name: "Santa Lucia" },
-        { id: "santa-maria", name: "Santa Maria" },
-        { id: "santo-cristo", name: "Santo Cristo" },
-        { id: "santo-nino", name: "Santo Niño" },
-        { id: "victoria", name: "Victoria" }
-      ],
-      "imus": [
-        { id: "alapan", name: "Alapan" },
-        { id: "anabu-i", name: "Anabu I" },
-        { id: "anabu-ii", name: "Anabu II" },
-        { id: "bagong-silang", name: "Bagong Silang" },
-        { id: "bayan-luma", name: "Bayan Luma" },
-        { id: "bucandala", name: "Bucandala" },
-        { id: "burol", name: "Burol" },
-        { id: "carsadang-bago", name: "Carsadang Bago" },
-        { id: "florencia", name: "Florencia" },
-        { id: "habay", name: "Habay" },
-        { id: "hugo-perez", name: "Hugo Perez" },
-        { id: "malagasang-i", name: "Malagasang I" },
-        { id: "malagasang-ii", name: "Malagasang II" },
-        { id: "malagasang-iii", name: "Malagasang III" },
-        { id: "malagasang-iv", name: "Malagasang IV" },
-        { id: "mariano-espeleta", name: "Mariano Espeleta" },
-        { id: "medicion-i", name: "Medicion I" },
-        { id: "medicion-ii", name: "Medicion II" },
-        { id: "medicion-iii", name: "Medicion III" },
-        { id: "medicion-iv", name: "Medicion IV" },
-        { id: "paco", name: "Paco" },
-        { id: "palico", name: "Palico" },
-        { id: "pasong-buaya", name: "Pasong Buaya" },
-        { id: "poblacion", name: "Poblacion" },
-        { id: "pulo", name: "Pulo" },
-        { id: "toclong", name: "Toclong" },
-        { id: "tugbok", name: "Tugbok" }
-      ]
-    }
-  };
 
   useEffect(() => {
     fetchCartItems();
@@ -465,32 +97,51 @@ const CartTable = () => {
       return;
     }
     
+    // Store original quantity for rollback
+    const originalQuantity = item.quantity;
+    
+    // Set loading state briefly to prevent rapid clicks (removed immediately after optimistic update)
     setUpdatingItems(prev => new Set(prev).add(itemId));
     
-    // Optimistic update
+    // Optimistic update - update both quantities state and cartItems state immediately
+    // This gives instant UI feedback without waiting for the API call
     setQuantities(prev => ({
       ...prev,
       [itemId]: newQuantity
     }));
     
-    try {
-      await api.put(`/cart/${itemId}`, { quantity: newQuantity });
-      await fetchCartItems(); // refresh cart to get accurate data
-    } catch (err) {
-      // Revert on error
-      setQuantities(prev => ({
-        ...prev,
-        [itemId]: cartItems.find(item => item.id === itemId)?.quantity || 1
-      }));
-      const errorMsg = err.response?.data?.message || "Failed to update item quantity.";
-      toast.error(errorMsg);
-    } finally {
-      setUpdatingItems(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(itemId);
-        return newSet;
+    // Update cartItems state immediately for instant UI feedback
+    setCartItems(prev => prev.map(cartItem => 
+      cartItem.id === itemId 
+        ? { ...cartItem, quantity: newQuantity }
+        : cartItem
+    ));
+    
+    // Remove loading state immediately after optimistic update for instant feedback
+    // The UI is already updated, so no need to wait for API response
+    setUpdatingItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(itemId);
+      return newSet;
+    });
+    
+    // Update on server in the background (fire and forget for UI responsiveness)
+    // The UI is already updated optimistically above
+    api.put(`/cart/${itemId}`, { quantity: newQuantity })
+      .catch(err => {
+        // Revert on error
+        setQuantities(prev => ({
+          ...prev,
+          [itemId]: originalQuantity
+        }));
+        setCartItems(prev => prev.map(cartItem => 
+          cartItem.id === itemId 
+            ? { ...cartItem, quantity: originalQuantity }
+            : cartItem
+        ));
+        const errorMsg = err.response?.data?.message || "Failed to update item quantity.";
+        toast.error(errorMsg);
       });
-    }
   };
 
   const handleRemoveItem = async (itemId) => {
@@ -696,6 +347,7 @@ const CartTable = () => {
         payment_method: paymentMethod,
         shipping_address: structuredAddress,
         contact_phone: phone,
+        shipping_fee: shippingInfo.shippingFee,
         selected_items: Array.from(selectedItems), // Include selected items
       });
 
@@ -749,6 +401,16 @@ const CartTable = () => {
     (sum, item) => sum + (item.product?.price || item.price || 0) * (quantities[item.id] || item.quantity),
     0
   );
+
+  // Calculate shipping fee for selected items
+  const shippingInfo = calculateTotalShippingFee(
+    selectedItemsList,
+    selectedProvince,
+    selectedCity,
+    quantities
+  );
+  
+  const totalWithShipping = selectedItemsPrice + shippingInfo.shippingFee;
 
   // Helper function to get image URL
   const getImageUrl = (item) => {
@@ -982,10 +644,23 @@ const CartTable = () => {
               <span>Total Items:</span>
               <strong>{selectedItemsCount} {selectedItemsCount === 1 ? 'item' : 'items'}</strong>
             </div>
-            
+            <div className="summary-row">
+              <span>Subtotal:</span>
+              <strong>₱{selectedItemsPrice.toLocaleString()}</strong>
+            </div>
+            {selectedProvince && (
+              <div className="summary-row">
+                <span>Shipping:</span>
+                <strong style={{ color: shippingInfo.isFreeShipping ? '#28a745' : 'inherit' }}>
+                  {shippingInfo.isFreeShipping ? 'FREE' : `₱${shippingInfo.shippingFee.toLocaleString()}`}
+                </strong>
+              </div>
+            )}
             <div className="summary-row total-row">
               <span>Total Amount:</span>
-              <strong className="total-amount">₱{selectedItemsPrice.toLocaleString()}</strong>
+              <strong className="total-amount">
+                ₱{selectedProvince ? totalWithShipping.toLocaleString() : selectedItemsPrice.toLocaleString()}
+              </strong>
             </div>
           </div>
           
@@ -1297,11 +972,13 @@ const CartTable = () => {
                         required
                       >
                         <option value="">Select Province</option>
-                        {philippineLocations.provinces.map(province => (
-                          <option key={province.id} value={province.id}>
-                            {province.name}
-                          </option>
-                        ))}
+                        {philippineLocations.provinces
+                          .filter(province => province.functional === true)
+                          .map(province => (
+                            <option key={province.id} value={province.id}>
+                              {province.name}
+                            </option>
+                          ))}
                       </select>
                       {provinceError && <div className="error-message">{provinceError}</div>}
                     </div>
@@ -1414,9 +1091,28 @@ const CartTable = () => {
                       <span>Items ({selectedItemsCount}):</span>
                       <span>₱{selectedItemsPrice.toLocaleString()}</span>
                     </div>
+                    <div className="total-row">
+                      <span>Shipping Fee:</span>
+                      <span>
+                        {shippingInfo.isFreeShipping ? (
+                          <span style={{ color: '#28a745', fontWeight: 600 }}>
+                            FREE
+                          </span>
+                        ) : selectedProvince ? (
+                          `₱${shippingInfo.shippingFee.toLocaleString()}`
+                        ) : (
+                          <span style={{ color: '#999', fontStyle: 'italic' }}>Select address</span>
+                        )}
+                      </span>
+                    </div>
+                    {shippingInfo.isFreeShipping && (
+                      <div className="total-row" style={{ fontSize: '0.9rem', color: '#28a745', fontStyle: 'italic' }}>
+                        <span>🎉 Free shipping for 3+ alkansya!</span>
+                      </div>
+                    )}
                     <div className="total-row final-total">
                       <span>Total Amount:</span>
-                      <span className="final-amount">₱{selectedItemsPrice.toLocaleString()}</span>
+                      <span className="final-amount">₱{totalWithShipping.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -1445,7 +1141,7 @@ const CartTable = () => {
                 ) : (
                   <>
                     <i className="fas fa-shopping-bag"></i>
-                    Place Order • ₱{selectedItemsPrice.toLocaleString()}
+                    Place Order • ₱{totalWithShipping.toLocaleString()}
                   </>
                 )}
               </button>

@@ -15,7 +15,8 @@ const LandingPage = () => {
     const [loading, setLoading] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [showRegisterModal, setShowRegisterModal] = useState(false);
-    const [selectedCategory] = useState('all');
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [isHeaderVisible, setIsHeaderVisible] = useState(true);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [showProductModal, setShowProductModal] = useState(false);
@@ -184,6 +185,20 @@ const LandingPage = () => {
         window.open('https://www.tiktok.com/@unick_woodenalkansya?_r=1&_d=secCgYIASAHKAESPgo8Qbb1vMQ0yijdYoBZM40bzN0HWfPG%2F7OwN6Y7Ocjt%2BWH%2FmVrLdul6mQdaIxs5e1EF4bx1M2%2FEUXo7kC%2FMGgA%3D&_svg=1&checksum=ea80af720995a6f7e327bfe48e56d6df4620fbe7474f35cc17964b3ed0b7ee11&item_author_type=2&sec_uid=MS4wLjABAAAA0LtQ-Jz6f3xXo3M4-F25oBMVn3hRXU3h-4yB9SZQBUYEqNOnYCCkFle4J6CVXMk9&sec_user_id=MS4wLjABAAAAvUNsW0lNYhQh4GOzrIuKaB5mu2UIA0u4ZxNYDCsBYwdEJU5mdlmG-W6x8Fe31Rbq&share_app_id=1180&share_author_id=7190151741848618010&share_link_id=6C827862-82D2-4684-91A3-450DA05E67CB&share_scene=1&sharer_language=en&social_share_type=5&source=h5_t&timestamp=1760535502&tt_from=copy&u_code=df02gl186593ee&ug_btm=b2878%2Cb5836&user_id=6881305392279323649&utm_campaign=client_share&utm_medium=ios&utm_source=copy', '_blank');
     };
 
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (showFilterDropdown && !event.target.closest('.filter-dropdown-wrapper')) {
+                setShowFilterDropdown(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showFilterDropdown]);
+
 
     return (
         <div className="landing-page-container">
@@ -264,6 +279,11 @@ const LandingPage = () => {
             {/* Hero Section */}
             <section className="hero-section">
                 <div className="hero-background">
+                    <img 
+                        src="/images/wooden-planks-hero.jpg" 
+                        alt="Wooden planks background" 
+                        className="hero-background-image"
+                    />
                     <div className="hero-overlay"></div>
                 </div>
                 
@@ -305,35 +325,88 @@ const LandingPage = () => {
                 </div>
             </section>
 
-            {/* Category Filter
-            <motion.section 
-                className="category-filter"
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.8 }}
-            >
-                <div className="filter-container">
-                    {categories.map((category, index) => (
-                        <motion.button
-                            key={category.id}
-                            className={`filter-btn ${selectedCategory === category.id ? 'active' : ''}`}
-                            onClick={() => setSelectedCategory(category.id)}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.5, delay: 0.9 + index * 0.1 }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <i className={category.icon}></i>
-                            {category.name}
-                        </motion.button>
-                    ))}
-                </div>
-            </motion.section> */}
-
             {/* Products Section */}
             <section className="products-section">
                 <div className="products-container">
+                    {/* Products Header with Filter Dropdown */}
+                    <div className="products-header">
+                        <div className="filter-dropdown-wrapper">
+                            <motion.button
+                                className="filter-dropdown-trigger"
+                                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                <div className="filter-trigger-content">
+                                    <i className="fas fa-filter"></i>
+                                    <span className="filter-text">
+                                        {selectedCategory === 'all' ? 'All Products' :
+                                         selectedCategory === 'chairs' ? 'Chairs' :
+                                         selectedCategory === 'tables' ? 'Tables' :
+                                         selectedCategory === 'alkansya' ? 'Alkansya' : 'All Products'}
+                                    </span>
+                                </div>
+                                <i className={`fas fa-chevron-down ${showFilterDropdown ? 'rotate' : ''}`}></i>
+                            </motion.button>
+                            
+                            <AnimatePresence>
+                                {showFilterDropdown && (
+                                    <motion.div
+                                        className="filter-dropdown-menu"
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        transition={{ duration: 0.2 }}
+                                    >
+                                        <button
+                                            className={`filter-menu-item ${selectedCategory === 'all' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedCategory('all');
+                                                setShowFilterDropdown(false);
+                                            }}
+                                        >
+                                            <i className="fas fa-th"></i>
+                                            <span>All Products</span>
+                                            {selectedCategory === 'all' && <i className="fas fa-check"></i>}
+                                        </button>
+                                        <button
+                                            className={`filter-menu-item ${selectedCategory === 'chairs' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedCategory('chairs');
+                                                setShowFilterDropdown(false);
+                                            }}
+                                        >
+                                            <i className="fas fa-chair"></i>
+                                            <span>Chairs</span>
+                                            {selectedCategory === 'chairs' && <i className="fas fa-check"></i>}
+                                        </button>
+                                        <button
+                                            className={`filter-menu-item ${selectedCategory === 'tables' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedCategory('tables');
+                                                setShowFilterDropdown(false);
+                                            }}
+                                        >
+                                            <i className="fas fa-table"></i>
+                                            <span>Tables</span>
+                                            {selectedCategory === 'tables' && <i className="fas fa-check"></i>}
+                                        </button>
+                                        <button
+                                            className={`filter-menu-item ${selectedCategory === 'alkansya' ? 'active' : ''}`}
+                                            onClick={() => {
+                                                setSelectedCategory('alkansya');
+                                                setShowFilterDropdown(false);
+                                            }}
+                                        >
+                                            <i className="fas fa-box"></i>
+                                            <span>Alkansya</span>
+                                            {selectedCategory === 'alkansya' && <i className="fas fa-check"></i>}
+                                        </button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
                     {loading ? (
                         <motion.div 
                             className="loading-state"
@@ -442,21 +515,60 @@ const LandingPage = () => {
                 </div>
             </section>
 
-            {/* Simple Contact Information Section */}
+            {/* Map Section */}
             <motion.section 
-                className="simple-contact-info"
+                className="map-section-minimal"
                 initial={{ opacity: 0, y: 50 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
                 viewport={{ once: true }}
             >
-                <div className="contact-row">
+                <div className="map-section-container">
+                    <div className="map-wrapper-minimal-top">
+                        <div className="map-header-minimal">
+                            <i className="fas fa-map-marker-alt"></i>
+                            <span>Visit Our Location</span>
+                        </div>
+                        <div className="map-iframe-wrapper">
+                            <iframe
+                                src="https://www.google.com/maps?q=14.2624446,121.1529838&hl=en&z=17&output=embed"
+                                width="100%"
+                                height="100%"
+                                style={{ border: 0 }}
+                                allowFullScreen
+                                loading="lazy"
+                                referrerPolicy="no-referrer-when-downgrade"
+                                title="UNICK Furniture Location"
+                            ></iframe>
+                        </div>
+                        <a 
+                            href="https://www.google.com/maps/place/Wood+Shop+UNICK/@14.2624446,121.1529838,17z/data=!3m1!4b1!4m6!3m5!1s0x3397d9138f7bc95d:0x9278fe89a256038d!8m2!3d14.2624446!4d121.1529838!16s%2Fg%2F11w9ytl522?entry=ttu" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="map-link-minimal"
+                        >
+                            <i className="fas fa-external-link-alt"></i>
+                            Open in Google Maps
+                        </a>
+                    </div>
+                </div>
+            </motion.section>
+
+            {/* Contact Information Section */}
+            <motion.section 
+                className="contact-section"
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8 }}
+                viewport={{ once: true }}
+            >
+                <div className="contact-container">
                     <div className="company-brand">
                         <h2 className="company-name">UNICK FURNITURE</h2>
                         <p className="company-tagline">Wooden Crafts | Wooden Table</p>
                     </div>
                     
-                    <div className="contact-details">
+                    <div className="contact-details-center">
                         <div className="contact-item">
                             <i className="fab fa-viber"></i>
                             <span>Viber: 09351851259</span>

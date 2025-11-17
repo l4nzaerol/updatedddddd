@@ -17,7 +17,8 @@ import {
   FaEdit,
   FaEye,
   FaFilter,
-  FaSync
+  FaSync,
+  FaExclamationTriangle
 } from "react-icons/fa";
 
 const UnifiedOrderManagement = () => {
@@ -35,8 +36,11 @@ const UnifiedOrderManagement = () => {
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showNotReceivedModal, setShowNotReceivedModal] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [notReceivedReason, setNotReceivedReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [productionStatus, setProductionStatus] = useState(null);
   
@@ -45,9 +49,7 @@ const UnifiedOrderManagement = () => {
     search: '',
     status: '',
     paymentMethod: '',
-    acceptanceStatus: '',
-    startDate: '',
-    endDate: ''
+    acceptanceStatus: ''
   });
 
   // Statistics
@@ -57,7 +59,8 @@ const UnifiedOrderManagement = () => {
     rejected: 0,
     processing: 0,
     ready_for_delivery: 0,
-    delivered: 0
+    delivered: 0,
+    not_received: 0
   });
 
   useEffect(() => {
@@ -96,7 +99,8 @@ const UnifiedOrderManagement = () => {
         rejected: ordersData.filter(o => o.acceptance_status === 'rejected').length,
         processing: ordersData.filter(o => o.status === 'processing').length,
         ready_for_delivery: ordersData.filter(o => o.status === 'ready_for_delivery').length,
-        delivered: ordersData.filter(o => o.status === 'delivered').length
+        delivered: ordersData.filter(o => o.status === 'delivered').length,
+        not_received: ordersData.filter(o => o.status === 'ready_for_delivery' && o.receipt_confirmed === false).length
       };
       setStats(statistics);
     } catch (error) {
@@ -117,6 +121,8 @@ const UnifiedOrderManagement = () => {
       filtered = filtered.filter(o => o.acceptance_status === 'accepted');
     } else if (activeView === 'rejected') {
       filtered = filtered.filter(o => o.acceptance_status === 'rejected');
+    } else if (activeView === 'not_received') {
+      filtered = filtered.filter(o => o.status === 'ready_for_delivery' && o.receipt_confirmed === false);
     }
     // If activeView is 'all', don't filter by acceptance status
 
@@ -146,15 +152,6 @@ const UnifiedOrderManagement = () => {
       filtered = filtered.filter(o => o.acceptance_status === filters.acceptanceStatus);
     }
 
-    // Date range filter
-    if (filters.startDate && filters.endDate) {
-      const start = new Date(filters.startDate).setHours(0, 0, 0, 0);
-      const end = new Date(filters.endDate).setHours(23, 59, 59, 999);
-      filtered = filtered.filter(o => {
-        const orderDate = new Date(o.checkout_date).getTime();
-        return orderDate >= start && orderDate <= end;
-      });
-    }
 
     // Product type filter
     if (productTypeFilter === 'furniture') {
@@ -342,8 +339,8 @@ const UnifiedOrderManagement = () => {
           </div>
 
           {/* Statistics Cards */}
-          <div className="row mb-4">
-            <div className="col-md-2">
+          <div className="row mb-4 g-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className={`card border-0 shadow-sm h-100 ${activeView === 'pending' ? 'border-warning border-3' : ''}`} 
                 style={{ 
@@ -365,20 +362,22 @@ const UnifiedOrderManagement = () => {
                 }}
                 onClick={() => setActiveView('pending')}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <FaClock className="text-warning" size={32} />
-                </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-warning mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{stats.pending}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">Pending</small>
+                  </div>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-warning" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.pending}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Pending</small>
                 </div>
               </div>
             </div>
-            <div className="col-md-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className={`card border-0 shadow-sm h-100 ${activeView === 'accepted' ? 'border-success border-3' : ''}`}
                 style={{ 
@@ -400,20 +399,22 @@ const UnifiedOrderManagement = () => {
                 }}
                 onClick={() => setActiveView('accepted')}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <FaCheckCircle className="text-success" size={32} />
                   </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-success mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{stats.accepted}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">Accepted</small>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-success" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.accepted}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Accepted</small>
                 </div>
               </div>
             </div>
-            <div className="col-md-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className={`card border-0 shadow-sm h-100 ${activeView === 'rejected' ? 'border-danger border-3' : ''}`}
                 style={{ 
@@ -435,20 +436,22 @@ const UnifiedOrderManagement = () => {
                 }}
                 onClick={() => setActiveView('rejected')}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <FaTimesCircle className="text-danger" size={32} />
                   </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-danger mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{stats.rejected}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">Rejected</small>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-danger" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.rejected}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Rejected</small>
                 </div>
               </div>
             </div>
-            <div className="col-md-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className="card border-0 shadow-sm h-100"
                 style={{ 
@@ -464,20 +467,22 @@ const UnifiedOrderManagement = () => {
                   e.currentTarget.style.boxShadow = '';
                 }}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <span style={{ fontSize: '32px' }}>⚙️</span>
                   </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-primary mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{stats.processing}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">Processing</small>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.processing}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Processing</small>
                 </div>
               </div>
             </div>
-            <div className="col-md-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className="card border-0 shadow-sm h-100"
                 style={{ 
@@ -493,20 +498,59 @@ const UnifiedOrderManagement = () => {
                   e.currentTarget.style.boxShadow = '';
                 }}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <FaBox className="text-info" size={32} />
+                  </div>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-info" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.ready_for_delivery}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Ready for Delivery</small>
                 </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-info mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{stats.ready_for_delivery}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">Ready</small>
               </div>
             </div>
-          </div>
-            <div className="col-md-2">
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
+              <div 
+                className={`card border-0 shadow-sm h-100 ${activeView === 'not_received' ? 'border-danger border-3' : ''}`}
+                style={{ 
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  borderRadius: '12px'
+                }}
+                onMouseEnter={(e) => {
+                  if (activeView !== 'not_received') {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeView !== 'not_received') {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '';
+                  }
+                }}
+                onClick={() => setActiveView('not_received')}
+              >
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
+                  <div className="text-center mb-3">
+                    <FaExclamationTriangle className="text-danger" size={32} />
+                  </div>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-danger" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{stats.not_received}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">Not Received</small>
+                </div>
+              </div>
+            </div>
+            <div className="col" style={{ minWidth: '140px', flex: '1 1 0' }}>
               <div 
                 className={`card border-0 shadow-sm h-100 ${activeView === 'all' ? 'border-primary border-3' : ''}`}
                 style={{ 
@@ -528,16 +572,18 @@ const UnifiedOrderManagement = () => {
                 }}
                 onClick={() => setActiveView('all')}
               >
-                <div className="card-body text-center p-4">
+                <div className="card-body text-center p-4 d-flex flex-column justify-content-center" style={{ minHeight: '140px' }}>
                   <div className="text-center mb-3">
                     <FaBox className="text-secondary" size={32} />
                   </div>
-                  {dataLoading ? (
-                    <div className="spinner-border spinner-border-sm text-secondary mb-2" role="status" />
-                  ) : (
-                    <h2 className="fw-bold mb-2">{orders.length}</h2>
-                  )}
-                  <small className="text-muted fw-semibold">All Orders</small>
+                  <div style={{ minHeight: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {dataLoading ? (
+                      <div className="spinner-border spinner-border-sm text-secondary" role="status" />
+                    ) : (
+                      <h2 className="fw-bold mb-0" style={{ fontSize: '2rem', lineHeight: '1.2' }}>{orders.length}</h2>
+                    )}
+                  </div>
+                  <small className="text-muted fw-semibold mt-2">All Orders</small>
                 </div>
               </div>
             </div>
@@ -549,7 +595,7 @@ const UnifiedOrderManagement = () => {
               <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                 <div className="card-body p-4">
                   <div className="row g-3">
-                    <div className="col-md-3">
+                    <div className="col-md-4">
                       <label className="form-label small text-muted mb-1">Search</label>
                       <input
                         type="text"
@@ -560,7 +606,7 @@ const UnifiedOrderManagement = () => {
                         style={{ borderRadius: '8px' }}
                       />
                     </div>
-                    <div className="col-md-2">
+                    <div className="col-md-4">
                       <label className="form-label small text-muted mb-1">Status</label>
                       <select
                         className="form-select"
@@ -576,7 +622,7 @@ const UnifiedOrderManagement = () => {
                         <option value="completed">Completed</option>
                       </select>
                     </div>
-                    <div className="col-md-2">
+                    <div className="col-md-4">
                       <label className="form-label small text-muted mb-1">Payment</label>
                       <select
                         className="form-select"
@@ -587,43 +633,6 @@ const UnifiedOrderManagement = () => {
                         <option value="">All Payment</option>
                         <option value="cod">COD</option>
                       </select>
-                    </div>
-                    <div className="col-md-2">
-                      <label className="form-label small text-muted mb-1">Start Date</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={filters.startDate}
-                        onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                        style={{ borderRadius: '8px' }}
-                      />
-                    </div>
-                    <div className="col-md-2">
-                      <label className="form-label small text-muted mb-1">End Date</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={filters.endDate}
-                        onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                        style={{ borderRadius: '8px' }}
-                      />
-                    </div>
-                    <div className="col-md-1">
-                      <label className="form-label small text-muted mb-1">&nbsp;</label>
-                      <button
-                        className="btn btn-outline-secondary w-100"
-                        onClick={() => setFilters({
-                          search: '',
-                          status: '',
-                          paymentMethod: '',
-                          acceptanceStatus: '',
-                          startDate: '',
-                          endDate: ''
-                        })}
-                        style={{ borderRadius: '8px' }}
-                      >
-                        Clear
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -693,6 +702,7 @@ const UnifiedOrderManagement = () => {
                         {activeView === 'pending' && '⏳ Pending Orders'}
                     {activeView === 'accepted' && '✅ Accepted Orders'}
                     {activeView === 'rejected' && '❌ Rejected Orders'}
+                    {activeView === 'not_received' && '⚠️ Orders Not Received'}
                     {activeView === 'all' && '📋 All Orders'}
                         {dataLoading ? (
                           <span className="badge bg-secondary ms-2">⋯</span>
@@ -737,15 +747,21 @@ const UnifiedOrderManagement = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredOrders.map((order) => (
+                          {filteredOrders.map((order) => {
+                            const isNotReceived = order.status === 'ready_for_delivery' && order.receipt_confirmed === false;
+                            return (
                             <tr 
                               key={order.id}
-                              style={{ transition: 'all 0.2s ease' }}
+                              style={{ 
+                                transition: 'all 0.2s ease',
+                                backgroundColor: isNotReceived ? '#fff3cd' : '',
+                                borderLeft: isNotReceived ? '4px solid #ffc107' : 'none'
+                              }}
                               onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = '#f8f9fa';
+                                e.currentTarget.style.backgroundColor = isNotReceived ? '#ffe69c' : '#f8f9fa';
                               }}
                               onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = '';
+                                e.currentTarget.style.backgroundColor = isNotReceived ? '#fff3cd' : '';
                               }}
                             >
                               <td style={{ padding: '1rem' }}>
@@ -774,7 +790,17 @@ const UnifiedOrderManagement = () => {
                                 </span>
                               </td>
                               <td style={{ padding: '1rem' }}>{getAcceptanceBadge(order.acceptance_status)}</td>
-                              <td style={{ padding: '1rem' }}>{getStatusBadge(order.status)}</td>
+                              <td style={{ padding: '1rem' }}>
+                                {getStatusBadge(order.status)}
+                                {order.status === 'ready_for_delivery' && order.receipt_confirmed === false && (
+                                  <div className="mt-2">
+                                    <span className="badge bg-danger">
+                                      <FaExclamationTriangle className="me-1" />
+                                      Not Received
+                                    </span>
+                                  </div>
+                                )}
+                              </td>
                               <td style={{ padding: '1rem' }}>
                                 <small className="text-muted">{new Date(order.checkout_date).toLocaleDateString()}</small>
                               </td>
@@ -819,36 +845,52 @@ const UnifiedOrderManagement = () => {
                                   )}
                                   
                                   {order.acceptance_status === 'accepted' && (
-                                    <button
-                                      className="btn btn-outline-info"
-                                      onClick={async () => {
-                                        setSelectedOrder(order);
-                                        
-                                        // Always check production status - let the backend determine if tracking is needed
-                                        try {
-                                          const status = await checkProductionCompletion(order.id);
-                                          setProductionStatus(status);
-                                        } catch (error) {
-                                          console.error("Error checking production status:", error);
-                                          setProductionStatus({ 
-                                            isCompleted: false, 
-                                            message: "Unable to check production status",
-                                            details: "Error occurred while checking production status"
-                                          });
-                                        }
-                                        
-                                        setShowStatusModal(true);
-                                      }}
-                                      title="Update Status"
-                                      style={{ borderRadius: '0 6px 6px 0' }}
-                                    >
-                                      <FaEdit />
-                                    </button>
+                                    <>
+                                      <button
+                                        className="btn btn-outline-info"
+                                        onClick={async () => {
+                                          setSelectedOrder(order);
+                                          
+                                          // Always check production status - let the backend determine if tracking is needed
+                                          try {
+                                            const status = await checkProductionCompletion(order.id);
+                                            setProductionStatus(status);
+                                          } catch (error) {
+                                            console.error("Error checking production status:", error);
+                                            setProductionStatus({ 
+                                              isCompleted: false, 
+                                              message: "Unable to check production status",
+                                              details: "Error occurred while checking production status"
+                                            });
+                                          }
+                                          
+                                          setShowStatusModal(true);
+                                        }}
+                                        title="Update Status"
+                                      >
+                                        <FaEdit />
+                                      </button>
+                                      {order.status === 'ready_for_delivery' && order.receipt_confirmed === false && (
+                                        <button
+                                          className="btn btn-outline-warning"
+                                          onClick={() => {
+                                            setSelectedOrder(order);
+                                            setNotReceivedReason(order.not_received_reason || '');
+                                            setShowNotReceivedModal(true);
+                                          }}
+                                          title="Set Non-Delivery Reason"
+                                          style={{ borderRadius: '0 6px 6px 0' }}
+                                        >
+                                          <FaExclamationTriangle />
+                                        </button>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -891,6 +933,7 @@ const UnifiedOrderManagement = () => {
                     <div className="card border-0 shadow-sm mb-3" style={{ borderRadius: '8px' }}>
                       <div className="card-body">
                         <p className="mb-2"><strong>Date:</strong> {new Date(selectedOrder.checkout_date).toLocaleString()}</p>
+                        <p className="mb-2"><strong>Shipping:</strong> <span className="fw-bold">{selectedOrder.shipping_fee > 0 ? `₱${parseFloat(selectedOrder.shipping_fee || 0).toFixed(2)}` : <span className="text-success">FREE</span>}</span></p>
                         <p className="mb-2"><FaMoneyBillWave className="me-2 text-primary" /><strong>Total:</strong> <span className="text-success fw-bold">₱{parseFloat(selectedOrder.total_price).toFixed(2)}</span></p>
                         <p className="mb-2"><strong>Payment:</strong> <span className="badge bg-secondary">{selectedOrder.payment_method}</span></p>
                         <p className="mb-2"><strong>Status:</strong> {getStatusBadge(selectedOrder.status)}</p>
@@ -921,6 +964,22 @@ const UnifiedOrderManagement = () => {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot className="table-light">
+                      <tr>
+                        <td colSpan="3" className="text-end fw-bold">Shipping Fee:</td>
+                        <td className="fw-bold">
+                          {selectedOrder.shipping_fee > 0 ? (
+                            `₱${parseFloat(selectedOrder.shipping_fee || 0).toFixed(2)}`
+                          ) : (
+                            <span className="text-success">FREE</span>
+                          )}
+                        </td>
+                      </tr>
+                      <tr className="table-primary">
+                        <td colSpan="3" className="text-end fw-bold">Total:</td>
+                        <td className="fw-bold">₱{parseFloat(selectedOrder.total_price).toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </div>
@@ -1179,6 +1238,142 @@ const UnifiedOrderManagement = () => {
                 <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowStatusModal(false)} style={{ borderRadius: '8px' }}>
                   <i className="fas fa-times me-1"></i>
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Not Received Reason Modal */}
+      {showNotReceivedModal && selectedOrder && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog">
+            <div className="modal-content border-0 shadow-lg" style={{ borderRadius: '12px' }}>
+              <div className="modal-header border-bottom border-warning" style={{ padding: '1.5rem' }}>
+                <h5 className="modal-title fw-bold">
+                  <FaExclamationTriangle className="me-2 text-warning" />
+                  Set Non-Delivery Reason - Order #{selectedOrder.id}
+                </h5>
+                <button type="button" className="btn-close" onClick={() => {
+                  setShowNotReceivedModal(false);
+                  setNotReceivedReason('');
+                  setCustomReason('');
+                  setSelectedOrder(null);
+                }}></button>
+              </div>
+              <div className="modal-body" style={{ padding: '1.5rem' }}>
+                <div className="alert alert-warning border-0 shadow-sm" style={{ borderRadius: '8px' }}>
+                  <FaExclamationTriangle className="me-2" />
+                  Customer has indicated they have not received this order. Please select a reason for non-delivery.
+                </div>
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Reason for Non-Delivery *</label>
+                  <select
+                    className="form-select"
+                    value={notReceivedReason}
+                    onChange={(e) => setNotReceivedReason(e.target.value)}
+                    style={{ borderRadius: '8px' }}
+                  >
+                    <option value="">Select a reason...</option>
+                    <option value="Delivery address incorrect or incomplete">Delivery address incorrect or incomplete</option>
+                    <option value="Customer not available at delivery time">Customer not available at delivery time</option>
+                    <option value="Delivery delayed due to weather conditions">Delivery delayed due to weather conditions</option>
+                    <option value="Logistics issue - delivery vehicle breakdown">Logistics issue - delivery vehicle breakdown</option>
+                    <option value="Order still in transit">Order still in transit</option>
+                    <option value="Delivery scheduled for later date">Delivery scheduled for later date</option>
+                    <option value="Customer requested reschedule">Customer requested reschedule</option>
+                    <option value="Other - see notes">Other - see notes</option>
+                  </select>
+                </div>
+                {notReceivedReason === 'Other - see notes' && (
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold">Additional Details *</label>
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      value={customReason}
+                      onChange={(e) => setCustomReason(e.target.value)}
+                      placeholder="Please provide additional details..."
+                      style={{ borderRadius: '8px' }}
+                      required
+                    />
+                  </div>
+                )}
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Admin Notes (Optional)</label>
+                  <textarea
+                    className="form-control"
+                    rows="2"
+                    value={adminNotes}
+                    onChange={(e) => setAdminNotes(e.target.value)}
+                    placeholder="Internal notes..."
+                    style={{ borderRadius: '8px' }}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-top" style={{ padding: '1.5rem' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => {
+                    setShowNotReceivedModal(false);
+                    setNotReceivedReason('');
+                    setCustomReason('');
+                    setAdminNotes('');
+                    setSelectedOrder(null);
+                  }} 
+                  disabled={processing} 
+                  style={{ borderRadius: '8px' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-warning" 
+                  onClick={async () => {
+                    if (!notReceivedReason) {
+                      toast.error("Please select a reason");
+                      return;
+                    }
+
+                    if (notReceivedReason === 'Other - see notes' && !customReason.trim()) {
+                      toast.error("Please provide additional details");
+                      return;
+                    }
+
+                    setProcessing(true);
+                    try {
+                      const finalReason = notReceivedReason === 'Other - see notes' ? customReason : notReceivedReason;
+                      const response = await api.put(
+                        `/orders/${selectedOrder.id}/not-received-reason`,
+                        { reason: finalReason }
+                      );
+
+                      toast.success("Non-delivery reason updated", {
+                        description: "The customer will be notified about the reason.",
+                        duration: 4000,
+                      });
+
+                      setShowNotReceivedModal(false);
+                      setNotReceivedReason('');
+                      setCustomReason('');
+                      setAdminNotes('');
+                      setSelectedOrder(null);
+                      await fetchOrders();
+                    } catch (error) {
+                      console.error("Error updating reason:", error);
+                      toast.error("Failed to update reason", {
+                        description: error.response?.data?.message || "Please try again.",
+                        duration: 4000,
+                      });
+                    } finally {
+                      setProcessing(false);
+                    }
+                  }} 
+                  disabled={processing || !notReceivedReason || (notReceivedReason === 'Other - see notes' && !customReason.trim())} 
+                  style={{ borderRadius: '8px' }}
+                >
+                  {processing ? <FaSpinner className="spinner-border spinner-border-sm me-2" /> : <FaCheckCircle className="me-2" />}
+                  Update Reason
                 </button>
               </div>
             </div>

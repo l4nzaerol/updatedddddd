@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Production;
 use App\Models\ProductionProcess;
 use App\Models\ProductionAnalytics;
+use App\Models\AlkansyaDailyOutput;
 use App\Models\Product;
 use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
@@ -645,25 +646,28 @@ class ProductionController extends Controller
         ];
 
         // Daily output - SEPARATED by product type
-        // Get ALL ProductionAnalytics data (no date filter by default for accurate totals)
-        $analyticsQuery = ProductionAnalytics::query();
+        // Get Alkansya data from AlkansyaDailyOutput (the correct data source)
+        $alkansyaQuery = AlkansyaDailyOutput::query();
         
         // Only apply date filter if explicitly provided
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $analyticsQuery->whereBetween('date', [$request->start_date, $request->end_date]);
+            $alkansyaQuery->whereBetween('date', [$request->start_date, $request->end_date]);
         }
         
-        // Alkansya output from ProductionAnalytics (includes all historical data)
-        $alkansyaData = $analyticsQuery->get()
-            ->groupBy('date')
+        // Alkansya output from AlkansyaDailyOutput (includes all historical data)
+        $alkansyaData = $alkansyaQuery->get()
+            ->groupBy(function($item) {
+                return Carbon::parse($item->date)->format('Y-m-d');
+            })
             ->map(fn($items, $date) => [
                 'date' => $date,
-                'alkansya' => $items->sum('actual_output'),
+                'alkansya' => $items->sum('quantity_produced'),
                 'furniture' => 0,
-                'quantity' => $items->sum('actual_output'), // Total for backward compatibility
+                'quantity' => $items->sum('quantity_produced'), // Total for backward compatibility
             ]);
 
         // Completed Table/Chair productions
+        // Count the number of completed productions (not sum of quantities) to match the KPI
         $completedProductions = Production::where('status', 'Completed')
             ->where('product_type', '!=', 'alkansya')
             ->whereNotNull('actual_completion_date')
@@ -674,8 +678,8 @@ class ProductionController extends Controller
             ->map(fn($items, $date) => [
                 'date' => $date,
                 'alkansya' => 0,
-                'furniture' => $items->sum('quantity'),
-                'quantity' => $items->sum('quantity'),
+                'furniture' => $items->count(), // Count of completed productions, not sum of quantities
+                'quantity' => $items->count(), // Count for consistency
             ]);
 
         // Merge both datasets

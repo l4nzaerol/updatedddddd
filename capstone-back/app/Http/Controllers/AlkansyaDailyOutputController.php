@@ -38,7 +38,19 @@ class AlkansyaDailyOutputController extends Controller
 
         $outputs = $query->orderBy('date', 'desc')->get();
 
-        return response()->json($outputs);
+        // Check for missing transactions and add metadata
+        $outputsWithTransactionStatus = $outputs->map(function($output) {
+            $hasTransactions = InventoryTransaction::where('transaction_type', 'ALKANSYA_CONSUMPTION')
+                ->where('reference', 'Alkansya Daily Output - ' . $output->date)
+                ->exists();
+            
+            $outputArray = $output->toArray();
+            $outputArray['has_transactions'] = $hasTransactions;
+            
+            return $outputArray;
+        });
+
+        return response()->json($outputsWithTransactionStatus);
     }
 
     /**
@@ -86,6 +98,21 @@ class AlkansyaDailyOutputController extends Controller
             $quantity = $request->quantity;
             $materialsUsed = [];
             $totalCost = 0;
+            $dateObj = Carbon::parse($request->date);
+
+            // Check if transactions already exist for this date (when updating)
+            $existingRecord = AlkansyaDailyOutput::where('date', $request->date)->first();
+            $hasExistingTransactions = false;
+            if ($existingRecord) {
+                $existingTransactions = InventoryTransaction::where('transaction_type', 'ALKANSYA_CONSUMPTION')
+                    ->where('reference', 'Alkansya Daily Output - ' . $request->date)
+                    ->count();
+                $hasExistingTransactions = $existingTransactions > 0;
+                
+                if ($hasExistingTransactions) {
+                    Log::info("Existing transactions found for date {$request->date}, will not create duplicates");
+                }
+            }
 
             // Calculate materials needed and deduct from inventory
             foreach ($bomMaterials as $bomMaterial) {
@@ -144,24 +171,34 @@ class AlkansyaDailyOutputController extends Controller
 
                     $totalCost += $material->standard_cost * $requiredQuantity;
 
-                    // Create inventory transaction
-                    InventoryTransaction::create([
-                        'material_id' => $material->material_id,
-                        'transaction_type' => 'PRODUCTION_USAGE',
-                        'quantity' => -$requiredQuantity,
-                        'reference' => 'Alkansya Daily Output - ' . $request->date,
-                        'remarks' => 'Material used for Alkansya production',
-                        'timestamp' => now(),
-                        'unit_cost' => $material->standard_cost,
-                        'total_cost' => $material->standard_cost * $requiredQuantity
-                    ]);
+                    // Create inventory transaction only if it doesn't already exist (for new records or when updating without existing transactions)
+                    if (!$hasExistingTransactions) {
+                        InventoryTransaction::create([
+                            'material_id' => $material->material_id,
+                            'product_id' => $alkansyaProduct->id,
+                            'transaction_type' => 'ALKANSYA_CONSUMPTION',
+                            'quantity' => -$requiredQuantity,
+                            'reference' => 'Alkansya Daily Output - ' . $request->date,
+                            'remarks' => "Material consumption for Alkansya production - {$quantity} units produced on {$request->date}",
+                            'timestamp' => $dateObj,
+                            'unit_cost' => $material->standard_cost,
+                            'total_cost' => $material->standard_cost * $requiredQuantity,
+                            'status' => 'completed',
+                            'metadata' => [
+                                'product_id' => $alkansyaProduct->id,
+                                'product_name' => $alkansyaProduct->product_name ?? $alkansyaProduct->name,
+                                'quantity_produced' => $quantity,
+                                'date' => $request->date,
+                            ],
+                        ]);
+                        Log::info("Created transaction for {$material->material_name} - {$quantity} units produced on {$request->date}");
+                    }
 
                     Log::info("Auto-deducted {$requiredQuantity} {$material->unit_of_measure} of {$material->material_name} for Alkansya daily output");
                 }
             }
 
-            // Check if there's already a record for this date
-            $existingRecord = AlkansyaDailyOutput::where('date', $request->date)->first();
+            // Log the action
             if ($existingRecord) {
                 Log::info("Updating existing record for date: {$request->date}. Previous quantity: {$existingRecord->quantity_produced}");
             } else {
@@ -326,6 +363,119 @@ class AlkansyaDailyOutputController extends Controller
             Log::error('Failed to clear daily output for date: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Failed to clear daily output: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Backfill missing transactions for existing daily outputs
+     * This method creates transactions for daily outputs that don't have corresponding transactions
+     */
+    public function backfillTransactions(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Get all daily outputs
+            $dailyOutputs = AlkansyaDailyOutput::orderBy('date', 'desc')->get();
+            
+            $createdCount = 0;
+            $skippedCount = 0;
+            $errors = [];
+
+            foreach ($dailyOutputs as $dailyOutput) {
+                // Check if transactions already exist for this date
+                $existingTransactions = InventoryTransaction::where('transaction_type', 'ALKANSYA_CONSUMPTION')
+                    ->where('reference', 'Alkansya Daily Output - ' . $dailyOutput->date)
+                    ->count();
+
+                if ($existingTransactions > 0) {
+                    $skippedCount++;
+                    continue; // Skip if transactions already exist
+                }
+
+                // Get Alkansya products and BOM
+                $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+                    ->where(function($query) {
+                        $query->where('name', 'LIKE', '%Alkansya%')
+                              ->orWhere('product_name', 'LIKE', '%Alkansya%');
+                    })
+                    ->get();
+
+                if ($alkansyaProducts->isEmpty()) {
+                    $errors[] = "No Alkansya products found for date {$dailyOutput->date}";
+                    continue;
+                }
+
+                $alkansyaProduct = $alkansyaProducts->first();
+                $bomMaterials = BOM::where('product_id', $alkansyaProduct->id)
+                    ->with('material')
+                    ->get();
+
+                if ($bomMaterials->isEmpty()) {
+                    $errors[] = "No BOM materials found for date {$dailyOutput->date}";
+                    continue;
+                }
+
+                $quantity = $dailyOutput->quantity_produced;
+                $dateObj = Carbon::parse($dailyOutput->date);
+
+                // Create transactions for each material
+                foreach ($bomMaterials as $bomMaterial) {
+                    $material = $bomMaterial->material;
+                    
+                    if (!$material) {
+                        continue;
+                    }
+                    
+                    $requiredQuantity = $bomMaterial->quantity_per_product * $quantity;
+                    
+                    if ($requiredQuantity > 0) {
+                        try {
+                            InventoryTransaction::create([
+                                'material_id' => $material->material_id,
+                                'product_id' => $alkansyaProduct->id,
+                                'transaction_type' => 'ALKANSYA_CONSUMPTION',
+                                'quantity' => -$requiredQuantity,
+                                'reference' => 'Alkansya Daily Output - ' . $dailyOutput->date,
+                                'remarks' => "Material consumption for Alkansya production - {$quantity} units produced on {$dailyOutput->date}",
+                                'timestamp' => $dateObj,
+                                'unit_cost' => $material->standard_cost ?? 0,
+                                'total_cost' => ($material->standard_cost ?? 0) * $requiredQuantity,
+                                'status' => 'completed',
+                                'metadata' => [
+                                    'product_id' => $alkansyaProduct->id,
+                                    'product_name' => $alkansyaProduct->product_name ?? $alkansyaProduct->name,
+                                    'quantity_produced' => $quantity,
+                                    'date' => $dailyOutput->date,
+                                    'backfilled' => true, // Mark as backfilled
+                                ],
+                            ]);
+                        } catch (\Exception $e) {
+                            $errors[] = "Failed to create transaction for {$material->material_name} on {$dailyOutput->date}: " . $e->getMessage();
+                        }
+                    }
+                }
+
+                $createdCount++;
+                Log::info("Backfilled transactions for daily output date: {$dailyOutput->date}");
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Transaction backfill completed',
+                'created' => $createdCount,
+                'skipped' => $skippedCount,
+                'errors' => $errors,
+                'total_processed' => $dailyOutputs->count()
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Transaction backfill failed: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to backfill transactions: ' . $e->getMessage()
             ], 500);
         }
     }

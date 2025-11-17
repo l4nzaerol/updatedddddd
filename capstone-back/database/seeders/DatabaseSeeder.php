@@ -14,6 +14,9 @@ class DatabaseSeeder extends Seeder
             // Use AccurateMaterialsSeeder for products with accurate material data
             AccurateMaterialsSeeder::class, // Creates products with accurate material data and BOM
             
+            
+            TwoWeeksAlkansyaProductionSeeder::class,// Creates 2 weeks of daily Alkansya production output with material consumption
+            TwoWeeksMadeToOrderOrdersSeeder::class
         ]);
     }
 }

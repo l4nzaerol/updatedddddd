@@ -13,6 +13,7 @@ class Order extends Model
         'user_id',
         'tracking_number',
         'total_price',
+        'shipping_fee',
         'status',
         'acceptance_status',
         'accepted_by',
@@ -27,12 +28,18 @@ class Order extends Model
         'contact_phone',
         'cancellation_reason',
         'cancelled_at',
+        'receipt_confirmed',
+        'receipt_confirmed_at',
+        'not_received_reason',
+        'not_received_at',
     ];
 
     protected $casts = [
         'accepted_at' => 'datetime',
         'checkout_date' => 'datetime',
         'cancelled_at' => 'datetime',
+        'receipt_confirmed_at' => 'datetime',
+        'not_received_at' => 'datetime',
     ];
 
     // An order belongs to a user

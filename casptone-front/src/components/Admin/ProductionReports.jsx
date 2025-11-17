@@ -42,6 +42,11 @@ const ProductionReports = () => {
     const [previewData, setPreviewData] = useState(null);
     const [previewTitle, setPreviewTitle] = useState('');
     
+    // Modal states for PDF preview
+    const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
+    const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
+    const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+    
     // Loading states for each tab
     const [tabLoadingStates, setTabLoadingStates] = useState({
         overview: false,
@@ -201,6 +206,85 @@ const ProductionReports = () => {
         } catch (error) {
             console.error('Error downloading report:', error);
             toast.error('Failed to generate report. Please try again.');
+        }
+    };
+
+    // Preview PDF Report Function
+    const previewPdfReport = async (reportType) => {
+        try {
+            const token = localStorage.getItem('token');
+            const url = `http://localhost:8000/api/reports/production.pdf?start_date=&end_date=`;
+            let title = '';
+
+            switch(reportType) {
+                case 'performance':
+                    title = 'Production Performance Report - PDF Preview';
+                    break;
+                case 'workprogress':
+                    title = 'Work Progress Report - PDF Preview';
+                    break;
+                case 'comprehensive':
+                    title = 'Comprehensive Production Report - PDF Preview';
+                    break;
+                default:
+                    return;
+            }
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/pdf'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to generate PDF');
+            }
+
+            const blob = await response.blob();
+            const pdfUrl = window.URL.createObjectURL(blob);
+            setPdfPreviewUrl(pdfUrl);
+            setPdfPreviewTitle(title);
+            setShowPdfPreviewModal(true);
+        } catch (error) {
+            console.error('Error previewing PDF:', error);
+            toast.error('Failed to generate PDF preview. Please try again.');
+        }
+    };
+
+    // Download PDF Report Function
+    const downloadPdfReport = async (reportType) => {
+        try {
+            const token = localStorage.getItem('token');
+            const url = `http://localhost:8000/api/reports/production.pdf?start_date=&end_date=`;
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/pdf'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to generate PDF');
+            }
+
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `production_${reportType}_report_${new Date().toISOString().split('T')[0]}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(downloadUrl);
+            
+            toast.success(`PDF report downloaded successfully!`);
+        } catch (error) {
+            console.error('Error downloading PDF:', error);
+            toast.error('Failed to generate PDF report. Please try again.');
         }
     };
 
@@ -574,7 +658,6 @@ const ProductionReports = () => {
                     total_accepted_orders: 0,
                     total_products_ordered: 0,
                     total_revenue: 0,
-                    unique_customers: 0,
                     average_order_value: 0,
                     unique_products: 0,
                     average_products_per_order: 0
@@ -878,134 +961,249 @@ const ProductionReports = () => {
 
                             {/* Download Reports Section */}
                             <div className="col-12 mb-4">
-                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', backgroundColor: '#f8f9fa' }}>
+                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', background: 'white' }}>
                                     <div className="card-body p-4">
-                                        <div className="row align-items-center">
-                                            <div className="col-md-8">
-                                                <div className="d-flex align-items-center mb-3">
-                                                    <div className="rounded-circle p-2 me-3" style={{ backgroundColor: '#e3f2fd', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <i className="fas fa-file-export text-primary" style={{ fontSize: '20px' }}></i>
-                                                    </div>
-                                                    <div>
-                                                        <h5 className="mb-1 fw-bold text-dark">Automated Reports & Analytics</h5>
-                                                        <small className="text-muted">Download comprehensive production reports.</small>
-                                                    </div>
+                                        <div className="d-flex align-items-center mb-3">
+                                            <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3">
+                                                <i className="fas fa-file-export text-primary" style={{ fontSize: '24px' }}></i>
+                                            </div>
+                                            <div>
+                                                <h5 className="mb-0 fw-bold">Automated Reports & Analytics</h5>
+                                                <small className="text-muted">Download comprehensive production reports</small>
+                                            </div>
+                                        </div>
+                                        <p className="text-muted mb-3">Generate detailed reports for production performance, work progress, and efficiency metrics</p>
+                                        
+                                        {/* CSV Reports Row */}
+                                        <div className="mb-3">
+                                            <div className="d-flex gap-2 flex-wrap justify-content-start w-100">
+                                                {/* Performance Report CSV */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-primary"
+                                                        onClick={() => previewReport('performance')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#8B4513';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#8B4513';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-primary"
+                                                        onClick={() => downloadReport('performance')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#6B3410';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#8B4513';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-csv me-2"></i>
+                                                        CSV
+                                                    </button>
                                                 </div>
-                                                <p className="text-muted mb-3">Generate detailed reports for production performance, work progress, and efficiency metrics.</p>
-                                                <div className="d-flex gap-2 flex-wrap">
-                                                    <div className="btn-group" role="group">
-                                                        <button 
-                                                            className="btn btn-outline-primary"
-                                                            onClick={() => previewReport('performance')}
-                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#007bff';
-                                                                e.currentTarget.style.color = 'white';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = 'transparent';
-                                                                e.currentTarget.style.color = '#007bff';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-eye me-2"></i>
-                                                            Preview
-                                                        </button>
-                                                        <button 
-                                                            className="btn btn-primary"
-                                                            onClick={() => downloadReport('performance')}
-                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#0056b3';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#007bff';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-download me-2"></i>
-                                                            Download
-                                                        </button>
-                                                    </div>
-                                                    <div className="btn-group" role="group">
-                                                        <button 
-                                                            className="btn btn-outline-info"
-                                                            onClick={() => previewReport('workprogress')}
-                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
-                                                                e.currentTarget.style.color = 'white';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = 'transparent';
-                                                                e.currentTarget.style.color = '#17a2b8';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-eye me-2"></i>
-                                                            Preview
-                                                        </button>
-                                                        <button 
-                                                            className="btn btn-info"
-                                                            onClick={() => downloadReport('workprogress')}
-                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#138496';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-download me-2"></i>
-                                                            Download
-                                                        </button>
-                                                    </div>
-                                                    <div className="btn-group" role="group">
-                                                        <button 
-                                                            className="btn btn-outline-warning"
-                                                            onClick={() => previewReport('comprehensive')}
-                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#ffc107';
-                                                                e.currentTarget.style.color = 'white';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = 'transparent';
-                                                                e.currentTarget.style.color = '#ffc107';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-eye me-2"></i>
-                                                            Preview
-                                                        </button>
-                                                        <button 
-                                                            className="btn btn-warning"
-                                                            onClick={() => downloadReport('comprehensive')}
-                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                            onMouseEnter={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#e0a800';
-                                                                e.currentTarget.style.transform = 'translateY(-2px)';
-                                                            }}
-                                                            onMouseLeave={(e) => {
-                                                                e.currentTarget.style.backgroundColor = '#ffc107';
-                                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                            }}
-                                                        >
-                                                            <i className="fas fa-download me-2"></i>
-                                                            Download
-                                                        </button>
-                                                    </div>
+                                                {/* Work Progress Report CSV */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-info"
+                                                        onClick={() => previewReport('workprogress')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#17a2b8';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-info"
+                                                        onClick={() => downloadReport('workprogress')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#138496';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-csv me-2"></i>
+                                                        CSV
+                                                    </button>
+                                                </div>
+                                                {/* Comprehensive Report CSV */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-warning"
+                                                        onClick={() => previewReport('comprehensive')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#ffc107';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#ffc107';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-warning"
+                                                        onClick={() => downloadReport('comprehensive')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#e0a800';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#ffc107';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-csv me-2"></i>
+                                                        CSV
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <div className="col-md-4 text-center">
-                                                <div className="rounded-circle p-4 d-inline-flex align-items-center justify-content-center" style={{ backgroundColor: '#e3f2fd', width: '80px', height: '80px' }}>
-                                                    <FaDownload className="text-primary" style={{ fontSize: '2.5rem' }} />
+                                        </div>
+
+                                        {/* PDF Reports Row */}
+                                        <div>
+                                            <div className="d-flex gap-2 flex-wrap justify-content-start w-100">
+                                                {/* Performance Report PDF */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-danger"
+                                                        onClick={() => previewPdfReport('performance')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-danger"
+                                                        onClick={() => downloadPdfReport('performance')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#c82333';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-pdf me-2"></i>
+                                                        PDF
+                                                    </button>
+                                                </div>
+                                                {/* Work Progress Report PDF */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-danger"
+                                                        onClick={() => previewPdfReport('workprogress')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-danger"
+                                                        onClick={() => downloadPdfReport('workprogress')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#c82333';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-pdf me-2"></i>
+                                                        PDF
+                                                    </button>
+                                                </div>
+                                                {/* Comprehensive Report PDF */}
+                                                <div className="btn-group" role="group">
+                                                    <button 
+                                                        className="btn btn-outline-danger"
+                                                        onClick={() => previewPdfReport('comprehensive')}
+                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.color = 'white';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                            e.currentTarget.style.color = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-eye me-2"></i>
+                                                        Preview
+                                                    </button>
+                                                    <button 
+                                                        className="btn btn-danger"
+                                                        onClick={() => downloadPdfReport('comprehensive')}
+                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#c82333';
+                                                            e.currentTarget.style.transform = 'translateY(-2px)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#dc3545';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                        }}
+                                                    >
+                                                        <i className="fas fa-file-pdf me-2"></i>
+                                                        PDF
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -1753,14 +1951,6 @@ const ProductionReports = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div className="col-lg-3 col-md-6 mb-3">
-                                                <div className="card bg-light">
-                                                    <div className="card-body text-center">
-                                                        <h4 className="text-warning mb-1">{madeToOrderProductionData.metrics.unique_customers || 0}</h4>
-                                                        <small className="text-muted">Unique Customers</small>
-                                                    </div>
-                                                </div>
-                                            </div>
                                         </div>
 
                                         {/* Current In-Progress Orders */}
@@ -2323,7 +2513,7 @@ const ProductionReports = () => {
                                             </p>
                                         </div>
 
-                                        {/* Display Alkansya Daily Output or empty state */}
+                                        {/* Display Alkansya Daily Output - Always show structure */}
                                         <div className="mb-4">
                                             <div className="card border-0 shadow-sm">
                                                 <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #28a745' }}>
@@ -2333,7 +2523,7 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {alkansyaProductionData?.daily_output ? (
+                                                    {alkansyaProductionData?.daily_output && alkansyaProductionData.daily_output.length > 0 ? (
                                                         <ResponsiveContainer width="100%" height={300}>
                                                             <LineChart data={alkansyaProductionData.daily_output}>
                                                                 <CartesianGrid strokeDasharray="3 3" />
@@ -2355,7 +2545,7 @@ const ProductionReports = () => {
                                             </div>
                                         </div>
 
-                                        {/* Display Made-to-Order Accepted Orders or empty state */}
+                                        {/* Display Made-to-Order Accepted Orders - Always show structure */}
                                         <div className="mb-4">
                                             <div className="card border-0 shadow-sm">
                                                 <div className="card-header bg-white border-0" style={{ borderBottom: '3px solid #CD853F' }}>
@@ -2365,7 +2555,7 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {madeToOrderProductionData?.orders ? (
+                                                    {madeToOrderProductionData?.orders && madeToOrderProductionData.orders.length > 0 ? (
                                                         <ResponsiveContainer width="100%" height={300}>
                                                             <BarChart data={madeToOrderProductionData.orders}>
                                                                 <CartesianGrid strokeDasharray="3 3" />
@@ -2442,44 +2632,37 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {alkansyaProductionData?.efficiency_metrics ? (
-                                                        <div className="row">
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
-                                                                    <i className="fas fa-percent text-success fa-2x mb-2"></i>
-                                                                    <h4 className="text-success">{alkansyaProductionData.efficiency_metrics?.overall_efficiency || 0}%</h4>
-                                                                    <small className="text-muted">Overall Efficiency</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e3f2fd' }}>
-                                                                    <i className="fas fa-boxes text-info fa-2x mb-2"></i>
-                                                                    <h4 className="text-info">{alkansyaProductionData.efficiency_metrics?.average_daily_output || 0}</h4>
-                                                                    <small className="text-muted">Avg Daily Output</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
-                                                                    <i className="fas fa-tasks text-warning fa-2x mb-2"></i>
-                                                                    <h4 className="text-warning">{alkansyaProductionData.efficiency_metrics?.production_days || 0}</h4>
-                                                                    <small className="text-muted">Production Days</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
-                                                                    <i className="fas fa-target text-success fa-2x mb-2"></i>
-                                                                    <h4 className="text-success">{alkansyaProductionData.efficiency_metrics?.target_achievement || 0}%</h4>
-                                                                    <small className="text-muted">Target Achievement</small>
-                                                                </div>
+                                                    {/* Always show efficiency metrics structure */}
+                                                    <div className="row">
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                                <i className="fas fa-percent text-success fa-2x mb-2"></i>
+                                                                <h4 className="text-success">{alkansyaProductionData?.efficiency_metrics?.overall_efficiency || 0}%</h4>
+                                                                <small className="text-muted">Overall Efficiency</small>
                                                             </div>
                                                         </div>
-                                                    ) : (
-                                                        <div className="text-center py-5">
-                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
-                                                            <h5 className="text-muted">No Alkansya Efficiency Data Available</h5>
-                                                            <p className="text-muted">Efficiency metrics will appear here based on Alkansya daily output</p>
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#e3f2fd' }}>
+                                                                <i className="fas fa-boxes text-info fa-2x mb-2"></i>
+                                                                <h4 className="text-info">{alkansyaProductionData?.efficiency_metrics?.average_daily_output || 0}</h4>
+                                                                <small className="text-muted">Avg Daily Output</small>
+                                                            </div>
                                                         </div>
-                                                    )}
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#fff3e0' }}>
+                                                                <i className="fas fa-tasks text-warning fa-2x mb-2"></i>
+                                                                <h4 className="text-warning">{alkansyaProductionData?.efficiency_metrics?.production_days || 0}</h4>
+                                                                <small className="text-muted">Production Days</small>
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#e8f5e9' }}>
+                                                                <i className="fas fa-target text-success fa-2x mb-2"></i>
+                                                                <h4 className="text-success">{alkansyaProductionData?.efficiency_metrics?.target_achievement || 0}%</h4>
+                                                                <small className="text-muted">Target Achievement</small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2494,44 +2677,37 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {madeToOrderProductionData?.efficiency_metrics ? (
-                                                        <div className="row">
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFF3E0' }}>
-                                                                    <i className="fas fa-check-circle text-success fa-2x mb-2"></i>
-                                                                    <h4 className="text-success">{madeToOrderProductionData.efficiency_metrics?.completion_rate || 0}%</h4>
-                                                                    <small className="text-muted">Completion Rate</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#E3F2FD' }}>
-                                                                    <i className="fas fa-hourglass-half text-info fa-2x mb-2"></i>
-                                                                    <h4 className="text-info">{madeToOrderProductionData.efficiency_metrics?.avg_completion_time || 0}</h4>
-                                                                    <small className="text-muted">Avg Completion Time</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#E8F5E9' }}>
-                                                                    <i className="fas fa-list-alt text-warning fa-2x mb-2"></i>
-                                                                    <h4 className="text-warning">{madeToOrderProductionData.efficiency_metrics?.total_orders || 0}</h4>
-                                                                    <small className="text-muted">Total Orders</small>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-3 mb-3">
-                                                                <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFEBEE' }}>
-                                                                    <i className="fas fa-clock text-danger fa-2x mb-2"></i>
-                                                                    <h4 className="text-danger">{madeToOrderProductionData.efficiency_metrics?.on_time_delivery || 0}%</h4>
-                                                                    <small className="text-muted">On-Time Delivery</small>
-                                                                </div>
+                                                    {/* Always show efficiency metrics structure */}
+                                                    <div className="row">
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFF3E0' }}>
+                                                                <i className="fas fa-check-circle text-success fa-2x mb-2"></i>
+                                                                <h4 className="text-success">{madeToOrderProductionData?.efficiency_metrics?.completion_rate || 0}%</h4>
+                                                                <small className="text-muted">Completion Rate</small>
                                                             </div>
                                                         </div>
-                                                    ) : (
-                                                        <div className="text-center py-5">
-                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
-                                                            <h5 className="text-muted">No Made-to-Order Efficiency Data Available</h5>
-                                                            <p className="text-muted">Efficiency metrics will appear here based on accepted orders</p>
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#E3F2FD' }}>
+                                                                <i className="fas fa-hourglass-half text-info fa-2x mb-2"></i>
+                                                                <h4 className="text-info">{madeToOrderProductionData?.efficiency_metrics?.avg_completion_time || 0}</h4>
+                                                                <small className="text-muted">Avg Completion Time</small>
+                                                            </div>
                                                         </div>
-                                                    )}
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#E8F5E9' }}>
+                                                                <i className="fas fa-list-alt text-warning fa-2x mb-2"></i>
+                                                                <h4 className="text-warning">{madeToOrderProductionData?.efficiency_metrics?.total_orders || 0}</h4>
+                                                                <small className="text-muted">Total Orders</small>
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-md-3 mb-3">
+                                                            <div className="text-center p-3 rounded" style={{ backgroundColor: '#FFEBEE' }}>
+                                                                <i className="fas fa-clock text-danger fa-2x mb-2"></i>
+                                                                <h4 className="text-danger">{madeToOrderProductionData?.efficiency_metrics?.on_time_delivery || 0}%</h4>
+                                                                <small className="text-muted">On-Time Delivery</small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2629,48 +2805,41 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {alkansyaProductionData?.capacity_utilization ? (
-                                                        <div className="row">
-                                                            <div className="col-md-6 mb-3">
-                                                                <div className="card bg-light">
-                                                                    <div className="card-body">
-                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                            <span className="fw-bold">Production Capacity</span>
-                                                                            <span className="badge bg-success">{alkansyaProductionData.capacity_utilization?.used_capacity || 0} / {alkansyaProductionData.capacity_utilization?.total_capacity || 0}</span>
-                                                                        </div>
-                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
-                                                                            <div className="progress-bar bg-success progress-bar-striped progress-bar-animated" 
-                                                                                 style={{ width: `${alkansyaProductionData.capacity_utilization?.utilization_percentage || 0}%` }}>
-                                                                                {alkansyaProductionData.capacity_utilization?.utilization_percentage || 0}%
-                                                                            </div>
-                                                                        </div>
+                                                    {/* Always show capacity utilization structure */}
+                                                    <div className="row">
+                                                        <div className="col-md-6 mb-3">
+                                                            <div className="card bg-light">
+                                                                <div className="card-body">
+                                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                        <span className="fw-bold">Production Capacity</span>
+                                                                        <span className="badge bg-success">{alkansyaProductionData?.capacity_utilization?.used_capacity || 0} / {alkansyaProductionData?.capacity_utilization?.total_capacity || 0}</span>
                                                                     </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-6 mb-3">
-                                                                <div className="card bg-light">
-                                                                    <div className="card-body">
-                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                            <span className="fw-bold">Resource Efficiency</span>
-                                                                            <span className="badge bg-info">{alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%</span>
-                                                                        </div>
-                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
-                                                                            <div className="progress-bar bg-info progress-bar-striped progress-bar-animated" 
-                                                                                 style={{ width: `${alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%` }}>
-                                                                                {alkansyaProductionData.capacity_utilization?.resource_efficiency || 0}%
-                                                                            </div>
+                                                                    <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                        <div className="progress-bar bg-success progress-bar-striped progress-bar-animated" 
+                                                                             style={{ width: `${alkansyaProductionData?.capacity_utilization?.utilization_percentage || 0}%` }}>
+                                                                            {alkansyaProductionData?.capacity_utilization?.utilization_percentage || 0}%
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    ) : (
-                                                        <div className="text-center py-5">
-                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
-                                                            <h5 className="text-muted">No Alkansya Capacity Data Available</h5>
-                                                            <p className="text-muted">Capacity utilization metrics will appear here based on Alkansya daily output</p>
+                                                        <div className="col-md-6 mb-3">
+                                                            <div className="card bg-light">
+                                                                <div className="card-body">
+                                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                        <span className="fw-bold">Resource Efficiency</span>
+                                                                        <span className="badge bg-info">{alkansyaProductionData?.capacity_utilization?.resource_efficiency || 0}%</span>
+                                                                    </div>
+                                                                    <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                        <div className="progress-bar bg-info progress-bar-striped progress-bar-animated" 
+                                                                             style={{ width: `${alkansyaProductionData?.capacity_utilization?.resource_efficiency || 0}%` }}>
+                                                                            {alkansyaProductionData?.capacity_utilization?.resource_efficiency || 0}%
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2685,48 +2854,41 @@ const ProductionReports = () => {
                                                     </h5>
                                                 </div>
                                                 <div className="card-body">
-                                                    {madeToOrderProductionData?.capacity_utilization ? (
-                                                        <div className="row">
-                                                            <div className="col-md-6 mb-3">
-                                                                <div className="card bg-light">
-                                                                    <div className="card-body">
-                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                            <span className="fw-bold">Order Processing Capacity</span>
-                                                                            <span className="badge bg-warning">{madeToOrderProductionData.capacity_utilization?.active_orders || 0} / {madeToOrderProductionData.capacity_utilization?.max_capacity || 0}</span>
-                                                                        </div>
-                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
-                                                                            <div className="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
-                                                                                 style={{ width: `${madeToOrderProductionData.capacity_utilization?.processing_rate || 0}%` }}>
-                                                                                {madeToOrderProductionData.capacity_utilization?.processing_rate || 0}%
-                                                                            </div>
-                                                                        </div>
+                                                    {/* Always show capacity utilization structure */}
+                                                    <div className="row">
+                                                        <div className="col-md-6 mb-3">
+                                                            <div className="card bg-light">
+                                                                <div className="card-body">
+                                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                        <span className="fw-bold">Order Processing Capacity</span>
+                                                                        <span className="badge bg-warning">{madeToOrderProductionData?.capacity_utilization?.active_orders || 0} / {madeToOrderProductionData?.capacity_utilization?.max_capacity || 0}</span>
                                                                     </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="col-md-6 mb-3">
-                                                                <div className="card bg-light">
-                                                                    <div className="card-body">
-                                                                        <div className="d-flex justify-content-between align-items-center mb-2">
-                                                                            <span className="fw-bold">Workforce Utilization</span>
-                                                                            <span className="badge bg-danger">{madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%</span>
-                                                                        </div>
-                                                                        <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
-                                                                            <div className="progress-bar bg-danger progress-bar-striped progress-bar-animated" 
-                                                                                 style={{ width: `${madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%` }}>
-                                                                                {madeToOrderProductionData.capacity_utilization?.workforce_utilization || 0}%
-                                                                            </div>
+                                                                    <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                        <div className="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                                                                             style={{ width: `${madeToOrderProductionData?.capacity_utilization?.processing_rate || 0}%` }}>
+                                                                            {madeToOrderProductionData?.capacity_utilization?.processing_rate || 0}%
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    ) : (
-                                                        <div className="text-center py-5">
-                                                            <i className="fas fa-info-circle text-muted mb-3" style={{ fontSize: '3rem' }}></i>
-                                                            <h5 className="text-muted">No Made-to-Order Capacity Data Available</h5>
-                                                            <p className="text-muted">Capacity utilization metrics will appear here based on accepted orders</p>
+                                                        <div className="col-md-6 mb-3">
+                                                            <div className="card bg-light">
+                                                                <div className="card-body">
+                                                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                                                        <span className="fw-bold">Workforce Utilization</span>
+                                                                        <span className="badge bg-danger">{madeToOrderProductionData?.capacity_utilization?.workforce_utilization || 0}%</span>
+                                                                    </div>
+                                                                    <div className="progress" style={{ height: '30px', borderRadius: '8px' }}>
+                                                                        <div className="progress-bar bg-danger progress-bar-striped progress-bar-animated" 
+                                                                             style={{ width: `${madeToOrderProductionData?.capacity_utilization?.workforce_utilization || 0}%` }}>
+                                                                            {madeToOrderProductionData?.capacity_utilization?.workforce_utilization || 0}%
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -2994,6 +3156,65 @@ const ProductionReports = () => {
                                     <i className="fas fa-download me-2"></i>
                                     Download CSV
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* PDF Preview Modal */}
+            {showPdfPreviewModal && pdfPreviewUrl && (
+                <div className="modal fade show" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
+                    <div className="modal-dialog modal-fullscreen">
+                        <div className="modal-content">
+                            <div className="modal-header bg-white border-bottom">
+                                <div className="d-flex align-items-center w-100">
+                                    <div className="d-flex align-items-center me-3">
+                                        <div className="rounded-circle bg-danger bg-opacity-10 p-2 me-2">
+                                            <i className="fas fa-file-pdf text-danger"></i>
+                                        </div>
+                                        <div>
+                                            <h5 className="modal-title mb-0 fw-bold">{pdfPreviewTitle}</h5>
+                                            <small className="text-muted">UNICK Furniture - Production Report</small>
+                                        </div>
+                                    </div>
+                                    <div className="ms-auto">
+                                        <button 
+                                            type="button" 
+                                            className="btn btn-outline-danger me-2"
+                                            onClick={() => {
+                                                const reportType = pdfPreviewTitle.includes('Performance') ? 'performance' : 
+                                                                 pdfPreviewTitle.includes('Work Progress') ? 'workprogress' : 'comprehensive';
+                                                downloadPdfReport(reportType);
+                                            }}
+                                        >
+                                            <i className="fas fa-download me-2"></i>
+                                            Download PDF
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            className="btn-close"
+                                            onClick={() => {
+                                                setShowPdfPreviewModal(false);
+                                                if (pdfPreviewUrl) {
+                                                    window.URL.revokeObjectURL(pdfPreviewUrl);
+                                                    setPdfPreviewUrl(null);
+                                                }
+                                            }}
+                                        ></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-body p-0" style={{ height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
+                                <iframe
+                                    src={pdfPreviewUrl}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        border: 'none'
+                                    }}
+                                    title={pdfPreviewTitle}
+                                />
                             </div>
                         </div>
                     </div>

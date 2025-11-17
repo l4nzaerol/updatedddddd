@@ -24,7 +24,7 @@ const Dashboard = () => {
 
     return (
         <AppLayoutWithProvider searchTerm={searchTerm} setSearchTerm={setSearchTerm}>
-            {user.role === "employee" ? (
+            {user.role === "employee" || user.role === "staff" ? (
                 <AdminDashboard />
             ) : user.role === "customer" ? (
                 <CustomerDashboard searchTerm={searchTerm} />

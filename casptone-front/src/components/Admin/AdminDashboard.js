@@ -1,17 +1,24 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense, lazy, useRef } from "react";
 import api from "../../api/client";
-import KPICards from "./Analytics/KPICards";
-import DailyOutputChart from "./Analytics/DailyOutputChart";
-import TopProductsChart from "./Analytics/TopProductsChart";
-import TopUsersChart from "./Analytics/TopUsersChart";
-import TopStaffChart from "./Analytics/TopStaffChart";
+import "./AdminDashboard.css";
+
+// Lazy load analytics components
+const KPICards = lazy(() => import("./Analytics/KPICards"));
+const DailyOutputChart = lazy(() => import("./Analytics/DailyOutputChart"));
+const TopProductsChart = lazy(() => import("./Analytics/TopProductsChart"));
+const TopUsersChart = lazy(() => import("./Analytics/TopUsersChart"));
+const TopStaffChart = lazy(() => import("./Analytics/TopStaffChart"));
 
 const AdminDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [shouldLoadCharts, setShouldLoadCharts] = useState(false);
+  const chartsRef = useRef(null);
+  const hasFetchedRef = useRef(false);
 
   const fetchAnalytics = async () => {
     setLoading(true);
+    
     try {
       // Fetch order analytics
       let orderData = {
@@ -52,9 +59,20 @@ const AdminDashboard = () => {
           .reduce((sum, order) => sum + parseFloat(order.total_price || 0), 0);
         
         // Calculate production metrics (only for table and chair, exclude alkansya)
-        const completedProductions = productions.filter(prod => 
-          prod.status === 'Completed' && prod.product_type !== 'alkansya'
-        ).length;
+        // Count unique completed orders that have completed productions to match "Completed Orders" count
+        const completedProductionsWithOrders = productions.filter(prod => {
+          const isCompleted = prod.status === 'Completed' && prod.product_type !== 'alkansya';
+          if (!isCompleted || !prod.order_id) return false;
+          
+          const order = orders.find(o => o.id === prod.order_id);
+          return order && (order.status === 'completed' || order.status === 'delivered');
+        });
+        
+        // Count unique order IDs to match the "Completed Orders" count
+        const uniqueCompletedOrderIds = new Set(
+          completedProductionsWithOrders.map(prod => prod.order_id).filter(id => id)
+        );
+        const completedProductions = uniqueCompletedOrderIds.size;
         
         const inProgressProductions = productions.filter(prod => 
           prod.status === 'In Progress' && prod.product_type !== 'alkansya'
@@ -82,82 +100,42 @@ const AdminDashboard = () => {
       let productionData = {
         daily_output: [],
         top_products: [],
+        top_users: [],
+        top_staff: [],
         alkansya_stats: { total: 0, avg: 0 },
         furniture_stats: { total: 0, avg: 0 }
       };
 
       try {
-        // Fetch production output analytics
-        const productionResponse = await api.get('/analytics/production-output');
+        // Fetch production analytics from the correct endpoint that includes top_staff, top_products, top_users
+        const productionResponse = await api.get('/productions/analytics');
         const productionAnalytics = productionResponse.data || {};
         
-        if (productionAnalytics.products) {
-          // Transform Alkansya data
-          const alkansyaData = productionAnalytics.products.alkansya;
-          if (alkansyaData && alkansyaData.output_trend) {
-            productionData.daily_output = alkansyaData.output_trend.map(item => ({
-              date: item.period,
-              alkansya: item.output,
-              furniture: 0, // Will be updated with furniture data
-              quantity: item.output
-            }));
-          }
-
-          // Transform furniture data (tables and chairs)
-          const tableData = productionAnalytics.products.table;
-          const chairData = productionAnalytics.products.chair;
+        // Use the data directly from the API response
+        if (productionAnalytics.daily_output) {
+          productionData.daily_output = productionAnalytics.daily_output || [];
           
-          if (tableData && tableData.output_trend) {
-            tableData.output_trend.forEach(item => {
-              const existingItem = productionData.daily_output.find(d => d.date === item.period);
-              if (existingItem) {
-                existingItem.furniture += item.output;
-                existingItem.quantity += item.output;
-              } else {
-                productionData.daily_output.push({
-                  date: item.period,
-                  alkansya: 0,
-                  furniture: item.output,
-                  quantity: item.output
-                });
-              }
-            });
-          }
-
-          if (chairData && chairData.output_trend) {
-            chairData.output_trend.forEach(item => {
-              const existingItem = productionData.daily_output.find(d => d.date === item.period);
-              if (existingItem) {
-                existingItem.furniture += item.output;
-                existingItem.quantity += item.output;
-              } else {
-                productionData.daily_output.push({
-                  date: item.period,
-                  alkansya: 0,
-                  furniture: item.output,
-                  quantity: item.output
-                });
-              }
-            });
-          }
-
-          // Calculate stats
-          const totalAlkansya = alkansyaData?.totals?.total_output || 0;
-          const totalFurniture = (tableData?.totals?.total_output || 0) + (chairData?.totals?.total_output || 0);
+          // Calculate alkansya and furniture stats from daily_output
+          const alkansyaTotal = productionData.daily_output.reduce((sum, item) => sum + (item.alkansya || 0), 0);
+          const furnitureTotal = productionData.daily_output.reduce((sum, item) => sum + (item.furniture || 0), 0);
+          const daysWithData = productionData.daily_output.length || 1;
           
           productionData.alkansya_stats = {
-            total: totalAlkansya,
-            avg: alkansyaData?.totals?.avg_per_period || 0
+            total: alkansyaTotal,
+            avg: Math.round(alkansyaTotal / daysWithData)
           };
           
           productionData.furniture_stats = {
-            total: totalFurniture,
-            avg: Math.round(totalFurniture / Math.max(1, productionData.daily_output.length))
+            total: furnitureTotal,
+            avg: Math.round(furnitureTotal / daysWithData)
           };
-
-          // Create top products data
-          productionData.top_products = productionAnalytics.top_performing || [];
         }
+        
+        // Get top products, top users, and top staff from the API response
+        productionData.top_products = productionAnalytics.top_products || [];
+        productionData.top_users = productionAnalytics.top_users || [];
+        productionData.top_staff = productionAnalytics.top_staff || [];
+        
       } catch (productionError) {
         console.warn('Production analytics API not available:', productionError);
         // Keep empty arrays for production data
@@ -175,8 +153,8 @@ const AdminDashboard = () => {
         },
         daily_output: productionData.daily_output,
         top_products: productionData.top_products,
-        top_users: [],
-        top_staff: []
+        top_users: productionData.top_users,
+        top_staff: productionData.top_staff
       };
       
       setAnalytics(transformedData);
@@ -203,93 +181,210 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    fetchAnalytics();
+    // Prevent multiple fetches (especially in React StrictMode)
+    if (hasFetchedRef.current) {
+      return;
+    }
     
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchAnalytics, 30000);
+    hasFetchedRef.current = true;
+    let isMounted = true;
     
-    return () => clearInterval(interval);
-  }, []); // fetch on mount
+    const loadData = async () => {
+      if (isMounted) {
+        await fetchAnalytics();
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []); // fetch on mount only - no auto-refresh
+
+  // Intersection Observer for lazy loading charts
+  useEffect(() => {
+    if (!analytics || shouldLoadCharts) return;
+
+    let observer = null;
+    let fallbackTimer = null;
+
+    // Start loading charts after analytics data is ready
+    // Use a small delay to ensure smooth transition
+    const timer = setTimeout(() => {
+      if (chartsRef.current) {
+        observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                setShouldLoadCharts(true);
+                if (observer) observer.disconnect();
+              }
+            });
+          },
+          {
+            rootMargin: '100px', // Start loading 100px before the element is visible
+            threshold: 0.1
+          }
+        );
+
+        observer.observe(chartsRef.current);
+
+        // Fallback: if element is already visible, load immediately
+        if (chartsRef.current.getBoundingClientRect().top < window.innerHeight + 100) {
+          setShouldLoadCharts(true);
+          if (observer) observer.disconnect();
+        }
+      } else {
+        // If ref is not set yet, load charts anyway after a short delay
+        fallbackTimer = setTimeout(() => setShouldLoadCharts(true), 500);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (observer) observer.disconnect();
+    };
+  }, [analytics, shouldLoadCharts]);
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: 'transparent' }}>
-      {/* Simple Brown Header */}
-      <div style={{ 
+    <div className="admin-dashboard-wrapper" style={{ minHeight: '100vh', backgroundColor: 'transparent' }}>
+      {/* Simple Brown Header - Responsive */}
+      <div className="admin-dashboard-header" style={{ 
         backgroundColor: '#8b5e34',
-        padding: '1.5rem 0',
-        marginBottom: '2rem'
+        padding: 'clamp(1rem, 2vw, 1.5rem) 0',
+        marginBottom: 'clamp(1rem, 2vw, 2rem)'
       }}>
-        <div className="container" style={{ maxWidth: '1200px' }}>
-          <div className="d-flex justify-content-between align-items-center">
-            <div className="text-center flex-grow-1">
+        <div className="container admin-dashboard-container" style={{ maxWidth: '1200px', paddingLeft: 'clamp(1rem, 3vw, 1.5rem)', paddingRight: 'clamp(1rem, 3vw, 1.5rem)' }}>
+          <div className="d-flex justify-content-center align-items-center">
+            <div className="text-center">
               <h1 className="fw-bold mb-0" style={{ 
-                fontSize: '2rem',
+                fontSize: 'clamp(1.25rem, 4vw, 2rem)',
                 letterSpacing: '1px',
-                color: '#ffffff'
+                color: '#ffffff',
+                lineHeight: '1.2'
               }}>
                 UNICK FURNITURE DASHBOARD
               </h1>
-            </div>
-            <div>
-              <button 
-                className="btn btn-outline-light btn-sm"
-                onClick={fetchAnalytics}
-                disabled={loading}
-                style={{ 
-                  borderColor: 'rgba(255,255,255,0.5)',
-                  color: '#ffffff'
-                }}
-              >
-                {loading ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Loading...
-                  </>
-                ) : (
-                  <>
-                    <i className="fas fa-sync-alt me-2"></i>
-                    Refresh Data
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Analytics - No container background */}
-      <div className="container-fluid" style={{ maxWidth: '100%', padding: '0 1rem' }}>
-        {!analytics ? (
+      {/* Analytics - Responsive Container */}
+      <div className="container-fluid" style={{ maxWidth: '100%', padding: '0 clamp(1rem, 3vw, 1.5rem)' }}>
+        {loading || !analytics ? (
           <div className="text-center py-5">
             <div className="spinner-border" style={{ color: '#8b5e34' }} role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <div className="mt-3" style={{ fontSize: '0.9rem', color: '#6b4423' }}>Loading analytics...</div>
+            <div className="mt-3" style={{ fontSize: '0.9rem', color: '#6b4423' }}>
+              {loading ? 'Loading analytics data...' : 'Preparing analytics...'}
+            </div>
           </div>
         ) : (
           <>
-            {/* KPI Cards */}
-            <KPICards kpis={analytics?.kpis || {}} />
+            {/* KPI Cards - Load immediately */}
+            <Suspense 
+              fallback={
+                <div className="text-center py-4">
+                  <div className="spinner-border spinner-border-sm" style={{ color: '#8b5e34' }} role="status">
+                    <span className="visually-hidden">Loading KPIs...</span>
+                  </div>
+                </div>
+              }
+            >
+              <KPICards kpis={analytics?.kpis || {}} />
+            </Suspense>
 
-            {/* Main Charts Row */}
-            <div className="row mt-4">
-              {/* Daily Output - Full Width */}
-              <div className="col-12 mb-4">
-                <DailyOutputChart data={analytics?.daily_output || []} />
-              </div>
-            </div>
+            {/* Charts Section - Lazy loaded with intersection observer */}
+            <div ref={chartsRef} style={{ minHeight: '200px' }}>
+              {shouldLoadCharts ? (
+                <>
+                  {/* Main Charts Row */}
+                  <div className="row mt-4">
+                    {/* Daily Output - Full Width */}
+                    <div className="col-12 mb-4">
+                      <Suspense 
+                        fallback={
+                          <div className="text-center py-4" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div>
+                              <div className="spinner-border" style={{ color: '#8b5e34' }} role="status">
+                                <span className="visually-hidden">Loading chart...</span>
+                              </div>
+                              <div className="mt-2" style={{ fontSize: '0.85rem', color: '#6b4423' }}>Loading daily output chart...</div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <DailyOutputChart data={analytics?.daily_output || []} />
+                      </Suspense>
+                    </div>
+                  </div>
 
-            {/* Secondary Charts Row */}
-            <div className="row mb-4">
-              <div className="col-lg-4 mb-4">
-                <TopStaffChart data={analytics?.top_staff || []} />
-              </div>
-              <div className="col-lg-4 mb-4">
-                <TopProductsChart data={analytics?.top_products || []} />
-              </div>
-              <div className="col-lg-4 mb-4">
-                <TopUsersChart data={analytics?.top_users || []} />
-              </div>
+                  {/* Secondary Charts Row - Responsive */}
+                  <div className="row mb-4">
+                    <div className="col-12 col-md-6 col-lg-4 mb-4">
+                      <Suspense 
+                        fallback={
+                          <div className="text-center py-4" style={{ minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div>
+                              <div className="spinner-border spinner-border-sm" style={{ color: '#8b5e34' }} role="status">
+                                <span className="visually-hidden">Loading...</span>
+                              </div>
+                              <div className="mt-2" style={{ fontSize: '0.85rem', color: '#6b4423' }}>Loading staff chart...</div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <TopStaffChart data={analytics?.top_staff || []} />
+                      </Suspense>
+                    </div>
+                    <div className="col-12 col-md-6 col-lg-4 mb-3 mb-md-4">
+                      <Suspense 
+                        fallback={
+                          <div className="text-center py-4" style={{ minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div>
+                              <div className="spinner-border spinner-border-sm" style={{ color: '#8b5e34' }} role="status">
+                                <span className="visually-hidden">Loading...</span>
+                              </div>
+                              <div className="mt-2" style={{ fontSize: '0.85rem', color: '#6b4423' }}>Loading products chart...</div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <TopProductsChart data={analytics?.top_products || []} />
+                      </Suspense>
+                    </div>
+                    <div className="col-12 col-md-6 col-lg-4 mb-3 mb-md-4">
+                      <Suspense 
+                        fallback={
+                          <div className="text-center py-4" style={{ minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div>
+                              <div className="spinner-border spinner-border-sm" style={{ color: '#8b5e34' }} role="status">
+                                <span className="visually-hidden">Loading...</span>
+                              </div>
+                              <div className="mt-2" style={{ fontSize: '0.85rem', color: '#6b4423' }}>Loading users chart...</div>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <TopUsersChart data={analytics?.top_users || []} />
+                      </Suspense>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-5" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div>
+                    <div className="spinner-border" style={{ color: '#8b5e34' }} role="status">
+                      <span className="visually-hidden">Preparing charts...</span>
+                    </div>
+                    <div className="mt-3" style={{ fontSize: '0.9rem', color: '#6b4423' }}>Preparing analytics charts...</div>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

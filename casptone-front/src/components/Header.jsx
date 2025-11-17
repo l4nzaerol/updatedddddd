@@ -211,29 +211,69 @@ const Header = ({ role, username, searchTerm, setSearchTerm }) => {
     );
 };
 
+// Define nav items outside component to prevent recreation
+const SIDEBAR_NAV_ITEMS = [
+    { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["employee", "admin", "staff"] },
+    { path: "/product", icon: Package, label: "Products", roles: ["employee", "admin"] },
+    { path: "/orders", icon: ClipboardList, label: "Orders", roles: ["employee", "admin"] },
+    { path: "/normalized-inventory", icon: Boxes, label: "Inventory", roles: ["employee", "admin", "staff"] },
+    { path: "/productions", icon: Factory, label: "Productions", roles: ["employee", "admin", "staff"] },
+    { path: "/reports", icon: BarChart, label: "Reports", roles: ["employee", "admin"] },
+];
+
 // 🔸 Sidebar for Admin with minimize functionality
 const Sidebar = ({ isMinimized, toggleSidebar }) => {
     const navigate = useNavigate();
-    const role = localStorage.getItem("role");
+    const [role, setRole] = useState(() => localStorage.getItem("role") || "");
     const [hoveredItem, setHoveredItem] = useState(null);
+    
+    // Update role when localStorage changes
+    useEffect(() => {
+        const handleStorageChange = () => {
+            const currentRole = localStorage.getItem("role") || "";
+            setRole(currentRole);
+        };
+        
+        // Check role on mount and when storage changes
+        handleStorageChange();
+        window.addEventListener("storage", handleStorageChange);
+        
+        // Also check periodically in case role changes in same tab
+        const interval = setInterval(handleStorageChange, 1000);
+        
+        return () => {
+            window.removeEventListener("storage", handleStorageChange);
+            clearInterval(interval);
+        };
+    }, []);
 
     const handleLogout = () => {
         localStorage.clear();
         navigate("/");
     };
 
-    const navItems = [
-        { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["employee", "admin"] },
-        { path: "/product", icon: Package, label: "Products", roles: ["employee"] },
-        { path: "/orders", icon: ClipboardList, label: "Orders", roles: ["employee"] },
-        { path: "/normalized-inventory", icon: Boxes, label: "Inventory", roles: ["employee"] },
-        { path: "/productions", icon: Factory, label: "Productions", roles: ["employee", "admin"] },
-        { path: "/reports", icon: BarChart, label: "Reports", roles: ["employee"] },
-    ];
-
-    const filteredNavItems = navItems.filter(item => 
-        item.roles.includes(role) || item.roles.includes("admin")
-    );
+    // Normalize role to lowercase for consistent comparison
+    const normalizedRole = role ? String(role).toLowerCase().trim() : "";
+    
+    // Filter menu items based on user role
+    // Staff can see Dashboard, Productions, and Inventory
+    // Employee/Admin can see all items
+    const filteredNavItems = React.useMemo(() => {
+        // Staff role: Dashboard, Productions, and Inventory
+        if (normalizedRole === "staff") {
+            // Explicitly return only allowed paths for staff
+            const allowedPaths = ["/dashboard", "/productions", "/normalized-inventory"];
+            return SIDEBAR_NAV_ITEMS.filter(item => allowedPaths.includes(item.path));
+        }
+        
+        // Employee/Admin roles: Can access all items
+        if (normalizedRole === "employee" || normalizedRole === "admin") {
+            return SIDEBAR_NAV_ITEMS; // Show all items for employee/admin
+        }
+        
+        // Default: No access (shouldn't happen for authenticated users)
+        return [];
+    }, [normalizedRole]);
 
     return (
         <div style={{
@@ -416,14 +456,16 @@ const AppLayout = ({ children, searchTerm, setSearchTerm }) => {
             >
                 {children}
             </div>
-            <footer className="footer-wood text-center" style={{ 
-                marginLeft: role !== "customer" ? (isMinimized ? "80px" : "280px") : 0,
-                transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
-            }}>
-                <div className="container">
-                    <small>© {new Date().getFullYear()} Unick Furniture — Crafted with care</small>
-                </div>
-            </footer>
+            {role !== "customer" && (
+                <footer className="footer-wood text-center" style={{ 
+                    marginLeft: isMinimized ? "80px" : "280px",
+                    transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
+                }}>
+                    <div className="container">
+                        <small>© {new Date().getFullYear()} Unick Furniture — Crafted with care</small>
+                    </div>
+                </footer>
+            )}
         </>
     );
 };

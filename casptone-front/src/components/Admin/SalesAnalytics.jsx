@@ -22,23 +22,12 @@ const SalesAnalytics = () => {
     
     // Enhanced data states
     const [dashboardData, setDashboardData] = useState(null);
-    const [revenueAnalytics, setRevenueAnalytics] = useState(null);
-    const [productPerformance, setProductPerformance] = useState(null);
-    const [customerAnalytics, setCustomerAnalytics] = useState(null);
-    const [orderAnalytics, setOrderAnalytics] = useState(null);
-    const [paymentAnalytics, setPaymentAnalytics] = useState(null);
-    const [trendAnalysis, setTrendAnalysis] = useState(null);
     const [salesReports, setSalesReports] = useState(null);
+    const [orders, setOrders] = useState([]);
     
     // Loading states for each tab
     const [tabLoadingStates, setTabLoadingStates] = useState({
         overview: false,
-        revenue: false,
-        products: false,
-        customers: false,
-        orders: false,
-        payments: false,
-        trends: false,
         reports: false
     });
 
@@ -81,6 +70,24 @@ const SalesAnalytics = () => {
 
             // Only load overview data initially for fast loading
             const salesAnalyticsData = await safeFetch('/analytics/sales-dashboard', dateRange);
+            
+            // Fetch all orders - ensure we always get orders data
+            let ordersData = await safeFetch('/orders', {});
+            
+            // If ordersData is null or not an array, set to empty array
+            if (!ordersData || !Array.isArray(ordersData)) {
+                ordersData = [];
+            }
+            
+            // Filter to only show accepted orders for sales reports
+            const acceptedOrders = ordersData.filter(order => 
+                order.acceptance_status === 'accepted' && order.accepted_at
+            );
+            
+            console.log('Fetched orders:', ordersData);
+            console.log('Total orders:', ordersData.length);
+            console.log('Accepted orders:', acceptedOrders.length);
+            console.log('Orders is array?', Array.isArray(ordersData));
 
             // Set data with proper fallbacks - using zero values since no actual records exist
             const analyticsData = salesAnalyticsData || { 
@@ -110,6 +117,7 @@ const SalesAnalytics = () => {
             };
             
             setDashboardData(analyticsData);
+            setOrders(acceptedOrders);
 
         } catch (error) {
             console.error('Error fetching sales analytics:', error);
@@ -123,6 +131,29 @@ const SalesAnalytics = () => {
         fetchAllReports();
     }, [fetchAllReports]);
 
+    // Load orders when overview tab is active (but avoid infinite loop)
+    useEffect(() => {
+        if (activeTab === 'overview' && !loading && orders.length === 0) {
+            // Only load if we don't have orders yet
+            const fetchOrders = async () => {
+                try {
+                    const response = await api.get('/orders');
+                    if (response.data && Array.isArray(response.data)) {
+                        // Filter to only show accepted orders
+                        const acceptedOrders = response.data.filter(order => 
+                            order.acceptance_status === 'accepted' && order.accepted_at
+                        );
+                        setOrders(acceptedOrders);
+                        console.log('Loaded accepted orders on overview tab:', acceptedOrders.length, 'out of', response.data.length, 'total');
+                    }
+                } catch (error) {
+                    console.error('Error fetching orders:', error);
+                }
+            };
+            fetchOrders();
+        }
+    }, [activeTab, loading]);
+
     const handleGlobalRefresh = () => {
         setRefreshKey(prev => prev + 1);
         toast.success("Sales analytics refreshed successfully!");
@@ -132,54 +163,55 @@ const SalesAnalytics = () => {
     const loadTabData = async (tabName) => {
         setTabLoadingStates(prev => ({ ...prev, [tabName]: true }));
         
-        // Simulate 2-second delay for fast loading experience
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
         try {
             const dateRange = {
                 start_date: new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                 end_date: new Date().toISOString().split('T')[0]
             };
 
+            const safeFetch = async (endpoint, params = {}) => {
+                try {
+                    const response = await api.get(endpoint, { params });
+                    return response.data;
+                } catch (error) {
+                    console.warn(`Failed to fetch ${endpoint}:`, error.message);
+                    return null;
+                }
+            };
+
             switch (tabName) {
                 case 'overview':
-                    // Overview data is already loaded initially
+                    // Overview data is already loaded initially, but refresh orders
+                    const overviewOrdersData = await safeFetch('/orders', {});
+                    if (overviewOrdersData && Array.isArray(overviewOrdersData)) {
+                        // Filter to only show accepted orders
+                        const acceptedOrders = overviewOrdersData.filter(order => 
+                            order.acceptance_status === 'accepted' && order.accepted_at
+                        );
+                        setOrders(acceptedOrders);
+                        console.log('Overview: Loaded', acceptedOrders.length, 'accepted orders out of', overviewOrdersData.length, 'total orders');
+                    } else {
+                        setOrders([]);
+                    }
                     break;
-                    
-                case 'revenue':
-                    const revenueResponse = await api.get('/analytics/revenue-analytics', { params: dateRange });
-                    setRevenueAnalytics(revenueResponse.data);
-                        break;
-                    
-                    case 'products':
-                    const productsResponse = await api.get('/analytics/product-performance', { params: dateRange });
-                    setProductPerformance(productsResponse.data);
-                        break;
-                    
-                    case 'customers':
-                    const customersResponse = await api.get('/analytics/customer-analytics', { params: dateRange });
-                    setCustomerAnalytics(customersResponse.data);
-                    break;
-                    
-                case 'orders':
-                    const ordersResponse = await api.get('/analytics/order-analytics', { params: dateRange });
-                    setOrderAnalytics(ordersResponse.data);
-                    break;
-                    
-                case 'payments':
-                    const paymentsResponse = await api.get('/analytics/payment-analytics', { params: dateRange });
-                    setPaymentAnalytics(paymentsResponse.data);
-                    break;
-                    
-                case 'trends':
-                    const trendsResponse = await api.get('/analytics/trend-analysis', { params: dateRange });
-                    setTrendAnalysis(trendsResponse.data);
-                        break;
                     
                 case 'reports':
-                    const reportsResponse = await api.get('/analytics/sales-reports', { params: dateRange });
-                    setSalesReports(reportsResponse.data);
-                        break;
+                    // Fetch sales dashboard data for reports tab (same as overview)
+                    const reportsDashboardData = await safeFetch('/analytics/sales-dashboard', dateRange);
+                    const reportsOrdersData = await safeFetch('/orders', {});
+                    
+                    setSalesReports(reportsDashboardData || dashboardData);
+                    if (reportsOrdersData && Array.isArray(reportsOrdersData)) {
+                        // Filter to only show accepted orders
+                        const acceptedOrders = reportsOrdersData.filter(order => 
+                            order.acceptance_status === 'accepted' && order.accepted_at
+                        );
+                        setOrders(acceptedOrders);
+                        console.log('Reports: Loaded', acceptedOrders.length, 'accepted orders out of', reportsOrdersData.length, 'total orders');
+                    } else {
+                        setOrders([]);
+                    }
+                    break;
             }
         } catch (error) {
             console.error(`Error loading ${tabName} data:`, error);
@@ -225,49 +257,11 @@ const SalesAnalytics = () => {
 
     return (
         <div className="enhanced-sales-analytics">
-            {/* Enhanced Header */}
-            <div className="d-flex justify-content-between align-items-center mb-4 p-4 bg-gradient text-white rounded-3" 
-                 style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)` }}>
-                <div>
-                    <h2 className="mb-2 d-flex align-items-center">
-                        <FaDollarSign className="me-3" />
-                        Enhanced Sales Analytics
-                    </h2>
-                    <p className="mb-0 opacity-90">Comprehensive sales performance and revenue insights</p>
-                </div>
-                <div className="d-flex gap-2">
-                    <select 
-                        value={windowDays} 
-                        onChange={(e) => setWindowDays(Number(e.target.value))}
-                        className="form-select form-select-sm"
-                        style={{ width: 'auto' }}
-                    >
-                        <option value={7}>Last 7 days</option>
-                        <option value={30}>Last 30 days</option>
-                        <option value={90}>Last 90 days</option>
-                        <option value={365}>Last year</option>
-                    </select>
-                    <button 
-                        onClick={handleGlobalRefresh}
-                        className="btn btn-light btn-sm"
-                    >
-                        <FaSync className="me-1" />
-                        Refresh
-                    </button>
-                </div>
-            </div>
-
             {/* Enhanced Navigation Tabs */}
             <div className="mb-4">
                 <ul className="nav nav-pills nav-fill" role="tablist">
                     {[
                         { id: 'overview', name: 'Overview', icon: FaChartLine, color: colors.primary },
-                        { id: 'revenue', name: 'Revenue Analytics', icon: FaDollarSign, color: colors.success },
-                        { id: 'products', name: 'Product Performance', icon: FaBoxes, color: colors.secondary },
-                        { id: 'customers', name: 'Customer Analytics', icon: FaUsers, color: colors.info },
-                        { id: 'orders', name: 'Order Analytics', icon: FaShoppingCart, color: colors.accent },
-                        { id: 'payments', name: 'Payment Analytics', icon: FaCreditCard, color: colors.warning },
-                        { id: 'trends', name: 'Trend Analysis', icon: FaArrowUp, color: colors.danger },
                         { id: 'reports', name: 'Sales Reports', icon: FaClipboardList, color: colors.dark }
                     ].map(tab => (
                         <li className="nav-item" key={tab.id}>
@@ -601,7 +595,7 @@ const SalesAnalytics = () => {
                     </div>
 
                     {/* Top Products */}
-                    <div className="col-12">
+                    <div className="col-12 mb-4">
                         <div className="card border-0 shadow-sm">
                             <div className="card-header bg-white border-0">
                                 <h5 className="mb-0 d-flex align-items-center">
@@ -632,191 +626,115 @@ const SalesAnalytics = () => {
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {/* Revenue Analytics Tab */}
-            {activeTab === 'revenue' && (
-                <div className="row">
+                    {/* All Orders Table */}
                     <div className="col-12">
                         <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
+                            <div className="card-header bg-white border-0 d-flex justify-content-between align-items-center">
                                 <h5 className="mb-0 d-flex align-items-center">
-                                    <FaDollarSign className="me-2" style={{ color: colors.success }} />
-                                    Revenue Analytics
-                                    {tabLoadingStates.revenue && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                        </div>
-                    )}
+                                    <FaShoppingCart className="me-2" style={{ color: colors.primary }} />
+                                    All Orders
                                 </h5>
+                                <span className="badge bg-primary">
+                                    {Array.isArray(orders) ? orders.length : 0} {orders.length === 1 ? 'Order' : 'Orders'}
+                                </span>
                             </div>
                             <div className="card-body">
-                                {tabLoadingStates.revenue ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-success mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Revenue Data...</h5>
-                                        <p className="text-muted">Analyzing revenue trends and performance metrics</p>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaDollarSign className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Revenue Analytics</h5>
-                                        <p className="text-muted">Detailed revenue analysis will appear here</p>
-                        </div>
-                                )}
-                        </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Product Performance Tab */}
-            {activeTab === 'products' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaBoxes className="me-2" style={{ color: colors.secondary }} />
-                                    Product Performance Analysis
-                                    {tabLoadingStates.products && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.products ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-secondary mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Product Data...</h5>
-                                        <p className="text-muted">Analyzing product performance and sales metrics</p>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaBoxes className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Product Performance</h5>
-                                        <p className="text-muted">Product sales analysis will appear here</p>
-                        </div>
-                    )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Customer Analytics Tab */}
-            {activeTab === 'customers' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaUsers className="me-2" style={{ color: colors.info }} />
-                                    Customer Analytics
-                                    {tabLoadingStates.customers && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                        </div>
-                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.customers ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-info mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Customer Data...</h5>
-                                        <p className="text-muted">Analyzing customer behavior and preferences</p>
-                        </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaUsers className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Customer Analytics</h5>
-                                        <p className="text-muted">Customer insights and behavior analysis will appear here</p>
-                        </div>
-                                )}
-                        </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Order Analytics Tab */}
-            {activeTab === 'orders' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaShoppingCart className="me-2" style={{ color: colors.accent }} />
-                                    Order Analytics
-                                    {tabLoadingStates.orders && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.orders ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-accent mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Order Data...</h5>
-                                        <p className="text-muted">Analyzing order patterns and fulfillment metrics</p>
+                                {Array.isArray(orders) && orders.length > 0 ? (
+                                    <div className="table-responsive">
+                                        <table className="table table-hover">
+                                            <thead className="table-light">
+                                                <tr>
+                                                    <th>Order ID</th>
+                                                    <th>Customer</th>
+                                                    <th>Date</th>
+                                                    <th>Status</th>
+                                                    <th>Payment Status</th>
+                                                    <th>Total Amount</th>
+                                                    <th>Items</th>
+                                                    <th>Payment Method</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {orders.map((order) => (
+                                                    <tr key={order.id}>
+                                                        <td><strong>#{order.id}</strong></td>
+                                                        <td>
+                                                            <div>
+                                                                <div className="fw-bold">{order.user?.name || 'Unknown Customer'}</div>
+                                                                <small className="text-muted">{order.user?.email || 'No email'}</small>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            {order.checkout_date ? (
+                                                                <div>
+                                                                    <div>{new Date(order.checkout_date).toLocaleDateString()}</div>
+                                                                    <small className="text-muted">{new Date(order.checkout_date).toLocaleTimeString()}</small>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-muted">N/A</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge bg-${
+                                                                order.status === 'completed' ? 'success' :
+                                                                order.status === 'delivered' ? 'primary' :
+                                                                order.status === 'processing' ? 'info' :
+                                                                order.status === 'ready_for_delivery' ? 'warning' :
+                                                                'secondary'
+                                                            }`}>
+                                                                {order.status || 'pending'}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge bg-${
+                                                                order.payment_status === 'paid' ? 'success' :
+                                                                order.payment_status === 'unpaid' ? 'warning' :
+                                                                'danger'
+                                                            }`}>
+                                                                {order.payment_status || 'pending'}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <strong>₱{parseFloat(order.total_price || 0).toLocaleString()}</strong>
+                                                        </td>
+                                                        <td>
+                                                            <div className="small">
+                                                                {order.items && order.items.length > 0 ? (
+                                                                    <>
+                                                                        {order.items.slice(0, 2).map((item, index) => (
+                                                                            <div key={index} className="mb-1">
+                                                                                {item.product?.name || 'Unknown'} (x{item.quantity || 0})
+                                                                            </div>
+                                                                        ))}
+                                                                        {order.items.length > 2 && (
+                                                                            <small className="text-muted">+{order.items.length - 2} more items</small>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-muted">No items</span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge bg-${
+                                                                order.payment_method === 'cod' ? 'secondary' :
+                                                                order.payment_method === 'maya' ? 'primary' :
+                                                                'dark'
+                                                            }`}>
+                                                                {order.payment_method?.toUpperCase() || 'COD'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 ) : (
                                     <div className="text-center py-5">
                                         <FaShoppingCart className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Order Analytics</h5>
-                                        <p className="text-muted">Order tracking and analysis will appear here</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                        </div>
-                    )}
-
-            {/* Payment Analytics Tab */}
-            {activeTab === 'payments' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaCreditCard className="me-2" style={{ color: colors.warning }} />
-                                    Payment Analytics
-                                    {tabLoadingStates.payments && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.payments ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-warning mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Payment Data...</h5>
-                                        <p className="text-muted">Analyzing payment methods and transaction patterns</p>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaCreditCard className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Payment Analytics</h5>
-                                        <p className="text-muted">Payment method analysis will appear here</p>
+                                        <h5 className="text-muted">No Orders Found</h5>
+                                        <p className="text-muted">Orders will appear here once customers place orders</p>
                                     </div>
                                 )}
                             </div>
@@ -825,79 +743,283 @@ const SalesAnalytics = () => {
                 </div>
             )}
 
-            {/* Trend Analysis Tab */}
-            {activeTab === 'trends' && (
-                <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaArrowUp className="me-2" style={{ color: colors.danger }} />
-                                    Trend Analysis
-                                    {tabLoadingStates.trends && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.trends ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-danger mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Trend Data...</h5>
-                                        <p className="text-muted">Analyzing sales trends and seasonal patterns</p>
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaArrowUp className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Trend Analysis</h5>
-                                        <p className="text-muted">Sales trend analysis will appear here</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                        </div>
-                    )}
-
             {/* Sales Reports Tab */}
             {activeTab === 'reports' && (
                 <div className="row">
-                    <div className="col-12">
-                        <div className="card border-0 shadow-sm">
-                            <div className="card-header bg-white border-0">
-                                <h5 className="mb-0 d-flex align-items-center">
-                                    <FaClipboardList className="me-2" style={{ color: colors.dark }} />
-                                    Sales Reports
-                                    {tabLoadingStates.reports && (
-                                        <div className="spinner-border spinner-border-sm ms-2" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    )}
-                                </h5>
-                            </div>
-                            <div className="card-body">
-                                {tabLoadingStates.reports ? (
-                                    <div className="text-center py-5">
-                                        <div className="spinner-border text-dark mb-3" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                        <h5>Loading Reports...</h5>
-                                        <p className="text-muted">Generating comprehensive sales reports</p>
+                    {tabLoadingStates.reports ? (
+                        <div className="col-12">
+                            <div className="text-center py-5">
+                                <div className="spinner-border text-dark mb-3" role="status">
+                                    <span className="visually-hidden">Loading...</span>
                                 </div>
-                                ) : (
-                                    <div className="text-center py-5">
-                                        <FaClipboardList className="text-muted mb-3" style={{ fontSize: '3rem' }} />
-                                        <h5 className="text-muted">Sales Reports</h5>
-                                        <p className="text-muted">Detailed sales reports will appear here</p>
-                                </div>
-                                )}
+                                <h5>Loading Reports...</h5>
+                                <p className="text-muted">Generating comprehensive sales reports</p>
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <>
+                            {/* Key Metrics Cards - Same as Overview */}
+                            <div className="col-lg-3 col-md-6 mb-4">
+                                <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.success}15, ${colors.info}15)` }}>
+                                    <div className="card-body text-center p-4">
+                                        <div className="d-flex align-items-center justify-content-center mb-3">
+                                            <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.success}20` }}>
+                                                <FaDollarSign style={{ color: colors.success }} className="fs-4" />
+                                            </div>
+                                            <div>
+                                                <h3 className="mb-0 fw-bold" style={{ color: colors.success }}>
+                                                    ₱{(salesReports?.overview?.total_revenue || dashboardData?.overview?.total_revenue || 0).toLocaleString()}
+                                                </h3>
+                                                <small className="text-muted fw-medium">Total Revenue</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="col-lg-3 col-md-6 mb-4">
+                                <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.primary}15, ${colors.accent}15)` }}>
+                                    <div className="card-body text-center p-4">
+                                        <div className="d-flex align-items-center justify-content-center mb-3">
+                                            <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.primary}20` }}>
+                                                <FaShoppingCart style={{ color: colors.primary }} className="fs-4" />
+                                            </div>
+                                            <div>
+                                                <h3 className="mb-0 fw-bold" style={{ color: colors.primary }}>
+                                                    {(salesReports?.overview?.total_orders || dashboardData?.overview?.total_orders || 0)}
+                                                </h3>
+                                                <small className="text-muted fw-medium">Total Orders</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="col-lg-3 col-md-6 mb-4">
+                                <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.info}15, ${colors.secondary}15)` }}>
+                                    <div className="card-body text-center p-4">
+                                        <div className="d-flex align-items-center justify-content-center mb-3">
+                                            <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.info}20` }}>
+                                                <FaChartBar style={{ color: colors.info }} className="fs-4" />
+                                            </div>
+                                            <div>
+                                                <h3 className="mb-0 fw-bold" style={{ color: colors.info }}>
+                                                    ₱{(salesReports?.overview?.average_order_value || dashboardData?.overview?.average_order_value || 0).toLocaleString()}
+                                                </h3>
+                                                <small className="text-muted fw-medium">Avg Order Value</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="col-lg-3 col-md-6 mb-4">
+                                <div className="card border-0 shadow-sm h-100" style={{ background: `linear-gradient(135deg, ${colors.warning}15, ${colors.accent}15)` }}>
+                                    <div className="card-body text-center p-4">
+                                        <div className="d-flex align-items-center justify-content-center mb-3">
+                                            <div className="rounded-circle p-3 me-3" style={{ backgroundColor: `${colors.warning}20` }}>
+                                                <FaPercent style={{ color: colors.warning }} className="fs-4" />
+                                            </div>
+                                            <div>
+                                                <h3 className="mb-0 fw-bold" style={{ color: colors.warning }}>
+                                                    {(salesReports?.overview?.conversion_rate || dashboardData?.overview?.conversion_rate || 0)}%
+                                                </h3>
+                                                <small className="text-muted fw-medium">Conversion Rate</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Revenue Trends Chart */}
+                            <div className="col-lg-8 mb-4">
+                                <div className="card border-0 shadow-sm">
+                                    <div className="card-header bg-white border-0">
+                                        <h5 className="mb-0 d-flex align-items-center">
+                                            <FaChartLine className="me-2" style={{ color: colors.primary }} />
+                                            Revenue Trends
+                                        </h5>
+                                    </div>
+                                    <div className="card-body">
+                                        {(salesReports?.revenue_trends || dashboardData?.revenue_trends || []).length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <LineChart data={salesReports?.revenue_trends || dashboardData?.revenue_trends || []}>
+                                                    <CartesianGrid strokeDasharray="3 3" />
+                                                    <XAxis dataKey="date" />
+                                                    <YAxis />
+                                                    <Tooltip formatter={(value) => [`₱${value.toLocaleString()}`, 'Revenue']} />
+                                                    <Legend />
+                                                    <Line type="monotone" dataKey="revenue" stroke={colors.success} name="Daily Revenue" />
+                                                    <Line type="monotone" dataKey="orders" stroke={colors.primary} name="Orders" />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="text-center py-5">
+                                                <FaChartLine className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                <h5 className="text-muted">No Revenue Data</h5>
+                                                <p className="text-muted">Revenue trends will appear here when orders are placed</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sales by Status Chart */}
+                            <div className="col-lg-4 mb-4">
+                                <div className="card border-0 shadow-sm">
+                                    <div className="card-header bg-white border-0">
+                                        <h5 className="mb-0 d-flex align-items-center">
+                                            <FaChartBar className="me-2" style={{ color: colors.secondary }} />
+                                            Sales by Status
+                                        </h5>
+                                    </div>
+                                    <div className="card-body">
+                                        {(salesReports?.sales_by_status || dashboardData?.sales_by_status || []).length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <PieChart>
+                                                    <Pie
+                                                        data={salesReports?.sales_by_status || dashboardData?.sales_by_status || []}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        labelLine={false}
+                                                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                        outerRadius={80}
+                                                        fill="#8884d8"
+                                                        dataKey="count"
+                                                    >
+                                                        {(salesReports?.sales_by_status || dashboardData?.sales_by_status || []).map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="text-center py-5">
+                                                <FaChartBar className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                <h5 className="text-muted">No Status Data</h5>
+                                                <p className="text-muted">Sales status data will appear here</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* All Orders Table */}
+                            <div className="col-12">
+                                <div className="card border-0 shadow-sm">
+                                    <div className="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                                        <h5 className="mb-0 d-flex align-items-center">
+                                            <FaShoppingCart className="me-2" style={{ color: colors.primary }} />
+                                            All Orders
+                                        </h5>
+                                        <span className="badge bg-primary">
+                                            {Array.isArray(orders) ? orders.length : 0} {orders.length === 1 ? 'Order' : 'Orders'}
+                                        </span>
+                                    </div>
+                                    <div className="card-body">
+                                        {Array.isArray(orders) && orders.length > 0 ? (
+                                            <div className="table-responsive">
+                                                <table className="table table-hover">
+                                                    <thead className="table-light">
+                                                        <tr>
+                                                            <th>Order ID</th>
+                                                            <th>Customer</th>
+                                                            <th>Date</th>
+                                                            <th>Status</th>
+                                                            <th>Payment Status</th>
+                                                            <th>Total Amount</th>
+                                                            <th>Items</th>
+                                                            <th>Payment Method</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {orders.map((order) => (
+                                                            <tr key={order.id}>
+                                                                <td><strong>#{order.id}</strong></td>
+                                                                <td>
+                                                                    <div>
+                                                                        <div className="fw-bold">{order.user?.name || 'Unknown Customer'}</div>
+                                                                        <small className="text-muted">{order.user?.email || 'No email'}</small>
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    {order.checkout_date ? (
+                                                                        <div>
+                                                                            <div>{new Date(order.checkout_date).toLocaleDateString()}</div>
+                                                                            <small className="text-muted">{new Date(order.checkout_date).toLocaleTimeString()}</small>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-muted">N/A</span>
+                                                                    )}
+                                                                </td>
+                                                                <td>
+                                                                    <span className={`badge bg-${
+                                                                        order.status === 'completed' ? 'success' :
+                                                                        order.status === 'delivered' ? 'primary' :
+                                                                        order.status === 'processing' ? 'info' :
+                                                                        order.status === 'ready_for_delivery' ? 'warning' :
+                                                                        'secondary'
+                                                                    }`}>
+                                                                        {order.status || 'pending'}
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <span className={`badge bg-${
+                                                                        order.payment_status === 'paid' ? 'success' :
+                                                                        order.payment_status === 'unpaid' ? 'warning' :
+                                                                        'danger'
+                                                                    }`}>
+                                                                        {order.payment_status || 'pending'}
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <strong>₱{parseFloat(order.total_price || 0).toLocaleString()}</strong>
+                                                                </td>
+                                                                <td>
+                                                                    <div className="small">
+                                                                        {order.items && order.items.length > 0 ? (
+                                                                            <>
+                                                                                {order.items.slice(0, 2).map((item, index) => (
+                                                                                    <div key={index} className="mb-1">
+                                                                                        {item.product?.name || 'Unknown'} (x{item.quantity || 0})
+                                                                                    </div>
+                                                                                ))}
+                                                                                {order.items.length > 2 && (
+                                                                                    <small className="text-muted">+{order.items.length - 2} more items</small>
+                                                                                )}
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-muted">No items</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    <span className={`badge bg-${
+                                                                        order.payment_method === 'cod' ? 'secondary' :
+                                                                        order.payment_method === 'maya' ? 'primary' :
+                                                                        'dark'
+                                                                    }`}>
+                                                                        {order.payment_method?.toUpperCase() || 'COD'}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-5">
+                                                <FaShoppingCart className="text-muted mb-3" style={{ fontSize: '3rem' }} />
+                                                <h5 className="text-muted">No Orders Found</h5>
+                                                <p className="text-muted">Orders will appear here once customers place orders</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 

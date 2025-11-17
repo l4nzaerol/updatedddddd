@@ -233,6 +233,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/orders/{id}/production-status', [OrderController::class, 'checkProductionStatus']);
     Route::put('/orders/{id}/ready-for-delivery', [OrderController::class, 'markAsReadyForDelivery']);
     Route::put('/orders/{id}/delivered', [OrderController::class, 'markAsDelivered']);
+    Route::post('/orders/{id}/confirm-receipt', [OrderController::class, 'confirmReceipt']);
+    Route::put('/orders/{id}/not-received-reason', [OrderController::class, 'updateNotReceivedReason']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
 
     // Notification Routes
@@ -306,6 +308,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/reports/replenishment-schedule', [ReportController::class, 'replenishmentSchedule']);
     Route::get('/reports/replenishment-schedule.csv', [ReportController::class, 'replenishmentScheduleCsv']);
     Route::get('/reports/production.csv', [ReportController::class, 'productionCsv']);
+    
+    // PDF Reports
+    Route::get('/reports/stock.pdf', [ReportController::class, 'stockPdf']);
+    Route::get('/reports/usage.pdf', [ReportController::class, 'usagePdf']);
+    Route::get('/reports/replenishment.pdf', [ReportController::class, 'replenishmentPdf']);
+    Route::get('/reports/production.pdf', [ReportController::class, 'productionPdf']);
+    Route::get('/enhanced-inventory-reports/export-pdf', [EnhancedInventoryReportsController::class, 'exportInventoryPdf']);
 
     // Productions
     Route::get('/productions', [ProductionController::class, 'index']);
@@ -385,6 +394,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/', [AlkansyaDailyOutputController::class, 'store']);
         Route::get('/statistics', [AlkansyaDailyOutputController::class, 'statistics']);
         Route::get('/materials-analysis', [AlkansyaDailyOutputController::class, 'materialsAnalysis']);
+        Route::post('/backfill-transactions', [AlkansyaDailyOutputController::class, 'backfillTransactions']); // Backfill missing transactions
         Route::delete('/clear-date', [AlkansyaDailyOutputController::class, 'clearDate']); // For debugging
     });
 

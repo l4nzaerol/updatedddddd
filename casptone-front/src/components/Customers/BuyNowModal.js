@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { authUtils } from "../../utils/auth";
 import { formatPrice } from "../../utils/currency";
 import philippineLocations from "../../data/philippineLocations.json";
+import { getShippingFee } from "../../utils/shipping";
 import "./BuyNowModal.css";
 
 const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0, y: 0 } }) => {
@@ -156,6 +157,7 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0
         payment_method: formData.paymentMethod,
         shipping_address: structuredAddress,
         contact_phone: formData.phone,
+        shipping_fee: shippingFee,
         buy_now: true // Flag to indicate this is a direct order
       };
 
@@ -189,7 +191,17 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0
     }
   };
 
-  const totalPrice = product ? (product.price * quantity) : 0;
+  // Calculate shipping fee
+  const shippingInfo = getShippingFee(
+    product,
+    quantity,
+    formData.selectedProvince,
+    formData.selectedCity
+  );
+  
+  const subtotal = product ? (product.price * quantity) : 0;
+  const shippingFee = formData.selectedProvince ? shippingInfo.shippingFee : 0;
+  const totalPrice = subtotal + shippingFee;
 
   if (!show || !product) {
     return null;
@@ -286,11 +298,13 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0
                       className={`form-control ${errors.selectedProvince ? "error" : ""}`}
                     >
                       <option value="">Select Province</option>
-                      {philippineLocations.provinces.map(province => (
-                        <option key={province.id} value={province.id}>
-                          {province.name}
-                        </option>
-                      ))}
+                      {philippineLocations.provinces
+                        .filter(province => province.functional === true)
+                        .map(province => (
+                          <option key={province.id} value={province.id}>
+                            {province.name}
+                          </option>
+                        ))}
                     </select>
                     {errors.selectedProvince && <span className="error-message">{errors.selectedProvince}</span>}
                   </div>
@@ -389,6 +403,29 @@ const BuyNowModal = ({ show, onClose, product, onOrderSuccess, position = { x: 0
                     <span>Unit Price:</span>
                     <span>{formatPrice(product.price)}</span>
                   </div>
+                  <div className="total-row">
+                    <span>Subtotal:</span>
+                    <span>{formatPrice(subtotal)}</span>
+                  </div>
+                  <div className="total-row">
+                    <span>Shipping Fee:</span>
+                    <span>
+                      {shippingInfo.isFreeShipping ? (
+                        <span style={{ color: '#28a745', fontWeight: 600 }}>
+                          FREE
+                        </span>
+                      ) : formData.selectedProvince ? (
+                        formatPrice(shippingFee)
+                      ) : (
+                        <span style={{ color: '#999', fontStyle: 'italic' }}>Select address</span>
+                      )}
+                    </span>
+                  </div>
+                  {shippingInfo.isFreeShipping && (
+                    <div className="total-row" style={{ fontSize: '0.9rem', color: '#28a745', fontStyle: 'italic' }}>
+                      <span>🎉 Free shipping for 3+ alkansya!</span>
+                    </div>
+                  )}
                   <div className="total-row final-total">
                     <span>Total:</span>
                     <span className="final-amount">{formatPrice(totalPrice)}</span>

@@ -1,5 +1,5 @@
 // src/components/ProductCatalog.js
-import React, { useState, memo, useCallback, useMemo } from "react";
+import React, { useState, memo, useCallback, useMemo, useEffect } from "react";
 import { Form } from "react-bootstrap";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import BuyNowModal from "./BuyNowModal";
 import { formatPrice } from "../../utils/currency";
 import "./product_catalog.css";
+import "../LandingPage.css";
 
 const ProductCatalog = ({ products, searchTerm = "" }) => {
   const [showModal, setShowModal] = useState(false);
@@ -25,11 +26,27 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [buyNowModalPosition, setBuyNowModalPosition] = useState({ x: 0, y: 0 });
 
-  // Filter products based on search term
+  // Filter dropdown state
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showFilterDropdown && !event.target.closest('.filter-dropdown-wrapper')) {
+        setShowFilterDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilterDropdown]);
+
+  // Filter products based on search term and category
   const filteredProducts = useMemo(() => {
     if (!products || products.length === 0) return [];
     
-    return products.filter((product) => {
+    let filtered = products.filter((product) => {
       const productName = product.product_name || product.name || '';
       const matchesSearch = productName.toLowerCase().includes(searchTerm.toLowerCase());
       
@@ -37,7 +54,26 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
       // Availability will be handled in the UI (disabled buttons, etc.)
       return matchesSearch;
     });
-  }, [products, searchTerm]);
+
+    // Apply category filter
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(product => {
+        const name = (product.product_name || product.name || '').toLowerCase();
+        switch (selectedCategory) {
+          case 'chairs':
+            return name.includes('chair') || name.includes('wooden chair');
+          case 'tables':
+            return name.includes('table') || name.includes('dining table');
+          case 'alkansya':
+            return name.includes('alkansya');
+          default:
+            return true;
+        }
+      });
+    }
+
+    return filtered;
+  }, [products, searchTerm, selectedCategory]);
 
 
   const handleShowModal = useCallback((product, event) => {
@@ -290,6 +326,86 @@ const ProductCatalog = ({ products, searchTerm = "" }) => {
   return (
     <div className="products-section">
       <div className="products-container">
+        {/* Products Header with Filter Dropdown */}
+        <div className="products-header">
+          <div className="filter-dropdown-wrapper">
+            <motion.button
+              className="filter-dropdown-trigger"
+              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="filter-trigger-content">
+                <i className="fas fa-filter"></i>
+                <span className="filter-text">
+                  {selectedCategory === 'all' ? 'All Products' :
+                   selectedCategory === 'chairs' ? 'Chairs' :
+                   selectedCategory === 'tables' ? 'Tables' :
+                   selectedCategory === 'alkansya' ? 'Alkansya' : 'All Products'}
+                </span>
+              </div>
+              <i className={`fas fa-chevron-down ${showFilterDropdown ? 'rotate' : ''}`}></i>
+            </motion.button>
+            
+            <AnimatePresence>
+              {showFilterDropdown && (
+                <motion.div
+                  className="filter-dropdown-menu"
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <button
+                    className={`filter-menu-item ${selectedCategory === 'all' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCategory('all');
+                      setShowFilterDropdown(false);
+                    }}
+                  >
+                    <i className="fas fa-th"></i>
+                    <span>All Products</span>
+                    {selectedCategory === 'all' && <i className="fas fa-check"></i>}
+                  </button>
+                  <button
+                    className={`filter-menu-item ${selectedCategory === 'chairs' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCategory('chairs');
+                      setShowFilterDropdown(false);
+                    }}
+                  >
+                    <i className="fas fa-chair"></i>
+                    <span>Chairs</span>
+                    {selectedCategory === 'chairs' && <i className="fas fa-check"></i>}
+                  </button>
+                  <button
+                    className={`filter-menu-item ${selectedCategory === 'tables' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCategory('tables');
+                      setShowFilterDropdown(false);
+                    }}
+                  >
+                    <i className="fas fa-table"></i>
+                    <span>Tables</span>
+                    {selectedCategory === 'tables' && <i className="fas fa-check"></i>}
+                  </button>
+                  <button
+                    className={`filter-menu-item ${selectedCategory === 'alkansya' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCategory('alkansya');
+                      setShowFilterDropdown(false);
+                    }}
+                  >
+                    <i className="fas fa-box"></i>
+                    <span>Alkansya</span>
+                    {selectedCategory === 'alkansya' && <i className="fas fa-check"></i>}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
         {!filteredProducts || filteredProducts.length === 0 ? (
           <div className="loading-state">
             <div className="loading-spinner">

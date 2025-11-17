@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\BOM;
 use App\Models\Material;
+use App\Models\AlkansyaDailyOutput;
+use App\Models\OrderItem;
 use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
@@ -54,7 +56,7 @@ class ProductController extends Controller
             'product_code' => 'required|string|unique:products,product_code',
             'description' => 'nullable|string',
             'category_name' => 'nullable|string',
-            'price' => 'required|numeric|min:0',
+            'price' => 'required|numeric|min:0.01',
             'image' => 'nullable|string',
             'bom' => 'nullable|array',
             'bom.*.material_id' => 'required|exists:materials,material_id',
@@ -66,6 +68,55 @@ class ProductController extends Controller
         // Ensure product_name is set (handle both old and new column names)
         if (!isset($data['product_name']) && isset($data['name'])) {
             $data['product_name'] = $data['name'];
+        }
+        if (!isset($data['name']) && isset($data['product_name'])) {
+            $data['name'] = $data['product_name'];
+        }
+        
+        // Validate: Stocked Products must have "Alkansya" in the name
+        if (isset($data['category_name']) && 
+            ($data['category_name'] === 'Stocked Products' || $data['category_name'] === 'stocked_products')) {
+            $productName = strtolower($data['product_name'] ?? $data['name'] ?? '');
+            if (!str_contains($productName, 'alkansya')) {
+                return response()->json([
+                    'error' => 'Stocked Products must have "Alkansya" in the product name.'
+                ], 422);
+            }
+        }
+        
+        // For Stocked Products (Alkansya), calculate stock from daily output records minus orders
+        // This ensures new Alkansya products have the same stock as existing ones
+        if (isset($data['category_name']) && 
+            ($data['category_name'] === 'Stocked Products' || $data['category_name'] === 'stocked_products')) {
+            // Try to get stock from an existing Alkansya product first (most accurate)
+            $existingAlkansya = Product::where('category_name', 'Stocked Products')
+                ->where(function($query) {
+                    $query->where('name', 'LIKE', '%Alkansya%')
+                          ->orWhere('product_name', 'LIKE', '%Alkansya%');
+                })
+                ->first();
+            
+            if ($existingAlkansya) {
+                // Use the stock from existing Alkansya product (already accounts for daily output and orders)
+                $data['stock'] = $existingAlkansya->stock ?? 0;
+            } else {
+                // If no existing Alkansya product, calculate from daily output minus orders
+                $totalDailyOutput = AlkansyaDailyOutput::sum('quantity_produced');
+                
+                // Get total quantity sold from orders for Alkansya products
+                $totalSold = OrderItem::whereHas('product', function($query) {
+                    $query->where('category_name', 'Stocked Products')
+                          ->where(function($q) {
+                              $q->where('name', 'LIKE', '%Alkansya%')
+                                ->orWhere('product_name', 'LIKE', '%Alkansya%');
+                          });
+                })->sum('quantity');
+                
+                $data['stock'] = max(0, $totalDailyOutput - $totalSold);
+            }
+        } elseif (!isset($data['stock'])) {
+            // For other products, set stock to 0 if not provided
+            $data['stock'] = 0;
         }
 
         DB::beginTransaction();
@@ -117,6 +168,33 @@ class ProductController extends Controller
         // Ensure product_name is set (handle both old and new column names)
         if (!isset($data['product_name']) && isset($data['name'])) {
             $data['product_name'] = $data['name'];
+        }
+        if (!isset($data['name']) && isset($data['product_name'])) {
+            $data['name'] = $data['product_name'];
+        }
+        
+        // Validate: Stocked Products must have "Alkansya" in the name
+        if (isset($data['category_name']) && 
+            ($data['category_name'] === 'Stocked Products' || $data['category_name'] === 'stocked_products')) {
+            $productName = strtolower($data['product_name'] ?? $data['name'] ?? $product->product_name ?? $product->name ?? '');
+            if (!str_contains($productName, 'alkansya')) {
+                return response()->json([
+                    'error' => 'Stocked Products must have "Alkansya" in the product name.'
+                ], 422);
+            }
+        }
+        
+        // For Stocked Products (Alkansya), don't allow manual stock updates
+        // Stock is managed through daily output records
+        $isStockedProduct = ($data['category_name'] ?? $product->category_name) === 'Stocked Products' || 
+                           ($data['category_name'] ?? $product->category_name) === 'stocked_products';
+        
+        if ($isStockedProduct) {
+            // Remove stock from update data - it's managed by daily output
+            unset($data['stock']);
+        } elseif (!isset($data['stock'])) {
+            // For other products, set stock to 0 if not provided
+            $data['stock'] = 0;
         }
 
         DB::beginTransaction();

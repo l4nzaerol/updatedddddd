@@ -49,7 +49,7 @@ class OrderController extends Controller
             return response()->json(['message' => 'No valid items selected for checkout'], 400);
         }
 
-        $totalPrice = 0;
+        $itemsSubtotal = 0;
         foreach ($cartItems as $item) {
             if (!$item->product) {
                 return response()->json(['message' => 'Product not found'], 400);
@@ -65,7 +65,7 @@ class OrderController extends Controller
                 return response()->json(['message' => 'Product not available for order: ' . $item->product->name], 400);
             }
             
-            $totalPrice += $item->product->price * $item->quantity;
+            $itemsSubtotal += $item->product->price * $item->quantity;
         }
 
         // Pre-check: ensure raw materials are sufficient based on BOM
@@ -100,12 +100,15 @@ class OrderController extends Controller
             'shipping_address' => 'nullable|string|max:500',
             'contact_phone' => 'nullable|string|max:64',
             'transaction_ref' => 'nullable|string|max:128',
+            'shipping_fee' => 'nullable|numeric|min:0',
         ]);
 
         $paymentMethod = $validated['payment_method'] ?? 'cod';
         $paymentStatus = 'cod_pending';
+        $shippingFee = $validated['shipping_fee'] ?? 0;
+        $totalPrice = $itemsSubtotal + $shippingFee;
 
-        return DB::transaction(function () use ($user, $cartItems, $totalPrice, $paymentMethod, $paymentStatus, $validated, $selectedItemIds) {
+        return DB::transaction(function () use ($user, $cartItems, $totalPrice, $shippingFee, $paymentMethod, $paymentStatus, $validated, $selectedItemIds) {
             // Generate unique tracking number
             $trackingNumber = $this->generateTrackingNumber();
             
@@ -114,6 +117,7 @@ class OrderController extends Controller
                 'user_id' => $user->id,
                 'tracking_number' => $trackingNumber,
                 'total_price' => $totalPrice,
+                'shipping_fee' => $shippingFee,
                 'status' => 'pending',
                 'checkout_date' => now(),
                 'payment_method' => $paymentMethod,
@@ -450,7 +454,10 @@ class OrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $orders = Order::with('user', 'items.product')->get();
+        // Get all orders sorted by newest first, with relationships
+        $orders = Order::with('user', 'items.product')
+            ->orderBy('created_at', 'desc')
+            ->get();
         
         // Return empty array if no orders exist
         if ($orders->isEmpty()) {
@@ -1426,6 +1433,115 @@ class OrderController extends Controller
 
             \Log::info("Deducted {$requiredQty} {$material->unit_of_measure} of {$material->material_name} (Remaining: {$material->fresh()->inventory->sum('current_stock')})");
         }
+    }
+
+    /**
+     * Customer confirms order receipt
+     */
+    public function confirmReceipt(Request $request, $id)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $order = Order::with('user')->find($id);
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        // Check if order belongs to the user
+        if ($order->user_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Check if order is ready for delivery
+        if ($order->status !== 'ready_for_delivery') {
+            return response()->json(['message' => 'Order is not ready for delivery'], 400);
+        }
+
+        $received = $request->input('received', false);
+
+        if ($received) {
+            // Customer confirmed receipt - mark as completed
+            $order->receipt_confirmed = true;
+            $order->receipt_confirmed_at = now();
+            $order->status = 'completed';
+            $order->save();
+
+            return response()->json([
+                'message' => 'Order receipt confirmed. Thank you!',
+                'order' => $order
+            ]);
+        } else {
+            // Customer said not received - mark for admin review
+            $order->receipt_confirmed = false;
+            $order->not_received_at = now();
+            $order->save();
+
+            return response()->json([
+                'message' => 'We have noted that you have not received the order. Our team will investigate and contact you soon.',
+                'order' => $order
+            ]);
+        }
+    }
+
+    /**
+     * Admin updates non-delivery reason
+     */
+    public function updateNotReceivedReason(Request $request, $id)
+    {
+        $user = Auth::user();
+        if (!$user || $user->role !== 'employee') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $order = Order::with(['user', 'items.product'])->find($id);
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        // Check if order was marked as not received
+        if ($order->receipt_confirmed !== false || !$order->not_received_at) {
+            return response()->json(['message' => 'Order is not marked as not received'], 400);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500'
+        ]);
+
+        $order->not_received_reason = $validated['reason'];
+        $order->save();
+
+        // Create notification for customer about the non-delivery reason
+        try {
+            $productNames = $order->items->pluck('product.name')->unique()->join(', ');
+            $notification = \App\Models\Notification::create([
+                'user_id' => $order->user_id,
+                'order_id' => $order->id,
+                'type' => 'order_update',
+                'title' => '⚠️ Order Delivery Update',
+                'message' => "Regarding your order #{$order->id} ({$productNames}): {$validated['reason']}. Our team is working to resolve this and will contact you soon.",
+            ]);
+            
+            \Log::info('Non-delivery reason notification created', [
+                'notification_id' => $notification->id,
+                'user_id' => $order->user_id,
+                'order_id' => $order->id,
+                'reason' => $validated['reason']
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create non-delivery notification', [
+                'error' => $e->getMessage(),
+                'order_id' => $order->id,
+                'user_id' => $order->user_id
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Non-delivery reason updated successfully. Customer has been notified.',
+            'order' => $order
+        ]);
     }
 
 }

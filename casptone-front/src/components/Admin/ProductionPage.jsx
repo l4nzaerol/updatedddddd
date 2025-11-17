@@ -811,7 +811,7 @@ export default function ProductionTrackingSystem() {
         <div className="col-12">
           <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
             <div className="card-body p-0">
-              <div className="d-flex overflow-auto" style={{ borderBottom: '2px solid #dee2e6' }}>
+              <div className="d-flex" style={{ borderBottom: '2px solid #dee2e6' }}>
                 <button 
                   className={`btn btn-lg ${activeTab === 'current' ? 'text-primary fw-bold' : 'text-dark'} border-0 py-3`}
                   onClick={() => setActiveTab('current')}
@@ -1332,7 +1332,8 @@ export default function ProductionTrackingSystem() {
                   p.overall_progress >= 100 && 
                   p.product_type !== 'alkansya' &&
                   p.order?.status !== 'ready_for_delivery' && 
-                  p.order?.status !== 'delivered'
+                  p.order?.status !== 'delivered' &&
+                  p.order?.status !== 'completed'
                 ).length === 0 && (
                   <div className="text-center py-5 text-muted">
                     <i className="fas fa-truck-loading fa-3x mb-3"></i>
@@ -1346,7 +1347,8 @@ export default function ProductionTrackingSystem() {
                   p.overall_progress >= 100 && 
                   p.product_type !== 'alkansya' &&
                   p.order?.status !== 'ready_for_delivery' && 
-                  p.order?.status !== 'delivered'
+                  p.order?.status !== 'delivered' &&
+                  p.order?.status !== 'completed'
                 ).map(prod => (
                     <div key={prod.id} className="card mb-3 border-start border-4" style={{ borderColor: '#f39c12' }}>
                       <div className="card-body p-3">
@@ -1374,23 +1376,33 @@ export default function ProductionTrackingSystem() {
                         </div>
 
                         <div className="mt-3 d-flex gap-2">
-                          {prod.order_id && (
+                          {prod.order_id && prod.order?.status !== 'completed' && (
                             <>
-                              <button
-                                className="btn btn-outline-warning btn-sm"
-                                onClick={() => markOrderReadyForDelivery(prod.order_id)}
-                                title="Mark Order as Ready for Delivery"
-                              >
-                                Mark Ready for Delivery
-                              </button>
-                              <button
-                                className="btn btn-outline-success btn-sm"
-                                onClick={() => markOrderDelivered(prod.order_id)}
-                                title="Mark Order as Delivered"
-                              >
-                                Mark Delivered
-                              </button>
+                              {prod.order?.status !== 'ready_for_delivery' && (
+                                <button
+                                  className="btn btn-outline-warning btn-sm"
+                                  onClick={() => markOrderReadyForDelivery(prod.order_id)}
+                                  title="Mark Order as Ready for Delivery"
+                                >
+                                  Mark Ready for Delivery
+                                </button>
+                              )}
+                              {prod.order?.status !== 'delivered' && (
+                                <button
+                                  className="btn btn-outline-success btn-sm"
+                                  onClick={() => markOrderDelivered(prod.order_id)}
+                                  title="Mark Order as Delivered"
+                                >
+                                  Mark Delivered
+                                </button>
+                              )}
                             </>
+                          )}
+                          {prod.order?.status === 'completed' && (
+                            <span className="badge bg-success">
+                              <i className="fas fa-check-circle me-1"></i>
+                              Order Completed
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1416,7 +1428,8 @@ export default function ProductionTrackingSystem() {
                   <span className="badge bg-light text-dark ms-2">
                     {filtered.filter(p => 
                       p.status === 'Completed' && 
-                      p.product_type !== 'alkansya'
+                      p.product_type !== 'alkansya' &&
+                      (p.order?.status === 'completed' || !p.order_id)
                     ).length}
                   </span>
                 </h5>
@@ -1429,7 +1442,8 @@ export default function ProductionTrackingSystem() {
               <div className="timeline-list">
                 {filtered.filter(p => 
                   p.status === 'Completed' && 
-                  p.product_type !== 'alkansya'
+                  p.product_type !== 'alkansya' &&
+                  (p.order?.status === 'completed' || !p.order_id)
                 ).length === 0 && (
                   <div className="text-center py-5 text-muted">
                     <i className="fas fa-check-circle fa-3x mb-3"></i>
@@ -1495,7 +1509,7 @@ export default function ProductionTrackingSystem() {
                             )}
                           </div>
                           <div className="d-flex flex-column gap-2">
-                            {prod.order_id && prod.order?.status !== 'delivered' && (
+                            {prod.order_id && prod.order?.status !== 'delivered' && prod.order?.status !== 'completed' && (
                               <>
                                 {prod.order?.status !== 'ready_for_delivery' && (
                                   <button
@@ -1516,6 +1530,12 @@ export default function ProductionTrackingSystem() {
                                   Mark Delivered
                                 </button>
                               </>
+                            )}
+                            {prod.order?.status === 'completed' && (
+                              <span className="badge bg-success">
+                                <i className="fas fa-check-circle me-1"></i>
+                                Order Completed
+                              </span>
                             )}
                             {prod.order?.status === 'delivered' && (
                               <span className="badge bg-success">
@@ -1805,48 +1825,6 @@ export default function ProductionTrackingSystem() {
             </div>
           ) : (
             <>
-          <div className="card shadow-sm mb-4" style={{ borderRadius: '12px' }}>
-            <div className="card-body text-white" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px' }}>
-              <div className="row">
-                <div className="col-md-8">
-                  <h3 className="mb-3">
-                    <i className="fas fa-chart-line me-2"></i>
-                    Production Summary Dashboard
-                  </h3>
-                  <p className="lead mb-4">
-                    Comprehensive real-time monitoring and optimization of manufacturing processes
-                  </p>
-                  <div className="row">
-                    <div className="col-md-6">
-                      <h6 className="text-white-50 mb-2">Key Features:</h6>
-                      <ul className="list-unstyled">
-                        <li><i className="fas fa-check-circle me-2"></i> Stage completion tracking</li>
-                        <li><i className="fas fa-check-circle me-2"></i> Product manufacturing monitoring</li>
-                        <li><i className="fas fa-check-circle me-2"></i> Resource allocation optimization</li>
-                      </ul>
-                    </div>
-                    <div className="col-md-6">
-                      <h6 className="text-white-50 mb-2">Objectives:</h6>
-                      <ul className="list-unstyled">
-                        <li><i className="fas fa-check-circle me-2"></i> Improve production efficiency</li>
-                        <li><i className="fas fa-check-circle me-2"></i> Optimize resource allocation</li>
-                        <li><i className="fas fa-check-circle me-2"></i> Monitor real-time progress</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-4 text-center">
-                  <div className="bg-white bg-opacity-20 p-4 rounded">
-                    <h1 className="display-4 mb-2">
-                      {productions.filter(p => p.status === 'In Progress').length}
-                    </h1>
-                    <p className="mb-0 text-white">Active Productions</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Stage Completion Summary */}
           <div className="card shadow-sm mb-4">
             <div className="card-header bg-info text-white">

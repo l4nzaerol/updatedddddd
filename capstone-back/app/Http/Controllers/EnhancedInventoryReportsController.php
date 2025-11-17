@@ -19,6 +19,7 @@ use App\Models\InventoryUsage;
 use App\Http\Controllers\NormalizedInventoryController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class EnhancedInventoryReportsController extends Controller
 {
@@ -2097,6 +2098,7 @@ class EnhancedInventoryReportsController extends Controller
 
     /**
      * Get Alkansya material usage forecast based on daily output
+     * Uses predictive analytics to forecast material usage based on historical data
      */
     public function getAlkansyaMaterialForecast(Request $request)
     {
@@ -2104,69 +2106,222 @@ class EnhancedInventoryReportsController extends Controller
             $forecastDays = $request->get('forecast_days', 30);
             $historicalDays = $request->get('historical_days', 30);
             
-            // Get Alkansya product
-            $alkansyaProduct = Product::where('name', 'Alkansya')->first();
+            // Get Alkansya product - try both name variations
+            $alkansyaProduct = Product::where(function($query) {
+                $query->where('name', 'Alkansya')
+                      ->orWhere('product_name', 'LIKE', '%Alkansya%');
+            })->first();
+            
             if (!$alkansyaProduct) {
                 return response()->json(['error' => 'Alkansya product not found'], 404);
             }
+            
+            // Sync current_stock for all materials to ensure accuracy
+            // This ensures the current_stock field matches the sum of inventory records
+            Material::syncAllCurrentStock();
 
-            // Get BOM materials for Alkansya
-            $bomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
-                ->with('inventoryItem')
+            // Try to get BOM materials using BOM model first (more accurate)
+            $bomMaterials = BOM::where('product_id', $alkansyaProduct->id)
+                ->with(['material' => function($query) {
+                    // Eager load inventory to ensure current_stock is accurate
+                    $query->with('inventory');
+                }])
                 ->get();
 
-            // Get historical daily output data
-            $historicalOutput = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays($historicalDays))
-                ->orderBy('date')
-                ->get();
-
-            // Calculate average daily output
-            $totalOutput = $historicalOutput->sum('quantity_produced');
-            $avgDailyOutput = $totalOutput / max(1, $historicalDays);
-
-            // Generate forecast for each material
-            $materialForecasts = [];
-            foreach ($bomMaterials as $bomMaterial) {
-                $inventoryItem = $bomMaterial->inventoryItem;
-                $qtyPerUnit = $bomMaterial->qty_per_unit;
+            // Fallback to ProductMaterial if BOM is empty
+            if ($bomMaterials->isEmpty()) {
+                $productMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
+                    ->with('inventoryItem')
+                    ->get();
                 
-                // Calculate daily material usage based on average output
-                $dailyMaterialUsage = $avgDailyOutput * $qtyPerUnit;
+                // Convert ProductMaterial to BOM-like structure
+                $bomMaterialsArray = [];
+                foreach ($productMaterials as $pm) {
+                    if ($pm->inventoryItem) {
+                        // Try to find corresponding Material
+                        $material = Material::where('material_code', $pm->inventoryItem->sku)
+                            ->orWhere('material_name', 'LIKE', '%' . $pm->inventoryItem->name . '%')
+                            ->first();
+                        
+                        if ($material) {
+                            $bomMaterialsArray[] = (object)[
+                                'material' => $material,
+                                'quantity_per_product' => $pm->qty_per_unit
+                            ];
+                        }
+                    }
+                }
+                $bomMaterials = collect($bomMaterialsArray);
+            }
+
+            if ($bomMaterials->isEmpty()) {
+                return response()->json(['error' => 'No BOM materials found for Alkansya'], 404);
+            }
+
+            // Get historical daily output data (from seeder and manual entries)
+            $historicalOutput = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays($historicalDays))
+                ->orderBy('date', 'asc')
+                ->get();
+
+            // Get historical material consumption from transactions (more accurate)
+            $historicalTransactions = InventoryTransaction::where('transaction_type', 'ALKANSYA_CONSUMPTION')
+                ->where('timestamp', '>=', Carbon::now()->subDays($historicalDays)->startOfDay())
+                ->with('material')
+                ->get();
+
+            // Calculate average daily output from actual data
+            $actualDaysWithOutput = $historicalOutput->count();
+            $totalOutput = $historicalOutput->sum('quantity_produced');
+            $avgDailyOutput = $actualDaysWithOutput > 0 ? $totalOutput / $actualDaysWithOutput : 0;
+
+            // If no historical output, use a default estimate
+            if ($avgDailyOutput == 0) {
+                $avgDailyOutput = 15; // Default estimate
+            }
+
+            // Calculate material usage patterns from historical transactions
+            $materialUsageByDate = [];
+            foreach ($historicalTransactions as $transaction) {
+                $date = Carbon::parse($transaction->timestamp)->format('Y-m-d');
+                $materialId = $transaction->material_id;
+                
+                if (!isset($materialUsageByDate[$date])) {
+                    $materialUsageByDate[$date] = [];
+                }
+                
+                if (!isset($materialUsageByDate[$date][$materialId])) {
+                    $materialUsageByDate[$date][$materialId] = 0;
+                }
+                
+                // Transaction quantity is negative, so we use absolute value
+                $materialUsageByDate[$date][$materialId] += abs($transaction->quantity);
+            }
+
+            // Generate forecast for each material with predictive analytics
+            $materialForecasts = [];
+            $totalDailyMaterialUsage = 0; // Track total for daily forecast
+            
+            foreach ($bomMaterials as $bomMaterial) {
+                $material = $bomMaterial->material;
+                if (!$material) continue;
+                
+                $qtyPerUnit = $bomMaterial->quantity_per_product ?? $bomMaterial->qty_per_unit ?? 0;
+                
+                // Calculate historical daily material usage from transactions
+                $historicalMaterialUsage = [];
+                foreach ($materialUsageByDate as $date => $materials) {
+                    if (isset($materials[$material->material_id])) {
+                        $historicalMaterialUsage[] = $materials[$material->material_id];
+                    }
+                }
+                
+                // Calculate expected daily usage from BOM (baseline)
+                $expectedDailyUsage = $avgDailyOutput * $qtyPerUnit;
+                
+                // If we have historical transaction data, use it for more accurate prediction
+                // But validate it against expected usage to avoid inflated values
+                if (!empty($historicalMaterialUsage)) {
+                    $avgDailyMaterialUsage = array_sum($historicalMaterialUsage) / count($historicalMaterialUsage);
+                    
+                    // Calculate moving averages for trend analysis
+                    $movingAvg7 = count($historicalMaterialUsage) >= 7 
+                        ? array_sum(array_slice($historicalMaterialUsage, -7)) / 7 
+                        : $avgDailyMaterialUsage;
+                    $movingAvg14 = count($historicalMaterialUsage) >= 14 
+                        ? array_sum(array_slice($historicalMaterialUsage, -14)) / 14 
+                        : $avgDailyMaterialUsage;
+                    
+                    // Use weighted average (recent data has more weight)
+                    $calculatedFromTransactions = ($movingAvg7 * 0.6) + ($movingAvg14 * 0.4);
+                    
+                    // Validate: If calculated usage is more than 2x expected, use expected instead
+                    // This prevents inflated values from duplicate transactions or data errors
+                    if ($calculatedFromTransactions > 0 && $expectedDailyUsage > 0) {
+                        $ratio = $calculatedFromTransactions / $expectedDailyUsage;
+                        if ($ratio > 2.0 || $ratio < 0.5) {
+                            // Historical data seems incorrect, use BOM-based calculation
+                            $dailyMaterialUsage = $expectedDailyUsage;
+                        } else {
+                            // Historical data is reasonable, use it
+                            $dailyMaterialUsage = $calculatedFromTransactions;
+                        }
+                    } else {
+                        $dailyMaterialUsage = $expectedDailyUsage;
+                    }
+                } else {
+                    // Fallback: Calculate from BOM and average daily output
+                    $dailyMaterialUsage = $expectedDailyUsage;
+                }
+                
                 $forecastedUsage = $dailyMaterialUsage * $forecastDays;
                 
-                // Get current stock
-                $currentStock = $inventoryItem->quantity_on_hand;
+                // Get current stock from Material model
+                // First try direct field, then sum from inventory records (more accurate)
+                $currentStock = $material->current_stock ?? 0;
+                $inventorySum = $material->inventory->sum('current_stock') ?? 0;
+                // Use inventory sum if it's different (more accurate) or if direct field is 0
+                if ($inventorySum > 0 && abs($currentStock - $inventorySum) > 0.01) {
+                    $currentStock = $inventorySum;
+                }
                 $projectedStock = $currentStock - $forecastedUsage;
                 
                 // Calculate days until stockout
                 $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
                 
+                // Determine status
+                $needsReorder = $projectedStock <= ($material->reorder_level ?? 0);
+                
                 $materialForecasts[] = [
-                    'material_id' => $inventoryItem->id,
-                    'material_name' => $inventoryItem->name,
-                    'sku' => $inventoryItem->sku,
+                    'material_id' => $material->material_id,
+                    'material_name' => $material->material_name,
+                    'material_code' => $material->material_code,
                     'qty_per_unit' => $qtyPerUnit,
-                    'current_stock' => $currentStock,
+                    'current_stock' => round($currentStock, 2),
                     'avg_daily_output' => round($avgDailyOutput, 2),
                     'daily_material_usage' => round($dailyMaterialUsage, 2),
                     'forecasted_usage' => round($forecastedUsage, 2),
                     'projected_stock' => round($projectedStock, 2),
                     'days_until_stockout' => $daysUntilStockout,
-                    'reorder_point' => $inventoryItem->reorder_point,
-                    'needs_reorder' => $projectedStock <= $inventoryItem->reorder_point,
-                    'unit' => $inventoryItem->unit,
-                    'unit_cost' => $inventoryItem->unit_cost
+                    'reorder_point' => $material->reorder_level ?? 0,
+                    'needs_reorder' => $needsReorder,
+                    'unit' => $material->unit_of_measure ?? 'pcs',
+                    'unit_cost' => $material->standard_cost ?? 0,
+                    'has_historical_data' => !empty($historicalMaterialUsage)
                 ];
+                
+                // Add to total daily material usage
+                $totalDailyMaterialUsage += $dailyMaterialUsage;
             }
 
-            // Generate daily forecast timeline
+            // Generate daily forecast timeline with predictive analytics
             $dailyForecast = [];
+            $predictedOutputTrend = $this->calculateOutputTrend($historicalOutput->pluck('quantity_produced')->toArray());
+            
             for ($i = 1; $i <= $forecastDays; $i++) {
                 $date = Carbon::now()->addDays($i)->format('Y-m-d');
+                
+                // Apply trend to predicted output (if trend exists)
+                $predictedOutput = $avgDailyOutput;
+                if ($predictedOutputTrend != 0 && $i > 1) {
+                    // Apply trend gradually
+                    $predictedOutput = $avgDailyOutput + ($predictedOutputTrend * ($i / $forecastDays));
+                }
+                
+                // Calculate total material usage for this day
+                // Sum of (predicted output * qty_per_unit) for each material
+                $totalMaterialUsageForDay = 0;
+                foreach ($bomMaterials as $bomMaterial) {
+                    $material = $bomMaterial->material;
+                    if (!$material) continue;
+                    
+                    $qtyPerUnit = $bomMaterial->quantity_per_product ?? $bomMaterial->qty_per_unit ?? 0;
+                    $totalMaterialUsageForDay += $predictedOutput * $qtyPerUnit;
+                }
+                
                 $dailyForecast[] = [
                     'date' => $date,
-                    'predicted_output' => round($avgDailyOutput, 2),
-                    'total_material_usage' => round($avgDailyOutput * $bomMaterials->sum('qty_per_unit'), 2)
+                    'predicted_output' => round($predictedOutput, 2),
+                    'total_material_usage' => round($totalMaterialUsageForDay, 2)
                 ];
             }
 
@@ -2176,19 +2331,59 @@ class EnhancedInventoryReportsController extends Controller
                 'historical_period' => $historicalDays,
                 'avg_daily_output' => round($avgDailyOutput, 2),
                 'total_historical_output' => $totalOutput,
+                'actual_days_with_output' => $actualDaysWithOutput,
                 'material_forecasts' => $materialForecasts,
                 'daily_forecast' => $dailyForecast,
                 'summary' => [
                     'materials_analyzed' => count($materialForecasts),
                     'materials_needing_reorder' => collect($materialForecasts)->where('needs_reorder', true)->count(),
-                    'avg_days_until_stockout' => collect($materialForecasts)->avg('days_until_stockout')
+                    'avg_days_until_stockout' => round(collect($materialForecasts)->avg('days_until_stockout'), 1),
+                    'total_daily_material_usage' => round($totalDailyMaterialUsage, 2),
+                    'materials_with_historical_data' => collect($materialForecasts)->where('has_historical_data', true)->count()
+                ],
+                'predictive_analytics' => [
+                    'method' => 'Moving Average with Trend Analysis',
+                    'data_source' => 'Historical Transactions + Daily Output Records',
+                    'accuracy_indicators' => [
+                        'historical_transactions_used' => $historicalTransactions->count(),
+                        'historical_output_records' => $historicalOutput->count(),
+                        'trend_detected' => $predictedOutputTrend != 0
+                    ]
                 ]
             ]);
 
         } catch (\Exception $e) {
             \Log::error('Error in Alkansya material forecast: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to generate Alkansya material forecast'], 500);
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Failed to generate Alkansya material forecast: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Calculate output trend using linear regression
+     */
+    private function calculateOutputTrend($outputData)
+    {
+        if (count($outputData) < 2) return 0;
+        
+        $n = count($outputData);
+        $sumX = 0;
+        $sumY = 0;
+        $sumXY = 0;
+        $sumX2 = 0;
+        
+        foreach ($outputData as $index => $value) {
+            $x = $index + 1;
+            $y = $value;
+            $sumX += $x;
+            $sumY += $y;
+            $sumXY += $x * $y;
+            $sumX2 += $x * $x;
+        }
+        
+        $slope = ($n * $sumXY - $sumX * $sumY) / ($n * $sumX2 - $sumX * $sumX);
+        
+        return $slope;
     }
 
     /**
@@ -2200,19 +2395,22 @@ class EnhancedInventoryReportsController extends Controller
             $forecastDays = $request->get('forecast_days', 30);
             $historicalDays = $request->get('historical_days', 30);
             
-            // Get made-to-order products
-            $madeToOrderProducts = Product::where('category_name', 'Made-to-Order')
-                ->with(['productMaterials.inventoryItem'])
-                ->get();
+            // Get made-to-order products (handle different category name formats)
+            $madeToOrderProducts = Product::where(function($query) {
+                $query->where('category_name', 'Made to Order')
+                      ->orWhere('category_name', 'Made-to-Order')
+                      ->orWhere('category_name', 'made_to_order');
+            })->get();
 
             if ($madeToOrderProducts->isEmpty()) {
                 return response()->json(['error' => 'No made-to-order products found'], 404);
             }
 
-            // Get historical orders for made-to-order products
+            // Get historical orders for made-to-order products (all statuses including completed)
             $startDate = Carbon::now()->subDays($historicalDays);
-            $historicalOrders = Order::where('created_at', '>=', $startDate)
-                ->whereHas('orderItems', function($query) use ($madeToOrderProducts) {
+            $historicalOrders = Order::whereIn('status', ['accepted', 'completed', 'delivered', 'processing', 'pending'])
+                ->where('created_at', '>=', $startDate)
+                ->whereHas('items', function($query) use ($madeToOrderProducts) {
                     $query->whereIn('product_id', $madeToOrderProducts->pluck('id'));
                 })
                 ->with(['items' => function($query) use ($madeToOrderProducts) {
@@ -2242,49 +2440,171 @@ class EnhancedInventoryReportsController extends Controller
                 ];
             }
 
-            // Generate material forecasts for each made-to-order product
+            // Generate material forecasts for each made-to-order product using BOM
             $materialForecasts = [];
             foreach ($madeToOrderProducts as $product) {
-                $stats = $productOrderStats[$product->id];
+                $stats = $productOrderStats[$product->id] ?? [
+                    'avg_daily_quantity' => 0,
+                    'total_orders' => 0,
+                    'total_quantity' => 0
+                ];
                 $avgDailyQuantity = $stats['avg_daily_quantity'];
                 
-                foreach ($product->productMaterials as $productMaterial) {
-                    $inventoryItem = $productMaterial->inventoryItem;
-                    $qtyPerUnit = $productMaterial->qty_per_unit;
+                // Get BOM materials for this product
+                $bomMaterials = BOM::where('product_id', $product->id)
+                    ->with('material')
+                    ->get();
+                
+                if ($bomMaterials->isEmpty()) {
+                    continue; // Skip if no BOM
+                }
+                
+                foreach ($bomMaterials as $bomItem) {
+                    $material = $bomItem->material;
+                    if (!$material) continue;
                     
+                    $qtyPerUnit = $bomItem->quantity_per_product ?? $bomItem->qty_per_unit ?? 0;
                     $dailyMaterialUsage = $avgDailyQuantity * $qtyPerUnit;
                     $forecastedUsage = $dailyMaterialUsage * $forecastDays;
                     
-                    $currentStock = $inventoryItem->quantity_on_hand;
+                    // Get current stock from Material model
+                    $currentStock = $material->current_stock ?? $material->inventory->sum('current_stock') ?? 0;
                     $projectedStock = $currentStock - $forecastedUsage;
                     $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
                     
                     $materialForecasts[] = [
-                        'product_name' => $product->name,
-                        'material_id' => $inventoryItem->id,
-                        'material_name' => $inventoryItem->name,
-                        'sku' => $inventoryItem->sku,
+                        'product_name' => $product->name ?? $product->product_name,
+                        'material_id' => $material->material_id,
+                        'material_name' => $material->material_name,
+                        'material_code' => $material->material_code,
                         'qty_per_unit' => $qtyPerUnit,
-                        'current_stock' => $currentStock,
+                        'current_stock' => round($currentStock, 2),
                         'avg_daily_quantity' => $avgDailyQuantity,
                         'daily_material_usage' => round($dailyMaterialUsage, 2),
                         'forecasted_usage' => round($forecastedUsage, 2),
                         'projected_stock' => round($projectedStock, 2),
                         'days_until_stockout' => $daysUntilStockout,
-                        'reorder_point' => $inventoryItem->reorder_point,
-                        'needs_reorder' => $projectedStock <= $inventoryItem->reorder_point,
-                        'unit' => $inventoryItem->unit,
-                        'unit_cost' => $inventoryItem->unit_cost
+                        'reorder_point' => $material->reorder_level ?? 10,
+                        'needs_reorder' => $projectedStock <= ($material->reorder_level ?? 10),
+                        'unit' => $material->unit_of_measure ?? 'pcs',
+                        'unit_cost' => $material->standard_cost ?? 0
                     ];
                 }
             }
+
+            // Generate daily forecast timeline for each product
+            $dailyForecast = [];
+            $productDailyOutputs = [];
+            
+            foreach ($madeToOrderProducts as $product) {
+                $stats = $productOrderStats[$product->id] ?? [
+                    'avg_daily_quantity' => 0,
+                    'total_orders' => 0,
+                    'total_quantity' => 0
+                ];
+                $avgDailyOutput = $stats['avg_daily_quantity'];
+                
+                // Calculate trend from historical orders (if available)
+                $productOrders = $historicalOrders->flatMap(function($order) use ($product) {
+                    return $order->items->where('product_id', $product->id);
+                });
+                
+                // Group orders by date to calculate trend
+                $ordersByDate = [];
+                foreach ($historicalOrders as $order) {
+                    $orderDate = Carbon::parse($order->created_at)->format('Y-m-d');
+                    $productItems = $order->items->where('product_id', $product->id);
+                    if ($productItems->isNotEmpty()) {
+                        if (!isset($ordersByDate[$orderDate])) {
+                            $ordersByDate[$orderDate] = 0;
+                        }
+                        $ordersByDate[$orderDate] += $productItems->sum('quantity');
+                    }
+                }
+                
+                // Calculate trend using linear regression if we have enough data
+                $trend = 0;
+                if (count($ordersByDate) >= 7) {
+                    $dates = array_keys($ordersByDate);
+                    sort($dates);
+                    $x = [];
+                    $y = [];
+                    foreach ($dates as $idx => $date) {
+                        $x[] = $idx + 1;
+                        $y[] = $ordersByDate[$date];
+                    }
+                    $n = count($x);
+                    $sumX = array_sum($x);
+                    $sumY = array_sum($y);
+                    $sumXY = 0;
+                    $sumX2 = 0;
+                    for ($i = 0; $i < $n; $i++) {
+                        $sumXY += $x[$i] * $y[$i];
+                        $sumX2 += $x[$i] * $x[$i];
+                    }
+                    $denominator = ($n * $sumX2) - ($sumX * $sumX);
+                    if ($denominator != 0) {
+                        $trend = (($n * $sumXY) - ($sumX * $sumY)) / $denominator;
+                    }
+                }
+                
+                // Generate daily forecast for the forecast period
+                for ($i = 1; $i <= $forecastDays; $i++) {
+                    $date = Carbon::now()->addDays($i)->format('Y-m-d');
+                    $predictedOutput = max(0, $avgDailyOutput + ($trend * $i));
+                    
+                    if (!isset($dailyForecast[$date])) {
+                        $dailyForecast[$date] = [
+                            'date' => $date,
+                            'dining_table_output' => 0,
+                            'wooden_chair_output' => 0,
+                            'total_output' => 0,
+                            'total_material_usage' => 0
+                        ];
+                    }
+                    
+                    $productName = strtolower($product->name ?? $product->product_name ?? '');
+                    if (str_contains($productName, 'dining table')) {
+                        $dailyForecast[$date]['dining_table_output'] = round($predictedOutput, 2);
+                    } elseif (str_contains($productName, 'wooden chair') || str_contains($productName, 'chair')) {
+                        $dailyForecast[$date]['wooden_chair_output'] = round($predictedOutput, 2);
+                    }
+                    $dailyForecast[$date]['total_output'] += $predictedOutput;
+                }
+                
+                $productDailyOutputs[$product->id] = [
+                    'product_name' => $product->name ?? $product->product_name,
+                    'avg_daily_output' => round($avgDailyOutput, 2),
+                    'trend' => round($trend, 4)
+                ];
+            }
+            
+            // Calculate total material usage for each day
+            foreach ($dailyForecast as $date => &$forecast) {
+                $totalMaterialUsage = 0;
+                foreach ($materialForecasts as $material) {
+                    // Find materials for this day's predicted output
+                    $productName = strtolower($material['product_name'] ?? '');
+                    $dailyOutput = 0;
+                    if (str_contains($productName, 'dining table')) {
+                        $dailyOutput = $forecast['dining_table_output'];
+                    } elseif (str_contains($productName, 'wooden chair') || str_contains($productName, 'chair')) {
+                        $dailyOutput = $forecast['wooden_chair_output'];
+                    }
+                    $totalMaterialUsage += $material['daily_material_usage'] * ($dailyOutput / max(1, $material['avg_daily_quantity']));
+                }
+                $forecast['total_material_usage'] = round($totalMaterialUsage, 2);
+            }
+            $dailyForecast = array_values($dailyForecast);
 
             return response()->json([
                 'forecast_type' => 'made_to_order_materials',
                 'forecast_period' => $forecastDays,
                 'historical_period' => $historicalDays,
                 'product_stats' => $productOrderStats,
+                'product_daily_outputs' => $productDailyOutputs,
                 'material_forecasts' => $materialForecasts,
+                'daily_forecast' => $dailyForecast,
                 'summary' => [
                     'products_analyzed' => count($madeToOrderProducts),
                     'materials_analyzed' => count($materialForecasts),
@@ -2308,18 +2628,50 @@ class EnhancedInventoryReportsController extends Controller
             $forecastDays = $request->get('forecast_days', 30);
             $historicalDays = $request->get('historical_days', 30);
             
-            // Get all inventory items with their usage history
-            $inventoryItems = InventoryItem::with(['usages' => function($query) use ($historicalDays) {
-                $query->where('date', '>=', Carbon::now()->subDays($historicalDays));
-            }])->get();
-
+            // Get Alkansya material forecasts
+            $alkansyaRequest = new Request(['forecast_days' => $forecastDays, 'historical_days' => $historicalDays]);
+            $alkansyaResponse = $this->getAlkansyaMaterialForecast($alkansyaRequest);
+            $alkansyaData = json_decode($alkansyaResponse->getContent(), true);
+            $alkansyaMaterials = $alkansyaData['material_forecasts'] ?? [];
+            
+            // Get Made-to-Order material forecasts
+            $madeToOrderRequest = new Request(['forecast_days' => $forecastDays, 'historical_days' => $historicalDays]);
+            $madeToOrderResponse = $this->getMadeToOrderMaterialForecast($madeToOrderRequest);
+            $madeToOrderData = json_decode($madeToOrderResponse->getContent(), true);
+            $madeToOrderMaterials = $madeToOrderData['material_forecasts'] ?? [];
+            
+            // Combine materials from both sources
+            // Use Material model to get all materials and merge usage data
+            $materials = Material::with('inventory')->get();
             $materialForecasts = [];
-            foreach ($inventoryItems as $item) {
-                $totalUsage = $item->usages->sum('qty_used');
-                $avgDailyUsage = $totalUsage / max(1, $historicalDays);
+            
+            foreach ($materials as $material) {
+                // Find Alkansya usage for this material
+                $alkansyaUsage = 0;
+                $alkansyaForecast = collect($alkansyaMaterials)->first(function($m) use ($material) {
+                    return isset($m['material_id']) && $m['material_id'] == $material->material_id;
+                });
+                if ($alkansyaForecast) {
+                    $alkansyaUsage = $alkansyaForecast['daily_material_usage'] ?? 0;
+                }
+                
+                // Find Made-to-Order usage for this material (match by material name or code)
+                $madeToOrderUsage = 0;
+                $madeToOrderForecast = collect($madeToOrderMaterials)->first(function($m) use ($material) {
+                    return isset($m['material_name']) && 
+                           (stripos($m['material_name'], $material->material_name) !== false ||
+                            (isset($m['sku']) && $m['sku'] == $material->material_code));
+                });
+                if ($madeToOrderForecast) {
+                    $madeToOrderUsage = $madeToOrderForecast['daily_material_usage'] ?? 0;
+                }
+                
+                // Calculate combined daily usage
+                $avgDailyUsage = $alkansyaUsage + $madeToOrderUsage;
                 $forecastedUsage = $avgDailyUsage * $forecastDays;
                 
-                $currentStock = $item->quantity_on_hand;
+                // Get current stock
+                $currentStock = $material->current_stock ?? $material->inventory->sum('current_stock') ?? 0;
                 $projectedStock = $currentStock - $forecastedUsage;
                 $daysUntilStockout = $avgDailyUsage > 0 ? floor($currentStock / $avgDailyUsage) : 999;
                 
@@ -2332,22 +2684,24 @@ class EnhancedInventoryReportsController extends Controller
                 }
                 
                 $materialForecasts[] = [
-                    'material_id' => $item->id,
-                    'material_name' => $item->name,
-                    'sku' => $item->sku,
-                    'category' => $item->category,
-                    'current_stock' => $currentStock,
+                    'material_id' => $material->material_id,
+                    'material_name' => $material->material_name,
+                    'material_code' => $material->material_code,
+                    'category' => $material->category ?? 'raw',
+                    'current_stock' => round($currentStock, 2),
                     'avg_daily_usage' => round($avgDailyUsage, 2),
+                    'alkansya_usage' => round($alkansyaUsage, 2),
+                    'made_to_order_usage' => round($madeToOrderUsage, 2),
                     'forecasted_usage' => round($forecastedUsage, 2),
                     'projected_stock' => round($projectedStock, 2),
                     'days_until_stockout' => $daysUntilStockout,
-                    'reorder_point' => $item->reorder_point,
-                    'safety_stock' => $item->safety_stock,
-                    'needs_reorder' => $projectedStock <= $item->reorder_point,
+                    'reorder_point' => $material->reorder_level ?? 10,
+                    'safety_stock' => $material->critical_stock ?? 0,
+                    'needs_reorder' => $projectedStock <= ($material->reorder_level ?? 10),
                     'usage_category' => $usageCategory,
-                    'unit' => $item->unit,
-                    'unit_cost' => $item->unit_cost,
-                    'total_value' => $currentStock * $item->unit_cost
+                    'unit' => $material->unit_of_measure ?? 'pcs',
+                    'unit_cost' => $material->standard_cost ?? 0,
+                    'total_value' => round($currentStock * ($material->standard_cost ?? 0), 2)
                 ];
             }
 
@@ -2399,72 +2753,61 @@ class EnhancedInventoryReportsController extends Controller
             $forecastDays = $request->get('forecast_days', 30);
             $historicalDays = $request->get('historical_days', 30);
             
-            // Get all inventory items
-            $inventoryItems = InventoryItem::with(['usages' => function($query) use ($historicalDays) {
-                $query->where('date', '>=', Carbon::now()->subDays($historicalDays));
-            }])->get();
-
-            // Check if we have any consumption data
-            $hasConsumptionData = InventoryUsage::where('date', '>=', Carbon::now()->subDays($historicalDays))->exists();
+            // Sync all material current_stock before processing
+            Material::syncAllCurrentStock();
             
-            if (!$hasConsumptionData) {
-                return response()->json([
-                    'error' => 'No consumption data available',
-                    'message' => 'Please run the consumption data generator script to create test data for the replenishment system.',
-                    'instructions' => [
-                        '1. Run: php create_basic_consumption_data.php',
-                        '2. This will generate 90 days of consumption data based on Alkansya production',
-                        '3. Refresh the replenishment tab to see the enhanced analytics'
-                    ],
-                    'replenishment_items' => [],
-                    'schedule' => [
-                        'immediate' => [],
-                        'this_week' => [],
-                        'next_week' => [],
-                        'future' => []
-                    ],
-                    'summary' => [
-                        'total_materials' => 0,
-                        'critical_materials' => 0,
-                        'high_priority_materials' => 0,
-                        'medium_priority_materials' => 0,
-                        'materials_needing_reorder' => 0,
-                        'total_reorder_value' => 0,
-                        'alkansya_materials' => 0,
-                        'made_to_order_materials' => 0,
-                        'avg_lead_time' => 0
-                    ],
-                    'forecast_period' => $forecastDays,
-                    'historical_period' => $historicalDays,
-                    'alkansya_daily_output' => 0,
-                    'made_to_order_products' => 0
-                ]);
-            }
+            // Get all materials with their inventory records
+            $materials = Material::with(['inventory'])->get();
 
-            // Get Alkansya product and BOM materials
-            $alkansyaProduct = Product::where('name', 'Alkansya')->first();
+            // Check if we have Alkansya daily output or orders data (accepted, completed, or delivered)
+            $hasAlkansyaData = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays($historicalDays))->exists();
+            $hasOrderData = Order::whereIn('status', ['accepted', 'completed', 'delivered', 'processing'])
+                ->where('created_at', '>=', Carbon::now()->subDays($historicalDays))
+                ->exists();
+            $hasConsumptionData = $hasAlkansyaData || $hasOrderData;
+            
+            // Continue even if no consumption data - generate replenishment based on current stock and BOM
+            // This allows the system to work with just Alkansya or just Made-to-Order data
+
+            // Get Alkansya products (can have multiple variations)
+            $alkansyaProducts = Product::where(function($query) {
+                $query->where('name', 'LIKE', '%Alkansya%')
+                      ->orWhere('product_name', 'LIKE', '%Alkansya%');
+            })->get();
+
+            // Get Alkansya BOM materials using BOM model
             $alkansyaBomMaterials = [];
-            if ($alkansyaProduct) {
-                $alkansyaBomMaterials = ProductMaterial::where('product_id', $alkansyaProduct->id)
-                    ->with('inventoryItem')
-                    ->get();
+            if ($alkansyaProducts->isNotEmpty()) {
+                $alkansyaProductIds = $alkansyaProducts->pluck('id');
+                $alkansyaBomMaterials = BOM::whereIn('product_id', $alkansyaProductIds)
+                    ->with('material')
+                    ->get()
+                    ->groupBy('material_id')
+                    ->map(function($items) {
+                        // If multiple BOM entries for same material, use the first one (they should be the same)
+                        return $items->first();
+                    });
             }
 
-            // Get made-to-order products and their BOM materials
-            $madeToOrderProducts = Product::where('category_name', 'Made-to-Order')
-                ->with(['productMaterials.inventoryItem'])
-                ->get();
+            // Get made-to-order products and their BOM materials (handle different category name formats)
+            $madeToOrderProducts = Product::where(function($query) {
+                $query->where('category_name', 'Made to Order')
+                      ->orWhere('category_name', 'Made-to-Order')
+                      ->orWhere('category_name', 'made_to_order');
+            })->get();
 
             // Get historical Alkansya output
             $historicalOutput = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays($historicalDays))
                 ->orderBy('date')
                 ->get();
-            $avgDailyOutput = $historicalOutput->sum('quantity_produced') / max(1, $historicalDays);
+            $totalOutput = $historicalOutput->sum('quantity_produced');
+            $avgDailyOutput = $hasAlkansyaData ? ($totalOutput / max(1, $historicalDays)) : 0;
 
-            // Get historical orders for made-to-order products
+            // Get historical orders for made-to-order products (accepted, completed, delivered, or processing)
             $startDate = Carbon::now()->subDays($historicalDays);
-            $historicalOrders = Order::where('created_at', '>=', $startDate)
-                ->whereHas('orderItems', function($query) use ($madeToOrderProducts) {
+            $historicalOrders = Order::whereIn('status', ['accepted', 'completed', 'delivered', 'processing'])
+                ->where('created_at', '>=', $startDate)
+                ->whereHas('items', function($query) use ($madeToOrderProducts) {
                     $query->whereIn('product_id', $madeToOrderProducts->pluck('id'));
                 })
                 ->with(['items' => function($query) use ($madeToOrderProducts) {
@@ -2472,56 +2815,198 @@ class EnhancedInventoryReportsController extends Controller
                 }])
                 ->get();
 
-            // Calculate made-to-order daily consumption
+            // Calculate made-to-order daily consumption by material
             $madeToOrderDailyConsumption = [];
-            foreach ($madeToOrderProducts as $product) {
-                $productOrders = $historicalOrders->flatMap(function($order) use ($product) {
-                    return $order->items->where('product_id', $product->id);
-                });
-                $totalQuantity = $productOrders->sum('quantity');
-                $avgDailyQuantity = $totalQuantity / max(1, $historicalDays);
-                
-                foreach ($product->productMaterials as $productMaterial) {
-                    $inventoryItem = $productMaterial->inventoryItem;
-                    $dailyConsumption = $avgDailyQuantity * $productMaterial->qty_per_unit;
-                    
-                    if (!isset($madeToOrderDailyConsumption[$inventoryItem->id])) {
-                        $madeToOrderDailyConsumption[$inventoryItem->id] = 0;
+            if ($madeToOrderProducts->isNotEmpty() && $historicalOrders->isNotEmpty()) {
+                foreach ($madeToOrderProducts as $product) {
+                    // Get BOM for this product
+                    $productBom = BOM::where('product_id', $product->id)
+                        ->with('material')
+                        ->get();
+
+                    if ($productBom->isEmpty()) {
+                        continue; // Skip if no BOM
                     }
-                    $madeToOrderDailyConsumption[$inventoryItem->id] += $dailyConsumption;
+
+                    // Get orders for this product
+                    $productOrders = $historicalOrders->flatMap(function($order) use ($product) {
+                        return $order->items->where('product_id', $product->id);
+                    });
+                    $totalQuantity = $productOrders->sum('quantity');
+                    $avgDailyQuantity = $totalQuantity / max(1, $historicalDays);
+                    
+                    // Calculate consumption per material
+                    foreach ($productBom as $bomItem) {
+                        $material = $bomItem->material;
+                        if (!$material) continue;
+                        
+                        $materialId = $material->material_id;
+                        $dailyConsumption = $avgDailyQuantity * $bomItem->quantity_per_product;
+                        
+                        if (!isset($madeToOrderDailyConsumption[$materialId])) {
+                            $madeToOrderDailyConsumption[$materialId] = 0;
+                        }
+                        $madeToOrderDailyConsumption[$materialId] += $dailyConsumption;
+                    }
                 }
             }
 
-            // Calculate Alkansya daily consumption
+            // Calculate Alkansya daily consumption by material
             $alkansyaDailyConsumption = [];
-            foreach ($alkansyaBomMaterials as $bomMaterial) {
-                $inventoryItem = $bomMaterial->inventoryItem;
-                $dailyConsumption = $avgDailyOutput * $bomMaterial->qty_per_unit;
-                $alkansyaDailyConsumption[$inventoryItem->id] = $dailyConsumption;
+            if ($hasAlkansyaData && $alkansyaBomMaterials->isNotEmpty()) {
+                foreach ($alkansyaBomMaterials as $bomMaterial) {
+                    $material = $bomMaterial->material;
+                    if (!$material) continue;
+                    
+                    $materialId = $material->material_id;
+                    $dailyConsumption = $avgDailyOutput * $bomMaterial->quantity_per_product;
+                    $alkansyaDailyConsumption[$materialId] = $dailyConsumption;
+                }
             }
 
-            // Generate replenishment recommendations
+            // Get historical transaction data for predictive analytics
+            $startDate = Carbon::now()->subDays($historicalDays)->startOfDay();
+            $endDate = Carbon::now()->endOfDay();
+            
+            $historicalTransactions = InventoryTransaction::whereBetween('timestamp', [$startDate, $endDate])
+                ->whereIn('transaction_type', ['ALKANSYA_CONSUMPTION', 'ORDER_FULFILLMENT', 'PRODUCTION_USAGE'])
+                ->where('quantity', '<', 0) // Only consumption transactions
+                ->get()
+                ->groupBy('material_id');
+            
+            // Generate replenishment recommendations using Material model with predictive analytics
             $replenishmentItems = [];
-            foreach ($inventoryItems as $item) {
-                // Calculate total daily consumption from all sources
-                $historicalUsage = $item->usages->sum('qty_used');
-                $avgHistoricalUsage = $historicalUsage / max(1, $historicalDays);
+            foreach ($materials as $material) {
+                // Get current stock from inventory records
+                $currentStock = $material->inventory->sum('current_stock') ?? $material->current_stock ?? 0;
                 
-                $alkansyaUsage = $alkansyaDailyConsumption[$item->id] ?? 0;
-                $madeToOrderUsage = $madeToOrderDailyConsumption[$item->id] ?? 0;
+                // Get consumption from Alkansya and Made-to-Order (base prediction)
+                $alkansyaUsage = $alkansyaDailyConsumption[$material->material_id] ?? 0;
+                $madeToOrderUsage = $madeToOrderDailyConsumption[$material->material_id] ?? 0;
+                $basePredictedDailyUsage = max($alkansyaUsage + $madeToOrderUsage, 0);
                 
-                // Use the higher of historical usage or predicted usage
-                $predictedDailyUsage = max($avgHistoricalUsage, $alkansyaUsage + $madeToOrderUsage);
+                // PREDICTIVE ANALYTICS: Calculate historical usage patterns
+                $materialTransactions = $historicalTransactions->get($material->material_id, collect());
+                $historicalDailyUsage = 0;
+                $trend = 0;
+                $movingAverage7 = 0;
+                $movingAverage14 = 0;
+                $variance = 0;
                 
-                // Calculate forecasted consumption
+                if ($materialTransactions->isNotEmpty()) {
+                    // Group transactions by date and calculate daily usage
+                    $dailyUsageData = $materialTransactions->groupBy(function($transaction) {
+                        return Carbon::parse($transaction->timestamp)->format('Y-m-d');
+                    })->map(function($dayTransactions) {
+                        return abs($dayTransactions->sum('quantity')); // Sum of consumption for the day
+                    })->sortKeys()->values();
+                    
+                    if ($dailyUsageData->count() > 0) {
+                        // Calculate moving averages for better prediction
+                        $recentDays = $dailyUsageData->take(7);
+                        $movingAverage7 = $recentDays->count() > 0 ? $recentDays->avg() : 0;
+                        
+                        $recent14Days = $dailyUsageData->take(14);
+                        $movingAverage14 = $recent14Days->count() > 0 ? $recent14Days->avg() : 0;
+                        
+                        // Calculate overall average
+                        $historicalDailyUsage = $dailyUsageData->avg();
+                        
+                        // Calculate trend using linear regression if we have enough data
+                        if ($dailyUsageData->count() >= 7) {
+                            $x = [];
+                            $y = [];
+                            foreach ($dailyUsageData as $idx => $usage) {
+                                $x[] = $idx + 1;
+                                $y[] = $usage;
+                            }
+                            $n = count($x);
+                            $sumX = array_sum($x);
+                            $sumY = array_sum($y);
+                            $sumXY = 0;
+                            $sumX2 = 0;
+                            for ($i = 0; $i < $n; $i++) {
+                                $sumXY += $x[$i] * $y[$i];
+                                $sumX2 += $x[$i] * $x[$i];
+                            }
+                            $denominator = ($n * $sumX2) - ($sumX * $sumX);
+                            if ($denominator != 0) {
+                                $trend = (($n * $sumXY) - ($sumX * $sumY)) / $denominator;
+                            }
+                            
+                            // Calculate variance for safety stock
+                            $mean = $historicalDailyUsage;
+                            $varianceSum = 0;
+                            foreach ($dailyUsageData as $usage) {
+                                $varianceSum += pow($usage - $mean, 2);
+                            }
+                            $variance = $varianceSum / $n;
+                        }
+                    }
+                }
+                
+                // PREDICTIVE ANALYTICS: Combine predictions with weighted average
+                // Weight: 40% historical (if available), 30% moving average 7-day, 20% moving average 14-day, 10% base prediction
+                $predictedDailyUsage = 0;
+                if ($historicalDailyUsage > 0 || $movingAverage7 > 0 || $movingAverage14 > 0) {
+                    $weights = [];
+                    $values = [];
+                    
+                    if ($movingAverage7 > 0) {
+                        $weights[] = 0.35;
+                        $values[] = $movingAverage7;
+                    }
+                    if ($movingAverage14 > 0) {
+                        $weights[] = 0.25;
+                        $values[] = $movingAverage14;
+                    }
+                    if ($historicalDailyUsage > 0) {
+                        $weights[] = 0.30;
+                        $values[] = $historicalDailyUsage;
+                    }
+                    if ($basePredictedDailyUsage > 0) {
+                        $weights[] = 0.10;
+                        $values[] = $basePredictedDailyUsage;
+                    }
+                    
+                    // Normalize weights
+                    $totalWeight = array_sum($weights);
+                    if ($totalWeight > 0) {
+                        $weights = array_map(function($w) use ($totalWeight) {
+                            return $w / $totalWeight;
+                        }, $weights);
+                        
+                        // Calculate weighted average
+                        for ($i = 0; $i < count($values); $i++) {
+                            $predictedDailyUsage += $values[$i] * $weights[$i];
+                        }
+                    } else {
+                        $predictedDailyUsage = $basePredictedDailyUsage;
+                    }
+                    
+                    // Apply trend adjustment (if trend is significant)
+                    if (abs($trend) > 0.01) {
+                        $predictedDailyUsage = max(0, $predictedDailyUsage + ($trend * 0.5)); // Apply 50% of trend
+                    }
+                } else {
+                    // Fallback to base prediction if no historical data
+                    $predictedDailyUsage = $basePredictedDailyUsage;
+                }
+                
+                // Calculate forecasted consumption with confidence intervals
                 $forecastedConsumption = $predictedDailyUsage * $forecastDays;
+                $confidenceUpper = $forecastedConsumption * 1.15; // 15% upper bound for safety
+                $confidenceLower = $forecastedConsumption * 0.85; // 15% lower bound
                 
-                // Calculate current stock and projected stock
-                $currentStock = $item->quantity_on_hand;
+                // Calculate projected stock
                 $projectedStock = $currentStock - $forecastedConsumption;
+                $projectedStockUpper = $currentStock - $confidenceUpper; // Worst case
+                $projectedStockLower = $currentStock - $confidenceLower; // Best case
                 
-                // Calculate days until stockout
+                // Calculate days until stockout with predictive analytics
                 $daysUntilStockout = $predictedDailyUsage > 0 ? floor($currentStock / $predictedDailyUsage) : 999;
+                $daysUntilStockoutUpper = $confidenceUpper > 0 ? floor($currentStock / ($confidenceUpper / $forecastDays)) : 999; // Worst case
+                $daysUntilStockoutLower = $confidenceLower > 0 ? floor($currentStock / ($confidenceLower / $forecastDays)) : 999; // Best case
                 
                 // Determine urgency level
                 $urgency = 'low';
@@ -2533,64 +3018,140 @@ class EnhancedInventoryReportsController extends Controller
                     $urgency = 'medium';
                 }
                 
-                // Calculate suggested order quantity
-                $suggestedOrderQty = 0;
-                if ($projectedStock <= $item->reorder_point) {
-                    $suggestedOrderQty = max(
-                        $item->max_level - $projectedStock,
-                        $item->reorder_point - $projectedStock + ($predictedDailyUsage * 7) // Add 7 days buffer
-                    );
+                // PREDICTIVE ANALYTICS: Calculate optimal reorder point based on lead time and variability
+                $leadTime = $material->lead_time_days ?? 7;
+                $leadTimeVariability = $material->lead_time_variability ?? 2; // Days of variability
+                
+                // Calculate safety stock based on variance and lead time
+                $stdDev = sqrt($variance);
+                $safetyStock = 0;
+                if ($stdDev > 0 && $predictedDailyUsage > 0) {
+                    // Safety stock = Z-score * std_dev * sqrt(lead_time)
+                    // Using Z-score of 1.65 for 95% service level
+                    $zScore = 1.65;
+                    $safetyStock = $zScore * $stdDev * sqrt($leadTime + $leadTimeVariability);
+                } else {
+                    // Fallback: 20% of average daily usage * lead time
+                    $safetyStock = $predictedDailyUsage * $leadTime * 0.2;
                 }
                 
-                // Calculate lead time (simplified - could be enhanced with supplier data)
-                $leadTime = $this->calculateLeadTime($item, $urgency);
+                // Calculate reorder point using predictive analytics
+                // Reorder point = (Average daily usage * Lead time) + Safety stock
+                $reorderPoint = ($predictedDailyUsage * ($leadTime + $leadTimeVariability)) + $safetyStock;
                 
-                // Calculate reorder date
-                $reorderDate = $daysUntilStockout > $leadTime ? 
-                    Carbon::now()->addDays($daysUntilStockout - $leadTime) : 
-                    Carbon::now();
+                // Use material's configured reorder point if it's more conservative
+                if ($material->reorder_level && $material->reorder_level > $reorderPoint) {
+                    $reorderPoint = $material->reorder_level;
+                }
                 
-                // Determine consumption source breakdown
+                // Calculate max level (optimal order quantity)
+                // Max level = Reorder point + Economic Order Quantity (EOQ) or forecasted usage
+                $maxLevel = $material->max_level ?? ($reorderPoint + ($predictedDailyUsage * ($leadTime * 2)));
+                
+                // PREDICTIVE ANALYTICS: Calculate suggested order quantity
+                $suggestedOrderQty = 0;
+                if ($projectedStock <= $reorderPoint || $daysUntilStockout <= ($leadTime + $leadTimeVariability)) {
+                    // Calculate order quantity to bring stock to max level with buffer
+                    $targetStock = $maxLevel;
+                    $bufferDays = 7; // Additional buffer days
+                    $bufferStock = $predictedDailyUsage * $bufferDays;
+                    
+                    $suggestedOrderQty = max(
+                        $targetStock - $projectedStock + $bufferStock,
+                        ($reorderPoint - $projectedStock) + ($predictedDailyUsage * ($leadTime + $leadTimeVariability + $bufferDays))
+                    );
+                    
+                    // Ensure minimum order quantity
+                    $minOrderQty = $predictedDailyUsage * ($leadTime + $leadTimeVariability);
+                    $suggestedOrderQty = max($suggestedOrderQty, $minOrderQty);
+                }
+                
+                // Adjust lead time based on urgency (for expedited orders)
+                if ($urgency === 'critical') {
+                    $leadTime = max(1, $leadTime - 3);
+                } elseif ($urgency === 'high') {
+                    $leadTime = max(1, $leadTime - 2);
+                }
+                
+                // PREDICTIVE ANALYTICS: Calculate optimal reorder date
+                // Reorder when: Current stock - (Daily usage * Days until reorder) <= Reorder point
+                $daysUntilReorder = 0;
+                if ($predictedDailyUsage > 0) {
+                    $daysUntilReorder = ($currentStock - $reorderPoint) / $predictedDailyUsage;
+                }
+                
+                // Reorder date = Today + Days until reorder (accounting for lead time)
+                $reorderDate = Carbon::now();
+                if ($daysUntilReorder > 0 && $daysUntilReorder > $leadTime) {
+                    $reorderDate = Carbon::now()->addDays(ceil($daysUntilReorder - $leadTime));
+                } elseif ($currentStock <= $reorderPoint) {
+                    $reorderDate = Carbon::now(); // Reorder immediately
+                }
+                
+                // Determine consumption source breakdown with predictive analytics metadata
                 $consumptionBreakdown = [
-                    'historical' => round($avgHistoricalUsage, 2),
                     'alkansya' => round($alkansyaUsage, 2),
                     'made_to_order' => round($madeToOrderUsage, 2),
-                    'predicted' => round($predictedDailyUsage, 2)
+                    'predicted' => round($predictedDailyUsage, 2),
+                    'historical_avg' => round($historicalDailyUsage, 2),
+                    'moving_avg_7d' => round($movingAverage7, 2),
+                    'moving_avg_14d' => round($movingAverage14, 2),
+                    'trend' => round($trend, 4),
+                    'variance' => round($variance, 2),
+                    'std_dev' => round(sqrt($variance), 2)
+                ];
+                
+                // Predictive analytics metadata
+                $predictiveAnalytics = [
+                    'method' => $historicalDailyUsage > 0 ? 'weighted_average_with_trend' : 'base_prediction',
+                    'data_points' => $materialTransactions->count(),
+                    'confidence_upper' => round($confidenceUpper, 2),
+                    'confidence_lower' => round($confidenceLower, 2),
+                    'has_historical_data' => $materialTransactions->isNotEmpty(),
+                    'trend_direction' => $trend > 0.01 ? 'increasing' : ($trend < -0.01 ? 'decreasing' : 'stable')
                 ];
                 
                 $replenishmentItems[] = [
-                    'material_id' => $item->id,
-                    'material_name' => $item->name,
-                    'sku' => $item->sku,
-                    'category' => $item->category,
-                    'current_stock' => $currentStock,
-                    'reorder_point' => $item->reorder_point,
-                    'safety_stock' => $item->safety_stock,
-                    'max_level' => $item->max_level,
-                    'unit' => $item->unit,
-                    'unit_cost' => $item->unit_cost,
-                    'total_value' => $currentStock * $item->unit_cost,
+                    'material_id' => $material->material_id,
+                    'material_name' => $material->material_name,
+                    'material_code' => $material->material_code,
+                    'category' => $material->category ?? 'raw',
+                    'current_stock' => round($currentStock, 2),
+                    'reorder_point' => round($reorderPoint, 2),
+                    'safety_stock' => round($safetyStock, 2),
+                    'max_level' => round($maxLevel, 2),
+                    'unit' => $material->unit_of_measure ?? 'pcs',
+                    'unit_cost' => $material->standard_cost ?? 0,
+                    'total_value' => round($currentStock * ($material->standard_cost ?? 0), 2),
                     'predicted_daily_usage' => round($predictedDailyUsage, 2),
                     'forecasted_consumption' => round($forecastedConsumption, 2),
                     'projected_stock' => round($projectedStock, 2),
+                    'projected_stock_upper' => round($projectedStockUpper, 2),
+                    'projected_stock_lower' => round($projectedStockLower, 2),
                     'days_until_stockout' => $daysUntilStockout,
+                    'days_until_stockout_upper' => $daysUntilStockoutUpper,
+                    'days_until_stockout_lower' => $daysUntilStockoutLower,
+                    'days_until_reorder' => round($daysUntilReorder, 1),
+                    'predictive_analytics' => $predictiveAnalytics,
                     'urgency' => $urgency,
-                    'suggested_order_qty' => round($suggestedOrderQty, 2),
+                    'priority' => $urgency === 'critical' ? 'critical' : ($urgency === 'high' ? 'high' : 'normal'),
+                    'recommended_quantity' => round($suggestedOrderQty, 2),
                     'lead_time_days' => $leadTime,
                     'reorder_date' => $reorderDate->format('Y-m-d'),
                     'consumption_breakdown' => $consumptionBreakdown,
-                    'needs_reorder' => $projectedStock <= $item->reorder_point,
+                    'needs_reorder' => $projectedStock <= $reorderPoint,
                     'is_critical' => $daysUntilStockout <= 7,
-                    'is_alkansya_material' => in_array($item->id, array_keys($alkansyaDailyConsumption)),
-                    'is_made_to_order_material' => in_array($item->id, array_keys($madeToOrderDailyConsumption))
+                    'is_alkansya_material' => isset($alkansyaDailyConsumption[$material->material_id]),
+                    'is_made_to_order_material' => isset($madeToOrderDailyConsumption[$material->material_id])
                 ];
             }
 
             // Sort by urgency and days until stockout
-            $replenishmentItems = collect($replenishmentItems)->sortBy([
+            $replenishmentItemsCollection = collect($replenishmentItems)->sortBy([
                 ['urgency', 'asc'],
                 ['days_until_stockout', 'asc']
             ])->values();
+            $replenishmentItems = $replenishmentItemsCollection->toArray();
 
             // Generate summary statistics
             $summary = [
@@ -2600,7 +3161,7 @@ class EnhancedInventoryReportsController extends Controller
                 'medium_priority_materials' => collect($replenishmentItems)->where('urgency', 'medium')->count(),
                 'materials_needing_reorder' => collect($replenishmentItems)->where('needs_reorder', true)->count(),
                 'total_reorder_value' => collect($replenishmentItems)->where('needs_reorder', true)->sum(function($item) {
-                    return $item['suggested_order_qty'] * $item['unit_cost'];
+                    return ($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0);
                 }),
                 'alkansya_materials' => collect($replenishmentItems)->where('is_alkansya_material', true)->count(),
                 'made_to_order_materials' => collect($replenishmentItems)->where('is_made_to_order_material', true)->count(),
@@ -2609,16 +3170,62 @@ class EnhancedInventoryReportsController extends Controller
 
             // Generate replenishment schedule by urgency
             $schedule = [
-                'immediate' => collect($replenishmentItems)->where('urgency', 'critical')->take(10),
-                'this_week' => collect($replenishmentItems)->where('urgency', 'high')->take(15),
-                'next_week' => collect($replenishmentItems)->where('urgency', 'medium')->take(20),
-                'future' => collect($replenishmentItems)->where('urgency', 'low')->take(25)
+                'immediate' => $replenishmentItemsCollection->where('urgency', 'critical')->take(10)->values()->toArray(),
+                'this_week' => $replenishmentItemsCollection->where('urgency', 'high')->take(15)->values()->toArray(),
+                'next_week' => $replenishmentItemsCollection->where('urgency', 'medium')->take(20)->values()->toArray(),
+                'future' => $replenishmentItemsCollection->where('urgency', 'low')->take(25)->values()->toArray()
+            ];
+
+            // Separate Alkansya and Made-to-Order replenishment items
+            $alkansyaItems = $replenishmentItemsCollection->where('is_alkansya_material', true)->values();
+            $madeToOrderItems = $replenishmentItemsCollection->where('is_made_to_order_material', true)->values();
+
+            // Calculate Alkansya replenishment summary
+            $alkansyaReplenishment = [
+                'materials_needing_reorder' => $alkansyaItems->where('needs_reorder', true)->count(),
+                'critical_materials' => $alkansyaItems->where('is_critical', true)->count(),
+                'total_reorder_value' => $alkansyaItems->where('needs_reorder', true)->sum(function($item) {
+                    return ($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0);
+                }),
+                'avg_lead_time' => $alkansyaItems->avg('lead_time_days') ?? 0,
+                'schedule' => $alkansyaItems->map(function($item) {
+                    return [
+                        'material_name' => $item['material_name'],
+                        'current_stock' => $item['current_stock'],
+                        'reorder_point' => $item['reorder_point'],
+                        'recommended_quantity' => $item['recommended_quantity'],
+                        'priority' => $item['priority'],
+                        'needs_reorder' => $item['needs_reorder']
+                    ];
+                })->toArray()
+            ];
+
+            // Calculate Made-to-Order replenishment summary
+            $madeToOrderReplenishment = [
+                'materials_needing_reorder' => $madeToOrderItems->where('needs_reorder', true)->count(),
+                'critical_materials' => $madeToOrderItems->where('is_critical', true)->count(),
+                'total_reorder_value' => $madeToOrderItems->where('needs_reorder', true)->sum(function($item) {
+                    return ($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0);
+                }),
+                'avg_lead_time' => $madeToOrderItems->avg('lead_time_days') ?? 0,
+                'schedule' => $madeToOrderItems->map(function($item) {
+                    return [
+                        'material_name' => $item['material_name'],
+                        'current_stock' => $item['current_stock'],
+                        'reorder_point' => $item['reorder_point'],
+                        'recommended_quantity' => $item['recommended_quantity'],
+                        'priority' => $item['priority'],
+                        'needs_reorder' => $item['needs_reorder']
+                    ];
+                })->toArray()
             ];
 
             return response()->json([
-                'replenishment_items' => $replenishmentItems,
+                'replenishment_items' => is_array($replenishmentItems) ? $replenishmentItems : $replenishmentItemsCollection->toArray(),
                 'schedule' => $schedule,
                 'summary' => $summary,
+                'alkansya_replenishment' => $alkansyaReplenishment,
+                'made_to_order_replenishment' => $madeToOrderReplenishment,
                 'forecast_period' => $forecastDays,
                 'historical_period' => $historicalDays,
                 'alkansya_daily_output' => round($avgDailyOutput, 2),
@@ -2627,7 +3234,43 @@ class EnhancedInventoryReportsController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Error in enhanced replenishment schedule: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to generate enhanced replenishment schedule'], 500);
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'error' => 'Failed to generate enhanced replenishment schedule',
+                'message' => $e->getMessage(),
+                'replenishment_items' => [],
+                'schedule' => [
+                    'immediate' => [],
+                    'this_week' => [],
+                    'next_week' => [],
+                    'future' => []
+                ],
+                'summary' => [
+                    'total_materials' => 0,
+                    'critical_materials' => 0,
+                    'high_priority_materials' => 0,
+                    'medium_priority_materials' => 0,
+                    'materials_needing_reorder' => 0,
+                    'total_reorder_value' => 0,
+                    'alkansya_materials' => 0,
+                    'made_to_order_materials' => 0,
+                    'avg_lead_time' => 0
+                ],
+                'alkansya_replenishment' => [
+                    'materials_needing_reorder' => 0,
+                    'critical_materials' => 0,
+                    'total_reorder_value' => 0,
+                    'avg_lead_time' => 0,
+                    'schedule' => []
+                ],
+                'made_to_order_replenishment' => [
+                    'materials_needing_reorder' => 0,
+                    'critical_materials' => 0,
+                    'total_reorder_value' => 0,
+                    'avg_lead_time' => 0,
+                    'schedule' => []
+                ]
+            ], 500);
         }
     }
 
@@ -2713,8 +3356,12 @@ class EnhancedInventoryReportsController extends Controller
             }
 
             // Get normalized inventory transactions
+            // Ensure date range includes full days (start of start_date to end of end_date)
+            $startDateTime = Carbon::parse($startDate)->startOfDay()->format('Y-m-d H:i:s');
+            $endDateTime = Carbon::parse($endDate)->endOfDay()->format('Y-m-d H:i:s');
+            
             $query = InventoryTransaction::with(['material', 'product'])
-                ->whereBetween('timestamp', [$startDate, $endDate]);
+                ->whereBetween('timestamp', [$startDateTime, $endDateTime]);
 
             // Apply transaction type filter
             switch ($transactionType) {
@@ -3239,10 +3886,42 @@ class EnhancedInventoryReportsController extends Controller
                 ];
             })->values();
 
+            // Generate daily_output for Analytics tab (chart data)
+            $dailyOutput = $alkansyaOutput->map(function($output) {
+                return [
+                    'date' => $output->date->format('Y-m-d'),
+                    'quantity' => $output->quantity_produced
+                ];
+            })->values();
+
+            // Calculate efficiency metrics
+            $targetDaily = 20; // Daily target
+            $overallEfficiency = $totalDays > 0 && $targetDaily > 0 ? round(($avgDaily / $targetDaily) * 100, 1) : 0;
+            $efficiencyMetrics = [
+                'overall_efficiency' => $overallEfficiency,
+                'average_daily_output' => $avgDaily,
+                'production_days' => $totalDays,
+                'target_achievement' => $overallEfficiency
+            ];
+
+            // Calculate capacity utilization
+            $totalCapacity = 30; // Daily capacity
+            $usedCapacity = $totalUnits;
+            $utilizationPercentage = $totalCapacity > 0 ? round(($usedCapacity / ($totalCapacity * max($totalDays, 1))) * 100, 1) : 0;
+            $capacityUtilization = [
+                'used_capacity' => $usedCapacity,
+                'total_capacity' => $totalCapacity * max($totalDays, 1),
+                'utilization_percentage' => $utilizationPercentage,
+                'resource_efficiency' => $overallEfficiency
+            ];
+
             return response()->json([
                 'metrics' => $metrics,
                 'daily_breakdown' => $dailyBreakdown,
                 'weekly_summary' => $weeklySummary,
+                'daily_output' => $dailyOutput, // For Analytics tab
+                'efficiency_metrics' => $efficiencyMetrics, // For Efficiency tab
+                'capacity_utilization' => $capacityUtilization, // For Resources tab
                 'products' => $alkansyaProducts,
                 'product_info' => $alkansyaProducts->first() ? [
                     'id' => $alkansyaProducts->first()->id,
@@ -3271,51 +3950,77 @@ class EnhancedInventoryReportsController extends Controller
         try {
             $startDate = $request->get('start_date', Carbon::now()->subDays(30)->format('Y-m-d'));
             $endDate = $request->get('end_date', Carbon::now()->format('Y-m-d'));
-
-            // Get accepted Made-to-Order orders
-            $acceptedOrders = Order::whereBetween('created_at', [$startDate, $endDate])
-                ->where('acceptance_status', 'accepted')
-                ->with(['items.product'])
-                ->get();
+            $includeInProgress = $request->get('include_in_progress', true);
 
             // Get all Made-to-Order products
             $madeToOrderProducts = Product::where('category_name', 'Made-to-Order')
+                ->orWhere('category_name', 'Made to Order')
                 ->get();
 
-            // Filter to only orders with Made-to-Order products and calculate total products ordered
-            $madeToOrderAcceptedOrders = $acceptedOrders->filter(function($order) {
-                return $order->items->filter(function($item) {
-                    return $item->product && $item->product->category_name === 'Made-to-Order';
-                })->isNotEmpty();
-            });
-            
-            $totalProducts = $madeToOrderAcceptedOrders->sum(function($order) {
-                return $order->items->filter(function($item) {
-                    return $item->product && $item->product->category_name === 'Made-to-Order';
-                })->sum('quantity');
-            });
+            // Get Production records for made-to-order products
+            // Query productions that are linked to accepted orders and have status In Progress or Completed
+            // Include all in-progress productions (they're active) and completed ones within date range
+            $productions = Production::whereHas('order', function($query) {
+                    $query->where('acceptance_status', 'accepted');
+                })
+                ->whereHas('product', function($query) {
+                    $query->where(function($q) {
+                        $q->where('category_name', 'Made-to-Order')
+                          ->orWhere('category_name', 'Made to Order');
+                    });
+                })
+                ->where(function($query) use ($startDate, $endDate) {
+                    // Include all in-progress productions (they're active and need tracking)
+                    $query->where('status', 'In Progress')
+                          // Or completed productions within the date range
+                          ->orWhere(function($q) use ($startDate, $endDate) {
+                              $q->where('status', 'Completed')
+                                ->where(function($subQ) use ($startDate, $endDate) {
+                                    $subQ->whereBetween('date', [$startDate, $endDate])
+                                         ->orWhereHas('order', function($orderQ) use ($startDate, $endDate) {
+                                             $orderQ->whereBetween('created_at', [$startDate, $endDate]);
+                                         })
+                                         ->orWhere(function($dateQ) use ($startDate, $endDate) {
+                                             $dateQ->whereNotNull('production_started_at')
+                                                   ->whereBetween('production_started_at', [
+                                                       Carbon::parse($startDate)->startOfDay(),
+                                                       Carbon::parse($endDate)->endOfDay()
+                                                   ]);
+                                         });
+                                });
+                          });
+                })
+                ->with(['order.user', 'product'])
+                ->orderBy('production_started_at', 'desc')
+                ->get();
 
-            // Calculate metrics
-            $totalRevenue = $madeToOrderAcceptedOrders->sum('total_amount');
-            $avgOrderValue = $madeToOrderAcceptedOrders->count() > 0 ? $madeToOrderAcceptedOrders->avg('total_amount') : 0;
-            $uniqueCustomers = $madeToOrderAcceptedOrders->pluck('customer_id')->unique()->count();
+            // Calculate metrics based on the productions we're actually showing
+            // Get unique order IDs from productions
+            $uniqueOrderIds = $productions->pluck('order_id')->filter()->unique();
             
-            // Calculate average products per order
-            $totalOrdersCount = $madeToOrderAcceptedOrders->count();
-            $avgProductsPerOrder = $totalOrdersCount > 0 ? round($totalProducts / $totalOrdersCount, 2) : 0;
+            // Get orders linked to these productions
+            $ordersForProductions = Order::whereIn('id', $uniqueOrderIds)
+                ->with(['items.product'])
+                ->get();
+            
+            // Calculate metrics from productions and their linked orders
+            $totalOrdersCount = $uniqueOrderIds->count();
+            $totalProductsFromProductions = $productions->sum('quantity');
+            $totalRevenue = $ordersForProductions->sum('total_amount');
+            $avgOrderValue = $totalOrdersCount > 0 ? $ordersForProductions->avg('total_amount') : 0;
+            $avgProductsPerOrder = $totalOrdersCount > 0 ? round($totalProductsFromProductions / $totalOrdersCount, 2) : 0;
             
             $metrics = [
                 'total_accepted_orders' => $totalOrdersCount,
-                'total_products_ordered' => $totalProducts,
+                'total_products_ordered' => $totalProductsFromProductions,
                 'total_revenue' => $totalRevenue,
                 'average_order_value' => $avgOrderValue,
-                'unique_customers' => $uniqueCustomers,
                 'unique_products' => $madeToOrderProducts->count(),
                 'average_products_per_order' => $avgProductsPerOrder
             ];
 
-            // Generate daily order summary
-            $dailyOrderSummary = $madeToOrderAcceptedOrders->groupBy(function($order) {
+            // Generate daily order summary based on orders linked to productions
+            $dailyOrderSummary = $ordersForProductions->groupBy(function($order) {
                 return Carbon::parse($order->created_at)->format('Y-m-d');
             })->map(function($orders, $date) {
                 return [
@@ -3328,29 +4033,94 @@ class EnhancedInventoryReportsController extends Controller
                 ];
             })->values();
 
-            // Generate customer analysis
+            // Generate customer analysis based on orders linked to productions
+            $uniqueCustomers = $ordersForProductions->pluck('user_id')->unique()->count();
             $customerAnalysis = [
                 'total_customers' => $uniqueCustomers,
-                'top_customers' => $madeToOrderAcceptedOrders->groupBy('customer_id')->map(function($orders) {
+                'top_customers' => $ordersForProductions->groupBy('user_id')->map(function($orders) {
                     $customer = $orders->first();
                     return [
-                        'customer_id' => $customer->customer_id,
-                        'customer_name' => $customer->customer_name ?? 'Unknown',
+                        'customer_id' => $customer->user_id,
+                        'customer_name' => $customer->user->name ?? 'Unknown',
                         'total_orders' => $orders->count(),
                         'total_spent' => $orders->sum('total_amount')
                     ];
                 })->sortByDesc('total_spent')->take(5)->values()
             ];
 
+            // Build current_orders array from production records
+            $currentOrders = $productions->map(function($production) {
+                return [
+                    'id' => $production->order_id ?? $production->id,
+                    'product_name' => $production->product_name ?? ($production->product->name ?? 'N/A'),
+                    'quantity' => $production->quantity ?? 0,
+                    'customer_name' => $production->order && $production->order->user ? $production->order->user->name : 'N/A',
+                    'production_stage' => $production->current_stage ?? 'N/A',
+                    'status' => $production->status ?? 'N/A',
+                    'progress' => $production->overall_progress ?? 0,
+                    'start_date' => $production->production_started_at ? $production->production_started_at->format('Y-m-d') : 'N/A'
+                ];
+            })->values();
+
+            // Generate orders array for Analytics tab (chart data)
+            $orders = $ordersForProductions->groupBy(function($order) {
+                return Carbon::parse($order->created_at)->format('Y-m-d');
+            })->map(function($orders, $date) {
+                return [
+                    'order_date' => $date,
+                    'order_count' => $orders->count()
+                ];
+            })->values();
+
+            // Calculate efficiency metrics
+            $completedProductions = $productions->where('status', 'Completed')->count();
+            $completionRate = $totalOrdersCount > 0 ? round(($completedProductions / $totalOrdersCount) * 100, 1) : 0;
+            
+            // Calculate average completion time (in days)
+            $completedWithDates = $productions->filter(function($p) {
+                return $p->status === 'Completed' && $p->production_started_at && $p->actual_completion_date;
+            });
+            $avgCompletionTime = 0;
+            if ($completedWithDates->isNotEmpty()) {
+                $totalDays = $completedWithDates->sum(function($p) {
+                    return Carbon::parse($p->production_started_at)->diffInDays(Carbon::parse($p->actual_completion_date));
+                });
+                $avgCompletionTime = round($totalDays / $completedWithDates->count(), 1);
+            }
+
+            $efficiencyMetrics = [
+                'completion_rate' => $completionRate,
+                'avg_completion_time' => $avgCompletionTime,
+                'total_orders' => $totalOrdersCount,
+                'on_time_delivery' => $completionRate // Simplified - can be enhanced later
+            ];
+
+            // Calculate capacity utilization
+            $maxCapacity = 10; // Maximum concurrent orders
+            $activeOrders = $productions->where('status', 'In Progress')->count();
+            $processingRate = $maxCapacity > 0 ? round(($activeOrders / $maxCapacity) * 100, 1) : 0;
+            $workforceUtilization = min(100, round(($activeOrders / max($maxCapacity, 1)) * 100, 1));
+
+            $capacityUtilization = [
+                'active_orders' => $activeOrders,
+                'max_capacity' => $maxCapacity,
+                'processing_rate' => $processingRate,
+                'workforce_utilization' => $workforceUtilization
+            ];
+
             return response()->json([
                 'metrics' => $metrics,
                 'daily_order_summary' => $dailyOrderSummary,
                 'customer_analysis' => $customerAnalysis,
-                'recent_orders' => $madeToOrderAcceptedOrders->take(10)->map(function($order) {
+                'current_orders' => $currentOrders,
+                'orders' => $orders, // For Analytics tab
+                'efficiency_metrics' => $efficiencyMetrics, // For Efficiency tab
+                'capacity_utilization' => $capacityUtilization, // For Resources tab
+                'recent_orders' => $ordersForProductions->take(10)->map(function($order) {
                     return [
                         'id' => $order->id,
-                        'customer_name' => $order->customer_name,
-                        'customer_email' => $order->customer_email,
+                        'customer_name' => $order->user->name ?? 'Unknown',
+                        'customer_email' => $order->user->email ?? 'Unknown',
                         'total_amount' => $order->total_amount,
                         'status' => $order->acceptance_status,
                         'created_at' => $order->created_at->format('Y-m-d H:i:s'),
@@ -3740,5 +4510,248 @@ class EnhancedInventoryReportsController extends Controller
             'alkansya_trend' => $this->calculateRecentTrend($alkansyaOutput),
             'production_stability' => $alkansyaConsistency > 80 ? 'high' : ($alkansyaConsistency > 60 ? 'medium' : 'low')
         ];
+    }
+
+    /**
+     * Export inventory report as PDF - Using actual data from database (seeders + manual)
+     */
+    public function exportInventoryPdf(Request $request)
+    {
+        try {
+            $reportType = $request->get('report_type', 'stock');
+            $data = [];
+            $dateRange = null;
+
+            switch($reportType) {
+                case 'stock':
+                    // Use getNormalizedInventoryData to get actual Material data
+                    $inventoryData = $this->getNormalizedInventoryData();
+                    $data = collect($inventoryData->getData(true)['items'])->map(function($item) {
+                        return [
+                            'Material Name' => $item['name'],
+                            'SKU' => $item['sku'],
+                            'Category' => $item['category'],
+                            'Current Stock' => number_format($item['current_stock'], 2),
+                            'Safety Stock' => $item['safety_stock'] ?? 0,
+                            'Reorder Point' => $item['reorder_point'],
+                            'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
+                            'Total Value' => '₱' . number_format($item['value'] ?? 0, 2),
+                            'Status' => ucwords(str_replace('_', ' ', $item['stock_status'] ?? 'N/A')),
+                        ];
+                    })->toArray();
+                    break;
+                    
+                case 'usage':
+                    // Get actual usage data from InventoryTransaction and calculate material-level summaries (matches CSV format)
+                    $days = (int) $request->get('days', 90);
+                    $startDate = Carbon::now()->subDays($days)->startOfDay();
+                    $endDate = Carbon::now()->endOfDay();
+                    
+                    // Get all consumption transactions (includes seeder and manual data)
+                    $transactions = InventoryTransaction::whereBetween('timestamp', [$startDate, $endDate])
+                        ->whereIn('transaction_type', ['ALKANSYA_CONSUMPTION', 'ORDER_FULFILLMENT', 'PRODUCTION_USAGE'])
+                        ->where('quantity', '<', 0) // Only consumption transactions (negative quantity)
+                        ->with('material')
+                        ->get();
+                    
+                    \Log::info('Usage PDF - Transactions found: ' . $transactions->count());
+                    
+                    // Group by material to calculate average daily consumption
+                    $materialUsage = $transactions->groupBy('material_id')->map(function($materialTransactions, $materialId) use ($days) {
+                        $material = $materialTransactions->first()->material;
+                        if (!$material) {
+                            \Log::warning('Usage PDF - Material not found for material_id: ' . $materialId);
+                            return null;
+                        }
+                        
+                        // Calculate total consumption
+                        $totalConsumption = abs($materialTransactions->sum('quantity'));
+                        
+                        // Group by date to get unique days with consumption
+                        $dailyConsumption = $materialTransactions->groupBy(function($t) {
+                            return Carbon::parse($t->timestamp)->format('Y-m-d');
+                        })->map(function($dayTransactions) {
+                            return abs($dayTransactions->sum('quantity'));
+                        });
+                        
+                        $daysWithConsumption = $dailyConsumption->count();
+                        $avgDailyConsumption = $daysWithConsumption > 0 ? $totalConsumption / $daysWithConsumption : 0;
+                        
+                        // Get current stock
+                        $currentStock = $material->inventory->sum('current_stock') ?? $material->current_stock ?? 0;
+                        
+                        // Calculate days until stockout
+                        $daysUntilStockout = $avgDailyConsumption > 0 ? floor($currentStock / $avgDailyConsumption) : 999;
+                        
+                        // Determine category
+                        $category = 'Other';
+                        $alkansyaProducts = Product::where(function($q) {
+                            $q->where('name', 'LIKE', '%Alkansya%')->orWhere('product_name', 'LIKE', '%Alkansya%');
+                        })->pluck('id');
+                        
+                        $madeToOrderProducts = Product::where(function($q) {
+                            $q->where('category_name', 'Made to Order')
+                              ->orWhere('category_name', 'Made-to-Order')
+                              ->orWhere('category_name', 'made_to_order');
+                        })->pluck('id');
+                        
+                        // Check if material is used in Alkansya or Made-to-Order
+                        $alkansyaBom = BOM::where('material_id', $materialId)->whereIn('product_id', $alkansyaProducts)->exists();
+                        $madeToOrderBom = BOM::where('material_id', $materialId)->whereIn('product_id', $madeToOrderProducts)->exists();
+                        
+                        if ($alkansyaBom && $madeToOrderBom) {
+                            $category = 'Both';
+                        } elseif ($alkansyaBom) {
+                            $category = 'Alkansya';
+                        } elseif ($madeToOrderBom) {
+                            $category = 'Made to Order';
+                        }
+                        
+                        // Determine status
+                        $status = 'In Stock';
+                        if ($currentStock <= 0) {
+                            $status = 'Out of Stock';
+                        } elseif ($currentStock <= ($material->reorder_point ?? 10)) {
+                            $status = 'Low Stock';
+                        }
+                        
+                        return [
+                            'Material Name' => $material->material_name,
+                            'Category' => $category,
+                            'Average Daily Consumption' => number_format($avgDailyConsumption, 2),
+                            'Current Stock' => number_format($currentStock, 2),
+                            'Days Until Stockout' => $daysUntilStockout,
+                            'Projected Usage' => number_format($avgDailyConsumption * 30, 2) . ' (30-day projection)',
+                            'Status' => $status,
+                            'Total Consumption' => number_format($totalConsumption, 2),
+                            'Days With Consumption' => $daysWithConsumption,
+                        ];
+                    })->filter(function($item) {
+                        return $item !== null && is_array($item) && isset($item['Material Name']);
+                    })->values();
+                    
+                    // Convert collection to array properly
+                    $materialUsageArray = $materialUsage->map(function($item) {
+                        return (array) $item;
+                    })->toArray();
+                    
+                    // Sort by average daily consumption (descending)
+                    usort($materialUsageArray, function($a, $b) {
+                        $aVal = floatval(str_replace(',', '', $a['Average Daily Consumption'] ?? '0'));
+                        $bVal = floatval(str_replace(',', '', $b['Average Daily Consumption'] ?? '0'));
+                        return $bVal <=> $aVal;
+                    });
+                    
+                    $data = $materialUsageArray;
+                    
+                    \Log::info('Usage PDF - Material usage data count: ' . count($data));
+                    if (count($data) > 0) {
+                        \Log::info('Usage PDF - First material: ' . $data[0]['Material Name']);
+                    }
+                    
+                    $dateRange = [
+                        'start' => $startDate->format('Y-m-d'),
+                        'end' => $endDate->format('Y-m-d')
+                    ];
+                    break;
+                    
+                case 'replenishment':
+                    // Use getEnhancedReplenishmentSchedule to get actual replenishment data
+                    $replenishment = $this->getEnhancedReplenishmentSchedule($request);
+                    $replenishmentData = $replenishment->getData(true);
+                    
+                    \Log::info('Replenishment PDF - Data structure: ' . json_encode(array_keys($replenishmentData)));
+                    
+                    $rows = [];
+                    
+                    // Combine Alkansya and Made-to-Order replenishment schedules
+                    if (isset($replenishmentData['alkansya_replenishment']['schedule']) && is_array($replenishmentData['alkansya_replenishment']['schedule'])) {
+                        \Log::info('Replenishment PDF - Alkansya schedule count: ' . count($replenishmentData['alkansya_replenishment']['schedule']));
+                        foreach ($replenishmentData['alkansya_replenishment']['schedule'] as $item) {
+                            $rows[] = [
+                                'Material Name' => $item['material_name'] ?? 'N/A',
+                                'Category' => 'Alkansya',
+                                'Current Stock' => number_format($item['current_stock'] ?? 0, 2),
+                                'Reorder Point' => number_format($item['reorder_point'] ?? 0, 2),
+                                'Recommended Quantity' => number_format($item['recommended_quantity'] ?? 0, 2),
+                                'Days Until Reorder' => $item['days_until_reorder'] ?? 'N/A',
+                                'Priority' => $item['priority'] ?? 'Normal',
+                                'Status' => ($item['needs_reorder'] ?? false) ? 'Need Reorder' : 'In Stock',
+                                'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
+                                'Estimated Cost' => '₱' . number_format(($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0), 2),
+                            ];
+                        }
+                    }
+                    
+                    if (isset($replenishmentData['made_to_order_replenishment']['schedule']) && is_array($replenishmentData['made_to_order_replenishment']['schedule'])) {
+                        \Log::info('Replenishment PDF - Made-to-Order schedule count: ' . count($replenishmentData['made_to_order_replenishment']['schedule']));
+                        foreach ($replenishmentData['made_to_order_replenishment']['schedule'] as $item) {
+                            $rows[] = [
+                                'Material Name' => $item['material_name'] ?? 'N/A',
+                                'Category' => 'Made to Order',
+                                'Current Stock' => number_format($item['current_stock'] ?? 0, 2),
+                                'Reorder Point' => number_format($item['reorder_point'] ?? 0, 2),
+                                'Recommended Quantity' => number_format($item['recommended_quantity'] ?? 0, 2),
+                                'Days Until Reorder' => $item['days_until_reorder'] ?? 'N/A',
+                                'Priority' => $item['priority'] ?? 'Normal',
+                                'Status' => ($item['needs_reorder'] ?? false) ? 'Need Reorder' : 'In Stock',
+                                'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
+                                'Estimated Cost' => '₱' . number_format(($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0), 2),
+                            ];
+                        }
+                    }
+                    
+                    $data = $rows;
+                    \Log::info('Replenishment PDF - Total rows: ' . count($data));
+                    if (count($data) > 0) {
+                        \Log::info('Replenishment PDF - First item: ' . json_encode($data[0]));
+                    }
+                    break;
+                    
+                case 'full':
+                    // Complete report with all data
+                    $inventoryData = $this->getNormalizedInventoryData();
+                    $inventoryItems = collect($inventoryData->getData(true)['items']);
+                    
+                    $data = $inventoryItems->map(function($item) {
+                        return [
+                            'Material Name' => $item['name'],
+                            'SKU' => $item['sku'],
+                            'Category' => $item['category'],
+                            'Current Stock' => number_format($item['current_stock'], 2),
+                            'Safety Stock' => $item['safety_stock'] ?? 0,
+                            'Reorder Point' => $item['reorder_point'],
+                            'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
+                            'Total Value' => '₱' . number_format($item['value'] ?? 0, 2),
+                            'Status' => ucwords(str_replace('_', ' ', $item['stock_status'] ?? 'N/A')),
+                        ];
+                    })->toArray();
+                    break;
+            }
+
+            \Log::info('PDF Export - Report type: ' . $reportType . ', Data count: ' . count($data));
+            
+            if (empty($data)) {
+                \Log::warning('PDF Export - No data found for report type: ' . $reportType);
+                // Return a PDF with a message instead of empty data
+                $data = [[
+                    'Message' => 'No data available for this report. Please ensure transactions and materials are properly configured.',
+                    'Note' => 'This may occur if there are no consumption transactions or replenishment schedules in the selected date range.'
+                ]];
+            }
+
+            $pdf = Pdf::loadView('pdf.inventory-report', [
+                'data' => $data,
+                'reportType' => ucwords(str_replace('_', ' ', $reportType)) . ' Report',
+                'dateRange' => $dateRange
+            ]);
+
+            $filename = $reportType . '_report_' . now()->format('Y-m-d') . '.pdf';
+            return $pdf->download($filename);
+        } catch (\Exception $e) {
+            \Log::error('Error generating PDF: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
+        }
     }
 }
