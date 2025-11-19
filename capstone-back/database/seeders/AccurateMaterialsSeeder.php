@@ -288,18 +288,22 @@ class AccurateMaterialsSeeder extends Seeder
             $criticalStock = $this->getCriticalStockForMaterial($material['material_code']);
             $maxLevel = $this->getMaxLevelForMaterial($material['material_code']);
 
+            // Calculate reorder_level to be greater than critical_stock
+            // Reorder level should be at least 1.5x critical stock to ensure proper hierarchy
+            $reorderLevel = max(15, ceil($criticalStock * 1.5));
+            
             Material::updateOrCreate(
                 ['material_code' => $material['material_code']],
                 [
                     'material_name' => $material['material_name'],
                     'description' => 'Material for furniture production',
                     'unit_of_measure' => $material['unit_of_measure'],
-                    'reorder_level' => 10,
+                    'reorder_level' => $reorderLevel,
                     'standard_cost' => $material['standard_cost'],
                     'current_stock' => 1000,
                     'location' => 'Windfield 2',
                     'critical_stock' => $criticalStock,
-                    'max_level' => $maxLevel,
+                    'max_level' => 800, // Set max_level to 800 for all materials
                     'lead_time_days' => $leadTimeDays,
                     'supplier' => $supplier,
                     'category' => 'raw'
@@ -417,24 +421,9 @@ class AccurateMaterialsSeeder extends Seeder
 
     private function getMaxLevelForMaterial($materialCode)
     {
-        // Determine max level based on material type and storage capacity
-        if (strpos($materialCode, 'PW-') === 0 || strpos($materialCode, 'PLY-') === 0 || strpos($materialCode, 'HW-') === 0) {
-            return 500; // Wood materials - higher max level
-        } elseif (strpos($materialCode, 'ST-TUBE-') === 0) {
-            return 200; // Steel tubing - moderate max level
-        } elseif (strpos($materialCode, 'ACR-') === 0 || strpos($materialCode, 'FOAM-') === 0 || strpos($materialCode, 'FABRIC-') === 0) {
-            return 200; // Specialized materials - moderate max level
-        } elseif (strpos($materialCode, 'PN-') === 0 || strpos($materialCode, 'BS-') === 0 || strpos($materialCode, 'WS-') === 0 || strpos($materialCode, 'WD-') === 0) {
-            return 1000; // Hardware - very high max level (small items)
-        } elseif (strpos($materialCode, 'STK-') === 0 || strpos($materialCode, 'TAPE-') === 0 || strpos($materialCode, 'BW-') === 0 || strpos($materialCode, 'INS-') === 0) {
-            return 300; // Packaging materials
-        } elseif (strpos($materialCode, 'STAIN-') === 0 || strpos($materialCode, 'POLY-') === 0 || strpos($materialCode, 'LACQUER-') === 0 || strpos($materialCode, 'WG-') === 0) {
-            return 100; // Chemicals - lower max level
-        } elseif (strpos($materialCode, 'SAND-') === 0 || strpos($materialCode, 'GP-') === 0) {
-            return 150; // Abrasives
-        } else {
-            return 200; // Default max level
-        }
+        // All materials now have max_level set to 800 as per requirements
+        // This method is kept for consistency but always returns 800
+        return 800;
     }
 
     private function createRawMaterials($alkansya, $diningTableSet, $woodenChair)

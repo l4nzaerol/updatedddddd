@@ -386,7 +386,7 @@ const MaterialModal = ({ show, onHide, material, onSave }) => {
         unit_of_measure: material.unit_of_measure || "",
         reorder_level: material.reorder_level || 0,
         standard_cost: material.standard_cost || 0,
-        initial_quantity: material.current_stock || 0,
+        initial_quantity: material.available_quantity || material.current_stock || material.total_quantity_on_hand || 0,
         location_id: material.location_id || null,
         location: material.location || "",
         critical_stock: material.critical_stock || 0,
@@ -798,7 +798,10 @@ const MaterialDetailsModal = ({ show, onHide, material }) => {
     switch (status) {
       case 'In Stock': return 'success';
       case 'Low Stock': return 'warning';
+      case 'Need Reorder': return 'warning';
+      case 'Critical': return 'danger';
       case 'Out of Stock': return 'danger';
+      case 'Overstocked': return 'info';
       default: return 'secondary';
     }
   };
@@ -940,15 +943,18 @@ const MaterialDetailsModal = ({ show, onHide, material }) => {
                   <div className="progress mb-3" style={{ height: '20px' }}>
                     <div 
                       className={`progress-bar ${
-                        material.available_quantity > material.reorder_level ? 'bg-success' :
-                        material.available_quantity > material.critical_stock ? 'bg-warning' : 'bg-danger'
+                        material.available_quantity <= 0 ? 'bg-danger' :
+                        material.critical_stock && material.available_quantity <= material.critical_stock ? 'bg-danger' :
+                        material.reorder_level && material.available_quantity <= material.reorder_level ? 'bg-warning' :
+                        material.max_level && material.available_quantity > material.max_level ? 'bg-info' :
+                        'bg-success'
                       }`}
                       role="progressbar"
                       style={{ 
-                        width: `${Math.min(100, (material.available_quantity / material.max_level) * 100)}%` 
+                        width: `${material.max_level > 0 ? Math.min(100, (material.available_quantity / material.max_level) * 100) : 0}%` 
                       }}
                     >
-                      {material.available_quantity} / {material.max_level}
+                      {material.available_quantity} / {material.max_level || 'N/A'}
                     </div>
                   </div>
                   <div className="row text-center">
@@ -1213,14 +1219,48 @@ const NormalizedInventoryPage = () => {
 
   const handleSaveMaterial = async (materialData) => {
     try {
+      // Ensure all fields are properly formatted
+      const payload = {
+        material_name: materialData.material_name,
+        material_code: materialData.material_code,
+        description: materialData.description || null,
+        unit_of_measure: materialData.unit_of_measure,
+        reorder_level: Number(materialData.reorder_level || 0),
+        standard_cost: Number(materialData.standard_cost || 0),
+        max_level: Number(materialData.max_level || 0),
+        lead_time_days: Number(materialData.lead_time_days || 0),
+        critical_stock: Number(materialData.critical_stock || 0),
+        supplier: materialData.supplier || null,
+        category: materialData.category || 'raw',
+        location: materialData.location || null
+      };
+      
+      console.log('Saving material with payload:', payload);
+      
       if (editingMaterial) {
-        await api.put(`/normalized-inventory/materials/${editingMaterial.material_id}`, materialData);
+        // For updates, include quantity to update inventory
+        const updatePayload = {
+          ...payload,
+          quantity: Number(materialData.initial_quantity || 0)
+        };
+        const response = await api.put(`/normalized-inventory/materials/${editingMaterial.material_id}`, updatePayload);
+        console.log('Material updated successfully:', response.data);
       } else {
-        await api.post("/normalized-inventory/materials", materialData);
+        // For new materials, also include initial_quantity
+        const createPayload = {
+          ...payload,
+          initial_quantity: Number(materialData.initial_quantity || 0),
+          location_id: materialData.location_id || null
+        };
+        const response = await api.post("/normalized-inventory/materials", createPayload);
+        console.log('Material created successfully:', response.data);
       }
+      
+      // Refresh data after save
       await fetchData();
     } catch (error) {
       console.error("Save material error:", error);
+      console.error("Error response:", error.response?.data);
       throw error;
     }
   };

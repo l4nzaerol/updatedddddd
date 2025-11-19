@@ -2159,25 +2159,36 @@ class EnhancedInventoryReportsController extends Controller
             }
 
             // Get historical daily output data (from seeder and manual entries)
-            $historicalOutput = AlkansyaDailyOutput::where('date', '>=', Carbon::now()->subDays($historicalDays))
-                ->orderBy('date', 'asc')
-                ->get();
+            // Get ALL historical output data, not just last N days, to include seeded data
+            $historicalOutput = AlkansyaDailyOutput::orderBy('date', 'asc')->get();
 
             // Get historical material consumption from transactions (more accurate)
+            // Also get ALL transactions to include seeded data
             $historicalTransactions = InventoryTransaction::where('transaction_type', 'ALKANSYA_CONSUMPTION')
-                ->where('timestamp', '>=', Carbon::now()->subDays($historicalDays)->startOfDay())
                 ->with('material')
                 ->get();
 
             // Calculate average daily output from actual data
-            $actualDaysWithOutput = $historicalOutput->count();
+            // Count unique days with output (not just record count)
+            $uniqueDays = $historicalOutput->groupBy(function($output) {
+                return $output->date->format('Y-m-d');
+            })->count();
+            
             $totalOutput = $historicalOutput->sum('quantity_produced');
-            $avgDailyOutput = $actualDaysWithOutput > 0 ? $totalOutput / $actualDaysWithOutput : 0;
+            $avgDailyOutput = $uniqueDays > 0 ? $totalOutput / $uniqueDays : 0;
 
             // If no historical output, use a default estimate
             if ($avgDailyOutput == 0) {
                 $avgDailyOutput = 15; // Default estimate
             }
+            
+            // Log for debugging
+            \Log::info('Alkansya Material Forecast - Historical Output', [
+                'total_records' => $historicalOutput->count(),
+                'unique_days' => $uniqueDays,
+                'total_output' => $totalOutput,
+                'avg_daily_output' => $avgDailyOutput
+            ]);
 
             // Calculate material usage patterns from historical transactions
             $materialUsageByDate = [];
@@ -2268,8 +2279,36 @@ class EnhancedInventoryReportsController extends Controller
                 // Calculate days until stockout
                 $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
                 
-                // Determine status
-                $needsReorder = $projectedStock <= ($material->reorder_level ?? 0);
+                // Determine status with proper priority order
+                // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                $availableQty = $currentStock;
+                $criticalStock = $material->critical_stock ?? 0;
+                $reorderLevel = $material->reorder_level ?? 0;
+                $maxLevel = $material->max_level ?? 0;
+                
+                $status = 'in_stock';
+                $statusLabel = 'In Stock';
+                $statusColor = 'success';
+                
+                if ($availableQty <= 0) {
+                    $status = 'out_of_stock';
+                    $statusLabel = 'Out of Stock';
+                    $statusColor = 'danger';
+                } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                    $status = 'critical';
+                    $statusLabel = 'Critical';
+                    $statusColor = 'danger';
+                } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
+                    $status = 'low_stock';
+                    $statusLabel = 'Low Stock';
+                    $statusColor = 'warning';
+                } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                    $status = 'overstocked';
+                    $statusLabel = 'Overstocked';
+                    $statusColor = 'info';
+                }
+                
+                $needsReorder = $projectedStock <= $reorderLevel;
                 
                 $materialForecasts[] = [
                     'material_id' => $material->material_id,
@@ -2277,13 +2316,19 @@ class EnhancedInventoryReportsController extends Controller
                     'material_code' => $material->material_code,
                     'qty_per_unit' => $qtyPerUnit,
                     'current_stock' => round($currentStock, 2),
+                    'available_quantity' => round($availableQty, 2),
+                    'critical_stock' => $criticalStock,
+                    'max_level' => $maxLevel,
                     'avg_daily_output' => round($avgDailyOutput, 2),
                     'daily_material_usage' => round($dailyMaterialUsage, 2),
                     'forecasted_usage' => round($forecastedUsage, 2),
                     'projected_stock' => round($projectedStock, 2),
                     'days_until_stockout' => $daysUntilStockout,
-                    'reorder_point' => $material->reorder_level ?? 0,
+                    'reorder_point' => $reorderLevel,
                     'needs_reorder' => $needsReorder,
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'status_color' => $statusColor,
                     'unit' => $material->unit_of_measure ?? 'pcs',
                     'unit_cost' => $material->standard_cost ?? 0,
                     'has_historical_data' => !empty($historicalMaterialUsage)
@@ -2331,7 +2376,7 @@ class EnhancedInventoryReportsController extends Controller
                 'historical_period' => $historicalDays,
                 'avg_daily_output' => round($avgDailyOutput, 2),
                 'total_historical_output' => $totalOutput,
-                'actual_days_with_output' => $actualDaysWithOutput,
+                'actual_days_with_output' => $uniqueDays,
                 'material_forecasts' => $materialForecasts,
                 'daily_forecast' => $dailyForecast,
                 'summary' => [
@@ -3111,12 +3156,41 @@ class EnhancedInventoryReportsController extends Controller
                     'trend_direction' => $trend > 0.01 ? 'increasing' : ($trend < -0.01 ? 'decreasing' : 'stable')
                 ];
                 
+                // Determine status with proper priority order
+                // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                $availableQty = $currentStock;
+                $criticalStock = $material->critical_stock ?? 0;
+                
+                $status = 'in_stock';
+                $statusLabel = 'In Stock';
+                $statusColor = 'success';
+                
+                if ($availableQty <= 0) {
+                    $status = 'out_of_stock';
+                    $statusLabel = 'Out of Stock';
+                    $statusColor = 'danger';
+                } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                    $status = 'critical';
+                    $statusLabel = 'Critical';
+                    $statusColor = 'danger';
+                } elseif ($reorderPoint > 0 && $availableQty <= $reorderPoint) {
+                    $status = 'low_stock';
+                    $statusLabel = 'Low Stock';
+                    $statusColor = 'warning';
+                } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                    $status = 'overstocked';
+                    $statusLabel = 'Overstocked';
+                    $statusColor = 'info';
+                }
+                
                 $replenishmentItems[] = [
                     'material_id' => $material->material_id,
                     'material_name' => $material->material_name,
                     'material_code' => $material->material_code,
                     'category' => $material->category ?? 'raw',
                     'current_stock' => round($currentStock, 2),
+                    'available_quantity' => round($availableQty, 2),
+                    'critical_stock' => $criticalStock,
                     'reorder_point' => round($reorderPoint, 2),
                     'safety_stock' => round($safetyStock, 2),
                     'max_level' => round($maxLevel, 2),
@@ -3141,6 +3215,9 @@ class EnhancedInventoryReportsController extends Controller
                     'consumption_breakdown' => $consumptionBreakdown,
                     'needs_reorder' => $projectedStock <= $reorderPoint,
                     'is_critical' => $daysUntilStockout <= 7,
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'status_color' => $statusColor,
                     'is_alkansya_material' => isset($alkansyaDailyConsumption[$material->material_id]),
                     'is_made_to_order_material' => isset($madeToOrderDailyConsumption[$material->material_id])
                 ];
@@ -3864,6 +3941,8 @@ class EnhancedInventoryReportsController extends Controller
                 // Calculate efficiency (assuming target is 20 units per day)
                 $targetDaily = 20;
                 $efficiency = $targetDaily > 0 ? round(($output->quantity_produced / $targetDaily) * 100, 1) : 0;
+                // Cap efficiency at 100% maximum
+                $efficiency = min($efficiency, 100);
                 
                 return [
                     'date' => $output->date->format('Y-m-d'),
@@ -3897,6 +3976,8 @@ class EnhancedInventoryReportsController extends Controller
             // Calculate efficiency metrics
             $targetDaily = 20; // Daily target
             $overallEfficiency = $totalDays > 0 && $targetDaily > 0 ? round(($avgDaily / $targetDaily) * 100, 1) : 0;
+            // Cap efficiency at 100% maximum
+            $overallEfficiency = min($overallEfficiency, 100);
             $efficiencyMetrics = [
                 'overall_efficiency' => $overallEfficiency,
                 'average_daily_output' => $avgDaily,
@@ -3912,7 +3993,7 @@ class EnhancedInventoryReportsController extends Controller
                 'used_capacity' => $usedCapacity,
                 'total_capacity' => $totalCapacity * max($totalDays, 1),
                 'utilization_percentage' => $utilizationPercentage,
-                'resource_efficiency' => $overallEfficiency
+                'resource_efficiency' => min($overallEfficiency, 100)
             ];
 
             return response()->json([
@@ -4179,22 +4260,49 @@ class EnhancedInventoryReportsController extends Controller
                 ->with(['items.product'])
                 ->get();
 
+            // Also get completed productions for made-to-order products (including seeded data)
+            // This ensures completed productions are included even if the order date is outside the range
+            $completedProductions = Production::whereHas('order', function($query) {
+                    $query->where('acceptance_status', 'accepted');
+                })
+                ->whereHas('product', function($query) {
+                    $query->where(function($q) {
+                        $q->where('category_name', 'Made-to-Order')
+                          ->orWhere('category_name', 'Made to Order');
+                    });
+                })
+                ->where('status', 'Completed')
+                // Include ALL completed productions regardless of date range
+                // This ensures seeded data and all completed productions are counted
+                // We don't filter by date for completed productions to ensure accuracy
+                ->with(['order.items.product', 'product'])
+                ->get();
+
+            // Merge completed productions with orders to get all made-to-order units
+            // For completed productions, add them to the made-to-order units count
+            $completedProductionUnits = $completedProductions->sum('quantity');
+
             // Calculate combined metrics
             $totalAlkansyaUnits = $alkansyaOutput->sum('quantity_produced');
-            $totalMadeToOrderUnits = $madeToOrderOrders->sum(function($order) {
-                return $order->items->sum('quantity');
-            });
+            
+            // For made-to-order units, ONLY count completed productions (not orders)
+            // This ensures we show actual production output, not just ordered quantities
+            // Orders might have items still in progress, but productions show what was actually completed
+            $totalMadeToOrderUnits = $completedProductionUnits;
 
             $metrics = [
                 'total_units_produced' => $totalAlkansyaUnits + $totalMadeToOrderUnits,
                 'alkansya_units' => $totalAlkansyaUnits,
                 'made_to_order_units' => $totalMadeToOrderUnits,
                 'production_days' => $alkansyaOutput->count(),
-                'order_days' => $madeToOrderOrders->groupBy(function($order) {
-                    return $order->created_at->format('Y-m-d');
-                })->count(),
+                'order_days' => $completedProductions->groupBy(function($production) {
+                    $date = $production->date ? Carbon::parse($production->date)->format('Y-m-d') : 
+                           ($production->production_started_at ? Carbon::parse($production->production_started_at)->format('Y-m-d') : 
+                           ($production->order ? Carbon::parse($production->order->created_at)->format('Y-m-d') : null));
+                    return $date;
+                })->filter()->count(),
                 'average_daily_alkansya' => $alkansyaOutput->count() > 0 ? round($alkansyaOutput->avg('quantity_produced'), 2) : 0,
-                'average_daily_orders' => $madeToOrderOrders->count() > 0 ? round($madeToOrderOrders->count() / max(1, Carbon::parse($startDate)->diffInDays(Carbon::parse($endDate))), 2) : 0
+                'average_daily_orders' => $completedProductions->count() > 0 ? round($completedProductions->count() / max(1, Carbon::parse($startDate)->diffInDays(Carbon::parse($endDate))), 2) : 0
             ];
 
             // Generate daily production summary
@@ -4203,35 +4311,39 @@ class EnhancedInventoryReportsController extends Controller
                 return $item->date->format('Y-m-d');
             });
             
-            $ordersByDate = $madeToOrderOrders->groupBy(function($order) {
-                return $order->created_at->format('Y-m-d');
-            });
-            
             // Get all unique dates
             $alkansyaDates = $alkansyaOutput->map(function($output) {
                 return $output->date->format('Y-m-d');
             })->toArray();
             
-            $orderDates = $madeToOrderOrders->map(function($order) {
-                return Carbon::parse($order->created_at)->format('Y-m-d');
-            })->toArray();
+            // Get dates from completed productions only (not orders)
+            $productionDates = $completedProductions->map(function($production) {
+                return $production->date ? Carbon::parse($production->date)->format('Y-m-d') : 
+                       ($production->production_started_at ? Carbon::parse($production->production_started_at)->format('Y-m-d') : 
+                       ($production->order ? Carbon::parse($production->order->created_at)->format('Y-m-d') : null));
+            })->filter()->toArray();
             
-            $allDates = collect(array_merge($alkansyaDates, $orderDates))->unique()->sort()->values();
+            $allDates = collect(array_merge($alkansyaDates, $productionDates))->unique()->sort()->values();
+            
+            // Group completed productions by date
+            $productionsByDate = $completedProductions->groupBy(function($production) {
+                return $production->date ? Carbon::parse($production->date)->format('Y-m-d') : 
+                       ($production->production_started_at ? Carbon::parse($production->production_started_at)->format('Y-m-d') : 
+                       ($production->order ? Carbon::parse($production->order->created_at)->format('Y-m-d') : 'unknown'));
+            });
             
             foreach ($allDates as $date) {
                 $alkansyaData = $alkansyaByDate[$date] ?? null;
-                $ordersForDay = $ordersByDate[$date] ?? collect();
+                $productionsForDay = $productionsByDate[$date] ?? collect();
+                
+                // Only count completed production units (not orders)
+                $productionUnits = $productionsForDay->sum('quantity');
                 
                 $dailySummary[] = [
                     'date' => $date,
                     'alkansya_units' => $alkansyaData ? $alkansyaData->quantity_produced : 0,
-                    'made_to_order_units' => $ordersForDay->sum(function($order) {
-                        return $order->items->sum('quantity');
-                    }),
-                    'total_units' => ($alkansyaData ? $alkansyaData->quantity_produced : 0) + 
-                                    $ordersForDay->sum(function($order) {
-                                        return $order->items->sum('quantity');
-                                    })
+                    'made_to_order_units' => $productionUnits,
+                    'total_units' => ($alkansyaData ? $alkansyaData->quantity_produced : 0) + $productionUnits
                 ];
             }
 
@@ -4241,12 +4353,32 @@ class EnhancedInventoryReportsController extends Controller
                 return Carbon::parse($output->date)->format('Y-W');
             });
             
-            foreach ($weekGroups as $week => $outputs) {
+            // Group completed productions by week
+            $productionWeekGroups = $completedProductions->groupBy(function($production) {
+                $date = $production->date ? Carbon::parse($production->date) : 
+                       ($production->production_started_at ? Carbon::parse($production->production_started_at) : 
+                       ($production->order ? Carbon::parse($production->order->created_at) : Carbon::now()));
+                return $date->format('Y-W');
+            });
+            
+            // Get all unique weeks
+            $allWeeks = collect(array_merge(
+                $weekGroups->keys()->toArray(),
+                $productionWeekGroups->keys()->toArray()
+            ))->unique()->sort()->values();
+            
+            foreach ($allWeeks as $week) {
+                $outputs = $weekGroups[$week] ?? collect();
+                $productionsForWeek = $productionWeekGroups[$week] ?? collect();
+                
+                $alkansyaUnits = $outputs->sum('quantity_produced');
+                $madeToOrderUnits = $productionsForWeek->sum('quantity');
+                
                 $weeklyTrends[] = [
                     'week' => $week,
-                    'alkansya_units' => $outputs->sum('quantity_produced'),
-                    'made_to_order_units' => 0, // Simplified
-                    'total_units' => $outputs->sum('quantity_produced')
+                    'alkansya_units' => $alkansyaUnits,
+                    'made_to_order_units' => $madeToOrderUnits,
+                    'total_units' => $alkansyaUnits + $madeToOrderUnits
                 ];
             }
 
@@ -4305,7 +4437,9 @@ class EnhancedInventoryReportsController extends Controller
     {
         // Simple efficiency calculation based on target (assuming 20 units as target)
         $target = 20;
-        return round(($output->quantity_produced / $target) * 100, 1);
+        $efficiency = round(($output->quantity_produced / $target) * 100, 1);
+        // Cap efficiency at 100% maximum
+        return min($efficiency, 100);
     }
 
     private function getAlkansyaMaterialsConsumed($alkansyaProduct, $alkansyaOutput)

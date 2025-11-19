@@ -13,34 +13,68 @@
             color: #000;
             margin: 0;
             padding: 0;
+            overflow: visible;
         }
         .header {
-            display: flex;
-            align-items: center;
+            display: table;
+            width: 100%;
             margin-bottom: 30px;
             padding-bottom: 15px;
             border-bottom: 2px solid #000;
+            table-layout: auto;
         }
-        .logo {
-            width: 60px;
-            height: 60px;
+        .logo-container {
+            display: table-cell;
+            vertical-align: middle;
+            width: 100px;
+            padding-right: 20px;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        .logo-wrapper {
+            width: 100px;
+            height: 100px;
+            position: relative;
+            margin: 0;
+            padding: 0;
+            overflow: visible;
+        }
+        .logo-circle {
+            width: 100px;
+            height: 100px;
+            min-width: 100px;
+            min-height: 100px;
+            max-width: 100px;
+            max-height: 100px;
             border-radius: 50%;
             background-color: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 20px;
-            border: 2px solid #fff;
-            box-shadow: 0 0 0 2px #000;
+            border: 6px solid #fff;
+            box-sizing: border-box;
+            display: table;
+            position: relative;
+            margin: 0;
+            padding: 0;
+            overflow: visible;
+            aspect-ratio: 1 / 1;
         }
         .logo-text {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: center;
             color: #fff;
             font-weight: bold;
-            font-size: 14pt;
-            text-align: center;
+            font-size: 18pt;
+            letter-spacing: 0.8px;
+            line-height: 1.1;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            height: 100%;
         }
         .header-text {
-            flex: 1;
+            display: table-cell;
+            vertical-align: middle;
+            padding-left: 0;
         }
         .header-title {
             font-size: 20pt;
@@ -109,8 +143,12 @@
 </head>
 <body>
     <div class="header">
-        <div class="logo">
-            <div class="logo-text">UNICK</div>
+        <div class="logo-container">
+            <div class="logo-wrapper">
+                <div class="logo-circle">
+                    <span class="logo-text">UNICK</span>
+                </div>
+            </div>
         </div>
         <div class="header-text">
             <h1 class="header-title">UNICK FURNITURE</h1>

@@ -301,47 +301,79 @@ export default function ProductionTrackingSystem() {
       console.log('Stage workload:', data.stage_workload);
       
       // Update suggestions with real analytics data
-      const newSuggestions = [];
+      // IMPORTANT: Always ensure ALL 6 stages are included, even if API doesn't return them
+      const defaultCapacities = { 
+        "Material Preparation": 3, 
+        "Cutting & Shaping": 4, 
+        "Assembly": 5, 
+        "Sanding & Surface Preparation": 3, 
+        "Finishing": 3, 
+        "Quality Check & Packaging": 2 
+      };
       
-      // Add stage workload data (primary source)
+      // Start with all 6 stages as defaults
+      const stageMap = new Map();
+      STAGES.forEach(stage => {
+        stageMap.set(stage, {
+          stage: stage,
+          capacity: defaultCapacities[stage] || 3,
+          assigned: [],
+          queued: 0,
+          utilization: 0,
+          status: 'available',
+          message: `${stage} has 0 items (0% capacity)`,
+          priority: 'low'
+        });
+      });
+      
+      // Update with stage workload data from API (primary source)
       if (data.stage_workload && data.stage_workload.length > 0) {
         data.stage_workload.forEach(workload => {
-          newSuggestions.push({
-            stage: workload.stage,
-            capacity: workload.capacity,
-            assigned: [],
-            queued: workload.current_workload,
-            utilization: workload.utilization_percentage || ((workload.current_workload / workload.capacity) * 100),
-            status: workload.status || 'available',
-            message: `${workload.stage} workload: ${workload.current_workload}/${workload.capacity} (${Math.round(workload.utilization_percentage || ((workload.current_workload / workload.capacity) * 100))}%)`,
-            priority: workload.current_workload > workload.capacity ? 'high' : (workload.current_workload > workload.capacity * 0.7 ? 'medium' : 'low')
-          });
-        });
-      }
-      
-      // Add resource allocation data if available
-      if (data.resource_allocation && data.resource_allocation.length > 0) {
-        data.resource_allocation.forEach(allocation => {
-          const existingIndex = newSuggestions.findIndex(s => s.stage === allocation.stage);
-          if (existingIndex >= 0) {
-            newSuggestions[existingIndex].message = allocation.message;
-            newSuggestions[existingIndex].priority = allocation.priority;
-          } else {
-            newSuggestions.push({
-              stage: allocation.stage,
-              capacity: 3, // Default capacity
-              assigned: [],
-              queued: allocation.workload || 0,
-              utilization: ((allocation.workload || 0) / 3) * 100,
-              status: allocation.priority === 'high' ? 'overloaded' : 'busy',
-              message: allocation.message || `${allocation.stage} workload: ${allocation.workload || 0}`,
-              priority: allocation.priority || 'medium'
+          if (stageMap.has(workload.stage)) {
+            const existing = stageMap.get(workload.stage);
+            stageMap.set(workload.stage, {
+              ...existing,
+              capacity: workload.capacity || existing.capacity,
+              queued: workload.current_workload || 0,
+              utilization: workload.utilization_percentage || ((workload.current_workload || 0) / (workload.capacity || existing.capacity)) * 100,
+              status: workload.status || (workload.current_workload > workload.capacity ? 'overloaded' : 'available'),
+              message: `${workload.stage} workload: ${workload.current_workload || 0}/${workload.capacity || existing.capacity} (${Math.round(workload.utilization_percentage || ((workload.current_workload || 0) / (workload.capacity || existing.capacity)) * 100)}%)`,
+              priority: workload.current_workload > workload.capacity ? 'high' : (workload.current_workload > (workload.capacity || existing.capacity) * 0.7 ? 'medium' : 'low')
             });
           }
         });
       }
       
-      setSuggestions(newSuggestions);
+      // Update with resource allocation data if available
+      if (data.resource_allocation && data.resource_allocation.length > 0) {
+        data.resource_allocation.forEach(allocation => {
+          if (stageMap.has(allocation.stage)) {
+            const existing = stageMap.get(allocation.stage);
+            stageMap.set(allocation.stage, {
+              ...existing,
+              queued: allocation.workload || existing.queued,
+              utilization: allocation.workload ? ((allocation.workload || 0) / existing.capacity) * 100 : existing.utilization,
+              status: allocation.priority === 'high' ? 'overloaded' : (allocation.priority === 'medium' ? 'busy' : existing.status),
+              message: allocation.message || existing.message,
+              priority: allocation.priority || existing.priority
+            });
+          }
+        });
+      }
+      
+      // Convert map to array and ensure all 6 stages are present
+      const newSuggestions = Array.from(stageMap.values());
+      
+      // Sort by priority but keep all 6
+      const sortedSuggestions = newSuggestions.sort((a, b) => {
+        if (a.priority === 'high' && b.priority !== 'high') return -1;
+        if (a.priority !== 'high' && b.priority === 'high') return 1;
+        if (a.priority === 'medium' && b.priority === 'low') return -1;
+        if (a.priority === 'low' && b.priority === 'medium') return 1;
+        return 0;
+      });
+      
+      setSuggestions(sortedSuggestions);
     } catch (err) {
       console.error("Analytics fetch error:", err);
     }
@@ -420,9 +452,12 @@ export default function ProductionTrackingSystem() {
       "Quality Check & Packaging": 2 
     };
     
-    const pending = productions.filter((p) => p.status === "In Progress" || p.status === "Pending");
+    // Get all productions (including completed ones for accurate tracking)
+    const allProductions = productions || [];
+    const pending = allProductions.filter((p) => p.status === "In Progress" || p.status === "Pending");
     const byStage = STAGES.reduce((acc, s) => ({ ...acc, [s]: pending.filter((p) => (p.current_stage || p.stage) === s) }), {});
 
+    // Ensure ALL 6 stages are always included, even if no productions exist
     const alloc = [];
     STAGES.forEach((s) => {
       const queue = byStage[s] || [];
@@ -444,14 +479,30 @@ export default function ProductionTrackingSystem() {
       });
     });
 
-    setSuggestions(alloc);
+    // Sort by priority (high priority first) but ensure all 6 are shown
+    const sortedAlloc = alloc.sort((a, b) => {
+      if (a.priority === 'high' && b.priority !== 'high') return -1;
+      if (a.priority !== 'high' && b.priority === 'high') return 1;
+      if (a.priority === 'medium' && b.priority === 'low') return -1;
+      if (a.priority === 'low' && b.priority === 'medium') return 1;
+      return 0;
+    });
+
+    setSuggestions(sortedAlloc);
   };
 
   useEffect(() => {
-    if (productions.length > 0) {
+    // Always compute suggestions to show all 6 processes, even if no productions
+    // This ensures all 6 stages are shown even if fetchAnalytics hasn't run yet
+    computeSuggestions();
+  }, [productions]);
+  
+  // Also ensure suggestions are computed when component mounts
+  useEffect(() => {
+    if (suggestions.length === 0) {
       computeSuggestions();
     }
-  }, [productions]);
+  }, []);
 
   const updateStage = async (id, newStage) => {
     try {
@@ -1746,10 +1797,46 @@ export default function ProductionTrackingSystem() {
                       const totalProcesses = prod.processes?.length || 0;
                       const completedProcesses = prod.processes?.filter(p => p.status === 'completed').length || 0;
                       const progress = totalProcesses > 0 ? Math.round((completedProcesses / totalProcesses) * 100) : 0;
-                      const currentProcess = prod.processes?.find(p => p.status === 'pending') || prod.processes?.[prod.processes.length - 1];
+                      
+                      // Find current process (pending or in progress)
+                      const currentProcess = prod.processes?.find(p => p.status === 'pending' || p.status === 'in_progress') 
+                        || prod.processes?.find(p => p.status !== 'completed') 
+                        || prod.processes?.[prod.processes.length - 1];
                       const currentStage = currentProcess?.process_name || 'N/A';
-                      const startDate = prod.start_date ? new Date(prod.start_date) : null;
-                      const estCompletion = prod.estimated_end_date ? new Date(prod.estimated_end_date) : null;
+                      
+                      // Calculate Start Date: Use current process start date, or if not started, use last completed process completion date, or production start date
+                      let startDate = null;
+                      if (currentProcess?.started_at) {
+                        startDate = new Date(currentProcess.started_at);
+                      } else {
+                        // If current process hasn't started, check if there's a completed process before it
+                        const completedProcessesList = prod.processes?.filter(p => p.status === 'completed') || [];
+                        if (completedProcessesList.length > 0) {
+                          // Use the last completed process's completion date as the start for the next process
+                          const lastCompleted = completedProcessesList[completedProcessesList.length - 1];
+                          if (lastCompleted.completed_at) {
+                            startDate = new Date(lastCompleted.completed_at);
+                          }
+                        }
+                        // Fallback to production start date
+                        if (!startDate && prod.start_date) {
+                          startDate = new Date(prod.start_date);
+                        }
+                        // Final fallback to production_started_at
+                        if (!startDate && prod.production_started_at) {
+                          startDate = new Date(prod.production_started_at);
+                        }
+                      }
+                      
+                      // Calculate Est. Completion: Start Date + estimated duration of current process
+                      let estCompletion = null;
+                      if (startDate && currentProcess?.estimated_duration_minutes) {
+                        estCompletion = new Date(startDate.getTime() + (currentProcess.estimated_duration_minutes * 60000));
+                      } else if (startDate && currentProcess?.estimated_duration) {
+                        // Fallback if estimated_duration is in a different format
+                        estCompletion = new Date(startDate.getTime() + (currentProcess.estimated_duration * 60000));
+                      }
+                      
                       const delayDays = estCompletion && new Date() > estCompletion ? Math.ceil((new Date() - estCompletion) / (1000 * 60 * 60 * 24)) : 0;
                       const hasDelays = prod.processes?.some(p => p.delay_reason && p.delay_reason.trim());
                       
@@ -1972,17 +2059,63 @@ export default function ProductionTrackingSystem() {
               </div>
             </div>
             <div className="card-body">
-              {/* Optimization Metrics Summary */}
+              {/* Optimization Metrics Summary - Display all 6 processes */}
+              <div className="mb-3">
+                <h6 className="text-muted mb-3">
+                  <i className="fas fa-info-circle me-2"></i>
+                  All Production Processes - Resource Utilization Overview
+                </h6>
+              </div>
               <div className="row mb-4">
-                {suggestions.map((s) => {
-                  const utilization = s.utilization || ((s.queued / s.capacity) * 100);
-                  const isOverloaded = utilization > 100;
-                  const isBusy = utilization > 70 && utilization <= 100;
-                  const isOptimal = utilization >= 50 && utilization <= 70;
-                  const isUnderutilized = utilization < 50;
-                  
-                  return (
-                    <div key={s.stage} className="col-md-6 mb-3">
+                {suggestions.length > 0 ? (
+                  // Filter to only show the 6 defined stages and ensure all 6 are present
+                  (() => {
+                    // Create a map of suggestions by stage name
+                    const suggestionsMap = new Map();
+                    suggestions.forEach(s => {
+                      if (STAGES.includes(s.stage)) {
+                        suggestionsMap.set(s.stage, s);
+                      }
+                    });
+                    
+                    // Ensure all 6 stages are present, use defaults for missing ones
+                    const defaultCapacities = { 
+                      "Material Preparation": 3, 
+                      "Cutting & Shaping": 4, 
+                      "Assembly": 5, 
+                      "Sanding & Surface Preparation": 3, 
+                      "Finishing": 3, 
+                      "Quality Check & Packaging": 2 
+                    };
+                    
+                    const allStages = STAGES.map(stage => {
+                      if (suggestionsMap.has(stage)) {
+                        return suggestionsMap.get(stage);
+                      } else {
+                        // Return default for missing stage
+                        return {
+                          stage: stage,
+                          capacity: defaultCapacities[stage] || 3,
+                          assigned: [],
+                          queued: 0,
+                          utilization: 0,
+                          status: 'available',
+                          message: `${stage} has 0 items (0% capacity)`,
+                          priority: 'low'
+                        };
+                      }
+                    });
+                    
+                    return allStages;
+                  })().map((s) => {
+                    const utilization = s.utilization || ((s.queued / s.capacity) * 100);
+                    const isOverloaded = utilization > 100;
+                    const isBusy = utilization > 70 && utilization <= 100;
+                    const isOptimal = utilization >= 50 && utilization <= 70;
+                    const isUnderutilized = utilization < 50;
+                    
+                    return (
+                      <div key={s.stage} className="col-lg-4 col-md-6 mb-3">
                       <div className={`card h-100 border-${isOverloaded ? 'danger' : isBusy ? 'warning' : isOptimal ? 'success' : 'info'}`}>
                         <div className={`card-header bg-${isOverloaded ? 'danger' : isBusy ? 'warning' : isOptimal ? 'success' : 'info'} text-white`}>
                           <h6 className="mb-0">
@@ -2038,8 +2171,58 @@ export default function ProductionTrackingSystem() {
                         </div>
                       </div>
                     </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  // Fallback: Show all 6 stages even if suggestions is empty
+                  STAGES.map((stage) => {
+                    const capacities = { 
+                      "Material Preparation": 3, 
+                      "Cutting & Shaping": 4, 
+                      "Assembly": 5, 
+                      "Sanding & Surface Preparation": 3, 
+                      "Finishing": 3, 
+                      "Quality Check & Packaging": 2 
+                    };
+                    const cap = capacities[stage] || 1;
+                    const utilization = 0;
+                    const isUnderutilized = true;
+                    
+                    return (
+                      <div key={stage} className="col-lg-4 col-md-6 mb-3">
+                        <div className="card h-100 border-info">
+                          <div className="card-header bg-info text-white">
+                            <h6 className="mb-0">
+                              <strong>{stage}</strong>
+                            </h6>
+                          </div>
+                          <div className="card-body">
+                            <div className="d-flex justify-content-between align-items-center mb-2">
+                              <span className="small text-muted">Utilization:</span>
+                              <span className="badge bg-info">0%</span>
+                            </div>
+                            <div className="progress mb-2" style={{ height: '20px' }}>
+                              <div 
+                                className="progress-bar bg-info"
+                                role="progressbar" 
+                                style={{ width: '0%' }}
+                              >
+                                0/{cap}
+                              </div>
+                            </div>
+                            <div className="small text-muted">
+                              Queued: <strong>0</strong> / Capacity: <strong>{cap}</strong>
+                            </div>
+                            <div className="alert alert-info mt-2 mb-0 py-2">
+                              <i className="fas fa-info-circle me-1"></i>
+                              <strong>Capacity Available:</strong> Can accept more work
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
               {/* Priority Assignments Table */}

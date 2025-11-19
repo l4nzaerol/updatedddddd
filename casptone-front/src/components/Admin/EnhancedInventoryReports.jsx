@@ -156,12 +156,9 @@ const EnhancedInventoryReports = () => {
                     // Check if material is used in Made to Order products
                     const isMadeToOrderMaterial = madeToOrderMaterialIds.includes(material.material_id);
                     
-                    // Calculate average daily consumption from Alkansya output (last 30 days)
-                    const recentOutput = alkansyaOutput.filter(o => {
-                        const outputDate = new Date(o.output_date);
-                        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-                        return outputDate >= thirtyDaysAgo;
-                    });
+                    // Calculate average daily consumption from Alkansya output (use ALL data, not just last 30 days)
+                    // This includes seeded data and manual entries
+                    const allOutput = alkansyaOutput || [];
                     
                     // Find BOM entry for this material in Alkansya
                     const alkansyaBomEntry = boms.find(b => 
@@ -171,23 +168,60 @@ const EnhancedInventoryReports = () => {
                     
                     // Calculate Alkansya consumption
                     let alkansyaConsumption = 0;
-                    if (alkansyaBomEntry && recentOutput.length > 0) {
-                        const totalQuantity = recentOutput.reduce((sum, o) => sum + (o.quantity_produced || 0), 0);
-                        const avgDailyOutput = totalQuantity / 30; // average per day
+                    if (alkansyaBomEntry && allOutput.length > 0) {
+                        // Get unique days with output
+                        const uniqueDays = new Set();
+                        const totalQuantity = allOutput.reduce((sum, o) => {
+                            // Handle both date field names (date or output_date)
+                            const date = o.date || o.output_date;
+                            if (date) {
+                                // Normalize date to YYYY-MM-DD format
+                                const dateStr = typeof date === 'string' 
+                                    ? date.split('T')[0] 
+                                    : new Date(date).toISOString().split('T')[0];
+                                uniqueDays.add(dateStr);
+                            }
+                            return sum + (o.quantity_produced || 0);
+                        }, 0);
+                        
+                        // Calculate average by dividing by actual number of days with output
+                        const actualDaysWithOutput = uniqueDays.size || allOutput.length;
+                        const avgDailyOutput = actualDaysWithOutput > 0 ? totalQuantity / actualDaysWithOutput : 0;
                         alkansyaConsumption = avgDailyOutput * (alkansyaBomEntry.quantity_per_product || 0);
+                        
+                        // Debug logging
+                        if (material.material_id === alkansyaMaterialIds[0]) {
+                            console.log('Alkansya Consumption Calculation:', {
+                                material: material.material_name,
+                                totalOutput: allOutput.length,
+                                uniqueDays: uniqueDays.size,
+                                totalQuantity,
+                                avgDailyOutput,
+                                qtyPerUnit: alkansyaBomEntry.quantity_per_product,
+                                alkansyaConsumption
+                            });
+                        }
                     }
                     
-                    // Calculate Made-to-Order consumption from accepted orders (last 30 days)
+                    // Calculate Made-to-Order consumption from accepted orders (use ALL orders, not just last 30 days)
+                    // This includes seeded data and manual orders
                     let madeToOrderConsumption = 0;
                     if (isMadeToOrderMaterial && acceptedOrders.length > 0) {
-                        const recentOrders = acceptedOrders.filter(order => {
-                            const orderDate = new Date(order.accepted_at || order.created_at);
-                            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-                            return orderDate >= thirtyDaysAgo;
-                        });
+                        // Use ALL accepted orders, not just recent ones
+                        const allAcceptedOrders = acceptedOrders || [];
                         
-                        // Calculate average daily consumption from orders
-                        const totalQuantityOrdered = recentOrders.reduce((sum, order) => {
+                        // Get unique days with orders
+                        const uniqueOrderDays = new Set();
+                        const totalQuantityOrdered = allAcceptedOrders.reduce((sum, order) => {
+                            const orderDate = order.accepted_at || order.created_at;
+                            if (orderDate) {
+                                // Normalize date to YYYY-MM-DD format
+                                const dateStr = typeof orderDate === 'string' 
+                                    ? orderDate.split('T')[0] 
+                                    : new Date(orderDate).toISOString().split('T')[0];
+                                uniqueOrderDays.add(dateStr);
+                            }
+                            
                             const orderProducts = order.order_items || order.products || [];
                             const materialQuantity = orderProducts.reduce((prodSum, item) => {
                                 const orderBomEntry = boms.find(b => 
@@ -203,7 +237,9 @@ const EnhancedInventoryReports = () => {
                             return sum + materialQuantity;
                         }, 0);
                         
-                        madeToOrderConsumption = totalQuantityOrdered / 30; // average per day
+                        // Calculate average by dividing by actual number of days with orders
+                        const actualDaysWithOrders = uniqueOrderDays.size || allAcceptedOrders.length;
+                        madeToOrderConsumption = actualDaysWithOrders > 0 ? totalQuantityOrdered / actualDaysWithOrders : 0;
                     }
                     
                     // Total average daily consumption
@@ -212,23 +248,49 @@ const EnhancedInventoryReports = () => {
                     // Calculate safety stock (typically 2 weeks of average consumption)
                     const safetyStock = Math.ceil(avgDailyConsumption * 14);
                     
-                    // Calculate reorder point (safety stock + lead time consumption)
+                    // Use backend reorder_level if available, otherwise calculate reorder point
+                    // Backend reorder_level is the actual threshold from database
+                    const backendReorderLevel = material.reorder_level || 0;
                     const leadTimeDays = material.lead_time_days || 7;
-                    const reorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
+                    const calculatedReorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
+                    // Prefer backend reorder_level, fallback to calculated
+                    const reorderPoint = backendReorderLevel > 0 ? backendReorderLevel : calculatedReorderPoint;
                     
-                    // Calculate max level (typically 30 days of consumption or max_level if set)
-                    const maxLevel = material.max_level || Math.ceil(avgDailyConsumption * 30);
+                    // Calculate max level (use backend max_level if set, otherwise calculate)
+                    const backendMaxLevel = material.max_level || 0;
+                    const calculatedMaxLevel = Math.ceil(avgDailyConsumption * 30);
+                    const maxLevel = backendMaxLevel > 0 ? backendMaxLevel : calculatedMaxLevel;
                     
                     // Determine stock status based on current available quantity
+                    // Priority order: Out of Stock > Critical > Need Reorder > Overstocked > In Stock
+                    // Use backend status if available, otherwise calculate
                     const availableQty = material.available_quantity || 0;
-                    let stockStatus = 'in_stock';
-                    if (availableQty <= 0) {
-                        stockStatus = 'out_of_stock';
-                    } else if (availableQty <= reorderPoint) {
-                        stockStatus = 'low';
-                    } else if (availableQty <= safetyStock) {
-                        stockStatus = 'critical';
+                    const criticalStock = material.critical_stock || 0;
+                    let stockStatus = material.status || 'in_stock';
+                    
+                    // If backend didn't provide status, calculate it
+                    if (!material.status) {
+                        if (availableQty <= 0) {
+                            stockStatus = 'out_of_stock';
+                        } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                            // Critical: Stock is at or below critical level
+                            stockStatus = 'critical';
+                        } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                            // Need Reorder: Stock is at or below reorder point
+                            stockStatus = 'need_reorder';
+                        } else if (maxLevel > 0 && availableQty > maxLevel) {
+                            // Overstocked: Current stock exceeds max level
+                            stockStatus = 'overstocked';
+                        }
                     }
+                    
+                    // Determine needs_reorder: use backend flag if available, otherwise check against reorder_point
+                    // Handle backend needs_reorder as boolean, string, or number
+                    const backendNeedsReorder = material.needs_reorder !== undefined 
+                        ? (material.needs_reorder === true || material.needs_reorder === 'true' || material.needs_reorder === 1 || material.needs_reorder === '1')
+                        : undefined;
+                    const calculatedNeedsReorder = reorderPoint > 0 && availableQty <= reorderPoint;
+                    const needsReorder = backendNeedsReorder !== undefined ? backendNeedsReorder : calculatedNeedsReorder;
                     
                     // Calculate days until stockout
                     const daysUntilStockout = avgDailyConsumption > 0 
@@ -252,6 +314,7 @@ const EnhancedInventoryReports = () => {
                         unit_cost: material.standard_cost || 0,
                         value: totalValue,
                         reorder_point: reorderPoint,
+                        reorder_level: backendReorderLevel, // Include backend reorder_level for reference
                         safety_stock: safetyStock,
                         max_level: maxLevel,
                         critical_stock: material.critical_stock || 0,
@@ -263,7 +326,7 @@ const EnhancedInventoryReports = () => {
                         is_made_to_order_material: isMadeToOrderMaterial,
                         avg_daily_consumption: avgDailyConsumption,
                         days_until_stockout: daysUntilStockout,
-                        needs_reorder: availableQty <= reorderPoint,
+                        needs_reorder: needsReorder,
                         stock_variant: material.status_variant || 'success',
                         status_label: material.status_label || 'In Stock'
                     };
@@ -275,16 +338,99 @@ const EnhancedInventoryReports = () => {
                         total_items: processedItems.length,
                         items_needing_reorder: processedItems.filter(i => i.needs_reorder).length,
                         critical_items: processedItems.filter(i => i.stock_status === 'critical' || i.stock_status === 'out_of_stock').length,
+                        critical_stock_items: processedItems.filter(i => {
+                            const qty = i.available_quantity || 0;
+                            const critical = i.critical_stock || 0;
+                            return critical > 0 && qty <= critical && qty > 0;
+                        }).length,
                         total_usage: processedItems.reduce((sum, item) => sum + item.avg_daily_consumption, 0),
                         total_value: processedItems.reduce((sum, item) => sum + item.value, 0),
                         alkansya_materials: processedItems.filter(i => i.is_alkansya_material).length,
                         made_to_order_materials: processedItems.filter(i => i.is_made_to_order_material).length,
-                        low_stock_items: processedItems.filter(i => i.stock_status === 'low').length,
+                        // Low Stock includes both critical and need reorder items
+                        // Use needs_reorder flag from backend OR check status OR check quantities directly
+                        low_stock_items: (() => {
+                            // First, log all materials to see what we're working with
+                            console.log('All Processed Items for Low Stock Check:', processedItems.map(i => ({
+                                name: i.name,
+                                qty: i.available_quantity,
+                                reorder_level: i.reorder_level,
+                                reorder_point: i.reorder_point,
+                                critical_stock: i.critical_stock,
+                                status: i.stock_status,
+                                status_label: i.status_label,
+                                needs_reorder: i.needs_reorder,
+                                needs_reorder_type: typeof i.needs_reorder
+                            })));
+                            
+                            const lowStockItems = processedItems.filter(i => {
+                                const qty = i.available_quantity || 0;
+                                const critical = i.critical_stock || 0;
+                                // Use reorder_level from backend if available, otherwise use calculated reorder_point
+                                const reorderPoint = i.reorder_level || i.reorder_point || 0;
+                                const stockStatus = i.stock_status || i.status || '';
+                                
+                                // Handle needs_reorder as boolean, string, or number
+                                const needsReorder = i.needs_reorder === true || 
+                                                   i.needs_reorder === 'true' || 
+                                                   i.needs_reorder === 1 ||
+                                                   i.needs_reorder === '1';
+                                
+                                // Include if:
+                                // 1. Backend says it needs reorder
+                                // 2. Status is critical or need_reorder
+                                // 3. Quantity is at or below critical level (and critical > 0)
+                                // 4. Quantity is at or below reorder point/level (and reorderPoint > 0)
+                                const shouldInclude = needsReorder || 
+                                       stockStatus === 'critical' || 
+                                       stockStatus === 'need_reorder' || 
+                                       (critical > 0 && qty <= critical && qty > 0) || 
+                                       (reorderPoint > 0 && qty <= reorderPoint);
+                                
+                                // Debug logging for ALL items to see what's happening
+                                console.log('Checking Material:', {
+                                    name: i.name,
+                                    qty,
+                                    reorderPoint,
+                                    reorder_level: i.reorder_level,
+                                    reorder_point: i.reorder_point,
+                                    critical,
+                                    stockStatus,
+                                    status_from_backend: i.status,
+                                    needsReorder,
+                                    needs_reorder_raw: i.needs_reorder,
+                                    shouldInclude,
+                                    reason: needsReorder ? 'needs_reorder flag' :
+                                            stockStatus === 'critical' ? 'critical status' :
+                                            stockStatus === 'need_reorder' ? 'need_reorder status' :
+                                            (critical > 0 && qty <= critical) ? 'below critical' :
+                                            (reorderPoint > 0 && qty <= reorderPoint) ? 'below reorder point' :
+                                            'not included'
+                                });
+                                
+                                return shouldInclude;
+                            });
+                            
+                            console.log('Low Stock Summary:', {
+                                total: lowStockItems.length,
+                                items: lowStockItems.map(i => ({
+                                    name: i.name,
+                                    qty: i.available_quantity,
+                                    reorderPoint: i.reorder_point,
+                                    reorderLevel: i.reorder_level,
+                                    status: i.stock_status,
+                                    needsReorder: i.needs_reorder
+                                }))
+                            });
+                            
+                            return lowStockItems.length;
+                        })(),
                         out_of_stock_items: processedItems.filter(i => i.stock_status === 'out_of_stock').length,
                         alkansya_out_of_stock: processedItems.filter(i => i.is_alkansya_material && i.stock_status === 'out_of_stock').length,
                         alkansya_needs_reorder: processedItems.filter(i => i.is_alkansya_material && i.needs_reorder).length,
                         made_to_order_out_of_stock: processedItems.filter(i => i.is_made_to_order_material && i.stock_status === 'out_of_stock').length,
-                        made_to_order_needs_reorder: processedItems.filter(i => i.is_made_to_order_material && i.needs_reorder).length
+                        made_to_order_needs_reorder: processedItems.filter(i => i.is_made_to_order_material && i.needs_reorder).length,
+                        overstocked_items: processedItems.filter(i => i.stock_status === 'overstocked' || (i.max_level > 0 && i.available_quantity > i.max_level)).length
                     }
                 };
             }
@@ -292,7 +438,7 @@ const EnhancedInventoryReports = () => {
             setDashboardData({
                 summary: {
                     total_items: inventoryData.summary.total_items,
-                    low_stock_items: inventoryData.summary.items_needing_reorder,
+                    low_stock_items: inventoryData.summary.low_stock_items || inventoryData.summary.items_needing_reorder || 0,
                     out_of_stock_items: inventoryData.summary.critical_items,
                     recent_usage: inventoryData.summary.total_usage,
                     total_value: inventoryData.summary.total_value || 0,
@@ -332,6 +478,20 @@ const EnhancedInventoryReports = () => {
     useEffect(() => {
         fetchAllReports();
     }, [fetchAllReports]);
+    
+    // Real-time tracking: Auto-refresh stock levels every 30 seconds when on stock tab
+    useEffect(() => {
+        if (activeTab === 'stock') {
+            const interval = setInterval(() => {
+                // Only refresh if not currently loading
+                if (!tabLoadingStates.stock && !loading) {
+                    setRefreshKey(prev => prev + 1);
+                }
+            }, 30000); // Refresh every 30 seconds
+            
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, tabLoadingStates.stock, loading, refreshKey]);
 
 
     const handleGlobalRefresh = () => {
@@ -992,17 +1152,19 @@ const EnhancedInventoryReports = () => {
                     
                 case 'stock':
                     // Always refresh stock data when tab is clicked with MRP calculations
-                    const [materialsRes, productsRes, outputRes, bomsRes] = await Promise.allSettled([
+                    const [materialsRes, productsRes, outputRes, bomsRes, acceptedOrdersRes] = await Promise.allSettled([
                         api.get('/normalized-inventory/materials'),
                         api.get('/normalized-inventory/products'),
                         api.get('/normalized-inventory/daily-output'),
-                        api.get('/bom')
+                        api.get('/bom'),
+                        api.get('/orders/accepted') // Fetch accepted orders for Made-to-Order consumption calculation
                     ]);
                     
                     const materials = materialsRes.status === 'fulfilled' ? materialsRes.value?.data : [];
                     const products = productsRes.status === 'fulfilled' ? productsRes.value?.data : [];
                     const alkansyaOutput = outputRes.status === 'fulfilled' ? outputRes.value?.data?.daily_outputs : [];
                     const boms = bomsRes.status === 'fulfilled' ? bomsRes.value?.data : [];
+                    const acceptedOrders = acceptedOrdersRes.status === 'fulfilled' ? (acceptedOrdersRes.value?.data?.orders || []) : [];
                     
                     // Reapply MRP processing
                     const alkansyaProductIds = products
@@ -1024,37 +1186,128 @@ const EnhancedInventoryReports = () => {
                     const processedItems = materials.map(material => {
                         const isAlkansyaMaterial = alkansyaMaterialIds.includes(material.material_id);
                         const isMadeToOrderMaterial = madeToOrderMaterialIds.includes(material.material_id);
-                        const recentOutput = alkansyaOutput.filter(o => {
-                            const outputDate = new Date(o.output_date);
-                            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-                            return outputDate >= thirtyDaysAgo;
-                        });
                         
-                        const bomEntry = boms.find(b => 
+                        // Use ALL alkansya output data (not just last 30 days) to include seeded data
+                        const allOutput = alkansyaOutput || [];
+                        
+                        // Find BOM entries for both Alkansya and Made-to-Order
+                        const alkansyaBomEntry = boms.find(b => 
                             b.material_id === material.material_id && 
                             alkansyaProductIds.includes(b.product_id)
                         );
                         
-                        let avgDailyConsumption = 0;
-                        if (bomEntry && recentOutput.length > 0) {
-                            const totalQuantity = recentOutput.reduce((sum, o) => sum + (o.quantity_produced || 0), 0);
-                            const avgDailyOutput = totalQuantity / 30;
-                            avgDailyConsumption = avgDailyOutput * (bomEntry.quantity_per_product || 0);
+                        const madeToOrderBomEntry = boms.find(b => 
+                            b.material_id === material.material_id && 
+                            madeToOrderProductIds.includes(b.product_id)
+                        );
+                        
+                        // Calculate Alkansya consumption
+                        let alkansyaConsumption = 0;
+                        if (alkansyaBomEntry && allOutput.length > 0) {
+                            // Get unique days with output
+                            const uniqueDays = new Set();
+                            const totalQuantity = allOutput.reduce((sum, o) => {
+                                // Handle both date field names (date or output_date)
+                                const date = o.date || o.output_date;
+                                if (date) {
+                                    // Normalize date to YYYY-MM-DD format
+                                    const dateStr = typeof date === 'string' 
+                                        ? date.split('T')[0] 
+                                        : new Date(date).toISOString().split('T')[0];
+                                    uniqueDays.add(dateStr);
+                                }
+                                return sum + (o.quantity_produced || 0);
+                            }, 0);
+                            
+                            // Calculate average by dividing by actual number of days with output
+                            const actualDaysWithOutput = uniqueDays.size || allOutput.length;
+                            const avgDailyOutput = actualDaysWithOutput > 0 ? totalQuantity / actualDaysWithOutput : 0;
+                            alkansyaConsumption = avgDailyOutput * (alkansyaBomEntry.quantity_per_product || 0);
                         }
                         
-                        const safetyStock = Math.ceil(avgDailyConsumption * 14);
-                        const leadTimeDays = material.lead_time_days || 7;
-                        const reorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
-                        const maxLevel = material.max_level || Math.ceil(avgDailyConsumption * 30);
-                        const availableQty = material.available_quantity || 0;
-                        let stockStatus = 'in_stock';
-                        if (availableQty <= 0) {
-                            stockStatus = 'out_of_stock';
-                        } else if (availableQty <= reorderPoint) {
-                            stockStatus = 'low';
-                        } else if (availableQty <= safetyStock) {
-                            stockStatus = 'critical';
+                        // Calculate Made-to-Order consumption from accepted orders (use ALL orders)
+                        let madeToOrderConsumption = 0;
+                        if (isMadeToOrderMaterial && madeToOrderBomEntry && acceptedOrders.length > 0) {
+                            // Use ALL accepted orders, not just recent ones
+                            const allAcceptedOrders = acceptedOrders || [];
+                            
+                            // Get unique days with orders
+                            const uniqueOrderDays = new Set();
+                            const totalQuantityOrdered = allAcceptedOrders.reduce((sum, order) => {
+                                const orderDate = order.accepted_at || order.created_at;
+                                if (orderDate) {
+                                    // Normalize date to YYYY-MM-DD format
+                                    const dateStr = typeof orderDate === 'string' 
+                                        ? orderDate.split('T')[0] 
+                                        : new Date(orderDate).toISOString().split('T')[0];
+                                    uniqueOrderDays.add(dateStr);
+                                }
+                                
+                                const orderProducts = order.order_items || order.products || [];
+                                const materialQuantity = orderProducts.reduce((prodSum, item) => {
+                                    const orderBomEntry = boms.find(b => 
+                                        b.product_id === item.product_id && 
+                                        b.material_id === material.material_id &&
+                                        madeToOrderProductIds.includes(b.product_id)
+                                    );
+                                    if (orderBomEntry) {
+                                        return prodSum + (item.quantity * orderBomEntry.quantity_per_product);
+                                    }
+                                    return prodSum;
+                                }, 0);
+                                return sum + materialQuantity;
+                            }, 0);
+                            
+                            // Calculate average by dividing by actual number of days with orders
+                            const actualDaysWithOrders = uniqueOrderDays.size || allAcceptedOrders.length;
+                            madeToOrderConsumption = actualDaysWithOrders > 0 ? totalQuantityOrdered / actualDaysWithOrders : 0;
                         }
+                        
+                        // Total average daily consumption (Alkansya + Made-to-Order)
+                        let avgDailyConsumption = alkansyaConsumption + madeToOrderConsumption;
+                        
+                        // Use backend reorder_level if available, otherwise calculate reorder point
+                        const backendReorderLevel = material.reorder_level || 0;
+                        const leadTimeDays = material.lead_time_days || 7;
+                        const safetyStock = Math.ceil(avgDailyConsumption * 14);
+                        const calculatedReorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
+                        // Prefer backend reorder_level, fallback to calculated
+                        const reorderPoint = backendReorderLevel > 0 ? backendReorderLevel : calculatedReorderPoint;
+                        
+                        // Calculate max level (use backend max_level if set, otherwise calculate)
+                        const backendMaxLevel = material.max_level || 0;
+                        const calculatedMaxLevel = Math.ceil(avgDailyConsumption * 30);
+                        const maxLevel = backendMaxLevel > 0 ? backendMaxLevel : calculatedMaxLevel;
+                        
+                        const availableQty = material.available_quantity || 0;
+                        const criticalStock = material.critical_stock || 0;
+                        // Use backend status if available, otherwise calculate
+                        let stockStatus = material.status || 'in_stock';
+                        
+                        // If backend didn't provide status, calculate it
+                        // Priority order: Out of Stock > Critical > Need Reorder > Overstocked > In Stock
+                        if (!material.status) {
+                            if (availableQty <= 0) {
+                                stockStatus = 'out_of_stock';
+                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                // Critical: Stock is at or below critical level
+                                stockStatus = 'critical';
+                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                                // Need Reorder: Stock is at or below reorder point
+                                stockStatus = 'need_reorder';
+                            } else if (maxLevel > 0 && availableQty > maxLevel) {
+                                // Overstocked: Current stock exceeds max level
+                                stockStatus = 'overstocked';
+                            }
+                        }
+                        
+                        // Determine needs_reorder: use backend flag if available, otherwise check against reorder_point
+                        // Handle backend needs_reorder as boolean, string, or number
+                        const backendNeedsReorder = material.needs_reorder !== undefined 
+                            ? (material.needs_reorder === true || material.needs_reorder === 'true' || material.needs_reorder === 1 || material.needs_reorder === '1')
+                            : undefined;
+                        const calculatedNeedsReorder = reorderPoint > 0 && availableQty <= reorderPoint;
+                        const needsReorder = backendNeedsReorder !== undefined ? backendNeedsReorder : calculatedNeedsReorder;
                         
                         const daysUntilStockout = avgDailyConsumption > 0 
                             ? Math.floor(availableQty / avgDailyConsumption) 
@@ -1075,17 +1328,20 @@ const EnhancedInventoryReports = () => {
                             unit_cost: material.standard_cost || 0,
                             value: totalValue,
                             reorder_point: reorderPoint,
+                            reorder_level: backendReorderLevel, // Include backend reorder_level for reference
                             safety_stock: safetyStock,
                             max_level: maxLevel,
+                            critical_stock: material.critical_stock || 0,
                             lead_time_days: leadTimeDays,
                             supplier: material.supplier || 'N/A',
                             location: material.location || 'Windfield 2',
                             stock_status: stockStatus,
+                            status: material.status || stockStatus, // Include backend status for compatibility
                             is_alkansya_material: isAlkansyaMaterial,
                             is_made_to_order_material: isMadeToOrderMaterial,
                             avg_daily_consumption: avgDailyConsumption,
                             days_until_stockout: daysUntilStockout,
-                            needs_reorder: availableQty <= reorderPoint
+                            needs_reorder: needsReorder
                         };
                     });
                     
@@ -1099,7 +1355,33 @@ const EnhancedInventoryReports = () => {
                             total_value: processedItems.reduce((sum, item) => sum + item.value, 0),
                             alkansya_materials: processedItems.filter(i => i.is_alkansya_material).length,
                             made_to_order_materials: processedItems.filter(i => i.is_made_to_order_material).length,
-                            low_stock_items: processedItems.filter(i => i.stock_status === 'low').length,
+                            // Low Stock includes both critical and need reorder items
+                            // Use needs_reorder flag from backend OR check status OR check quantities directly
+                            low_stock_items: (() => {
+                                const lowStockItems = processedItems.filter(i => {
+                                    const qty = i.available_quantity || 0;
+                                    const critical = i.critical_stock || 0;
+                                    // Use reorder_level from backend if available, otherwise use calculated reorder_point
+                                    const reorderPoint = i.reorder_level || i.reorder_point || 0;
+                                    const stockStatus = i.stock_status || '';
+                                    const needsReorder = i.needs_reorder || false;
+                                    
+                                    // Include if:
+                                    // 1. Backend says it needs reorder
+                                    // 2. Status is critical or need_reorder
+                                    // 3. Quantity is at or below critical level (and critical > 0)
+                                    // 4. Quantity is at or below reorder point/level (and reorderPoint > 0)
+                                    const shouldInclude = needsReorder || 
+                                           stockStatus === 'critical' || 
+                                           stockStatus === 'need_reorder' || 
+                                           (critical > 0 && qty <= critical && qty > 0) || 
+                                           (reorderPoint > 0 && qty <= reorderPoint);
+                                    
+                                    return shouldInclude;
+                                });
+                                
+                                return lowStockItems.length;
+                            })(),
                             out_of_stock_items: processedItems.filter(i => i.stock_status === 'out_of_stock').length
                         }
                     };
@@ -1981,11 +2263,17 @@ const EnhancedInventoryReports = () => {
                                             <span className="visually-hidden">Loading...</span>
                                         </div>
                                     )}
+                                    {!tabLoadingStates.stock && activeTab === 'stock' && (
+                                        <span className="badge bg-success ms-2" title="Real-time tracking active - Auto-refreshes every 30 seconds">
+                                            <i className="fas fa-circle text-white" style={{ fontSize: '6px', animation: 'pulse 2s infinite' }}></i>
+                                            {' '}Live
+                                        </span>
+                                    )}
                                 </h5>
                                 </div>
                                 
                                 {/* Filter Buttons */}
-                                        <div className="d-flex gap-2">
+                                        <div className="d-flex gap-2 flex-wrap">
                                     <button 
                                         className={`btn ${stockFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
                                         onClick={() => setStockFilter('all')}
@@ -2010,9 +2298,76 @@ const EnhancedInventoryReports = () => {
                                         <i className="fas fa-tools me-2"></i>
                                         Made to Order
                                     </button>
+                                    <button 
+                                        className={`btn ${stockFilter === 'overstocked' ? 'btn-info' : 'btn-outline-info'}`}
+                                        onClick={() => setStockFilter('overstocked')}
+                                        style={{ borderRadius: '8px' }}
+                                        title="Materials with stock exceeding maximum level"
+                                    >
+                                        <i className="fas fa-boxes me-2"></i>
+                                        Overstocked
+                                    </button>
                                 </div>
                             </div>
                             <div className="card-body">
+                                {/* Summary Cards */}
+                                {filteredInventoryData?.summary && !tabLoadingStates.stock && (
+                                    <div className="row mb-4">
+                                        <div className="col-md-3 col-sm-6 mb-3">
+                                            <div className="card border h-100" style={{ borderRadius: '8px' }}>
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 className="mb-1 text-muted small">Total Materials</h6>
+                                                            <h3 className="mb-0 text-dark">{filteredInventoryData.summary.total_items || 0}</h3>
+                                                        </div>
+                                                        <i className="fas fa-boxes fa-2x text-muted opacity-50"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="col-md-3 col-sm-6 mb-3">
+                                            <div className="card border h-100" style={{ borderRadius: '8px', borderColor: '#17a2b8' }}>
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 className="mb-1 text-muted small">Overstocked</h6>
+                                                            <h3 className="mb-0" style={{ color: '#17a2b8' }}>{filteredInventoryData.summary.overstocked_items || 0}</h3>
+                                                        </div>
+                                                        <i className="fas fa-boxes fa-2x" style={{ color: '#17a2b8', opacity: 0.5 }}></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="col-md-3 col-sm-6 mb-3">
+                                            <div className="card border h-100" style={{ borderRadius: '8px', borderColor: '#dc3545' }}>
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 className="mb-1 text-muted small">Critical Stock</h6>
+                                                            <h3 className="mb-0 text-danger">{filteredInventoryData.summary.critical_stock_items || 0}</h3>
+                                                        </div>
+                                                        <i className="fas fa-exclamation-circle fa-2x text-danger opacity-50"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="col-md-3 col-sm-6 mb-3">
+                                            <div className="card border h-100" style={{ borderRadius: '8px', borderColor: '#ffc107' }}>
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 className="mb-1 text-muted small">Low Stock / Need Reorder</h6>
+                                                            <h3 className="mb-0 text-warning">{filteredInventoryData.summary.low_stock_items || 0}</h3>
+                                                            <small className="text-muted" style={{ fontSize: '0.75rem' }}>Includes critical items</small>
+                                                        </div>
+                                                        <i className="fas fa-exclamation-triangle fa-2x text-warning opacity-50"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                                 {tabLoadingStates.stock ? (
                                     <div className="text-center py-5">
                                         <div className="spinner-border text-primary mb-3" role="status">
@@ -2048,20 +2403,39 @@ const EnhancedInventoryReports = () => {
                                                         if (stockFilter === 'all') return true;
                                                         if (stockFilter === 'alkansya') return item.is_alkansya_material;
                                                         if (stockFilter === 'made_to_order') return item.is_made_to_order_material;
+                                                        if (stockFilter === 'overstocked') return item.stock_status === 'overstocked' || (item.max_level > 0 && item.available_quantity > item.max_level);
                                                         return true;
                                                     })
                                                     .map((item, index) => {
-                                                    // Determine status label
+                                                    // Determine status label with proper priority order
+                                                    // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
                                                     let statusLabel = 'In Stock';
                                                     let statusColor = 'success';
-                                                    if (item.available_quantity <= 0) {
-                                                        statusLabel = 'No Stock';
+                                                    const availableQty = item.available_quantity || 0;
+                                                    const criticalStock = item.critical_stock || 0;
+                                                    
+                                                    if (availableQty <= 0) {
+                                                        statusLabel = 'Out of Stock';
                                                         statusColor = 'danger';
-                                                    } else if (item.needs_reorder && item.available_quantity <= item.reorder_point) {
+                                                    } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                                        // Critical: Stock is at or below critical level
+                                                        statusLabel = 'Critical';
+                                                        statusColor = 'danger';
+                                                    } else if (item.reorder_point && availableQty <= item.reorder_point) {
+                                                        // Need Reorder: Stock is at or below reorder point
                                                         statusLabel = 'Need Reorder';
                                                         statusColor = 'warning';
-                                                    } else if (item.available_quantity <= item.safety_stock) {
-                                                        statusLabel = 'Low Stock';
+                                                    } else if (item.max_level > 0 && availableQty > item.max_level) {
+                                                        // Overstocked: Current stock exceeds max level
+                                                        statusLabel = 'Overstocked';
+                                                        statusColor = 'info'; // Using info (blue) to distinguish from other statuses
+                                                    } else if (item.stock_status === 'critical') {
+                                                        // Fallback for critical status
+                                                        statusLabel = 'Critical';
+                                                        statusColor = 'danger';
+                                                    } else if (item.stock_status === 'need_reorder') {
+                                                        // Fallback for need reorder status
+                                                        statusLabel = 'Need Reorder';
                                                         statusColor = 'warning';
                                                     }
                                                     
@@ -2101,8 +2475,10 @@ const EnhancedInventoryReports = () => {
                                                         <td className="text-end" style={{ padding: '1rem' }}>
                                                             <span className={`fw-bold ${
                                                                     item.available_quantity <= 0 ? 'text-danger' :
+                                                                    item.critical_stock && item.available_quantity <= item.critical_stock ? 'text-danger' :
                                                                     item.available_quantity <= item.reorder_point ? 'text-warning' :
                                                                     item.available_quantity <= item.safety_stock ? 'text-warning' :
+                                                                    item.max_level && item.available_quantity > item.max_level ? 'text-info' :
                                                                 'text-success'
                                                             }`}>
                                                                     {item.available_quantity || 0}
@@ -2134,6 +2510,7 @@ const EnhancedInventoryReports = () => {
                                                             <span className={`badge ${
                                                                 statusColor === 'danger' ? 'bg-danger' :
                                                                 statusColor === 'warning' ? 'bg-warning' :
+                                                                statusColor === 'info' ? 'bg-info' :
                                                                 'bg-success'
                                                             }`} style={{ borderRadius: '6px' }}>
                                                                 {statusLabel}
@@ -2248,35 +2625,196 @@ const EnhancedInventoryReports = () => {
                                                 </h6>
                                                     <div>
                                                         <div className="row mb-4">
-                                                            <div className="col-md-3">
-                                                                <div className="card bg-light">
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Avg Daily Output</h6>
-                                                                        <h4 className="text-primary">{alkansyaForecast.avg_daily_output}</h4>
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-chart-line me-1"></i>
+                                                                            Avg Daily Output
+                                                                        </h6>
+                                                                        <h4 className="text-primary mb-0">{alkansyaForecast.avg_daily_output || 0}</h4>
+                                                                        <small className="text-muted">units/day</small>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="col-md-3">
-                                                                <div className="card bg-light">
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Materials Analyzed</h6>
-                                                                        <h4 className="text-info">{alkansyaForecast.summary.materials_analyzed}</h4>
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-cubes me-1"></i>
+                                                                            Total Output
+                                                                        </h6>
+                                                                        <h4 className="text-success mb-0">{alkansyaForecast.total_historical_output || 0}</h4>
+                                                                        <small className="text-muted">total units</small>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="col-md-3">
-                                                                <div className="card bg-light">
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Need Reorder</h6>
-                                                                        <h4 className="text-warning">{alkansyaForecast.summary.materials_needing_reorder}</h4>
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-calendar-check me-1"></i>
+                                                                            Days with Output
+                                                                        </h6>
+                                                                        <h4 className="text-info mb-0">{alkansyaForecast.actual_days_with_output || 0}</h4>
+                                                                        <small className="text-muted">days</small>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="col-md-3">
-                                                                <div className="card bg-light">
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                                                                     <div className="card-body text-center">
-                                                                        <h6 className="card-title text-muted">Avg Days to Stockout</h6>
-                                                                        <h4 className="text-danger">{Math.round(alkansyaForecast.summary.avg_days_until_stockout)}</h4>
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-boxes me-1"></i>
+                                                                            Materials Analyzed
+                                                                        </h6>
+                                                                        <h4 className="text-info mb-0">{alkansyaForecast.summary.materials_analyzed || 0}</h4>
+                                                                        <small className="text-muted">materials</small>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-exclamation-triangle me-1"></i>
+                                                                            Need Reorder
+                                                                        </h6>
+                                                                        <h4 className="text-warning mb-0">{alkansyaForecast.summary.materials_needing_reorder || 0}</h4>
+                                                                        <small className="text-muted">materials</small>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-2">
+                                                                <div className="card bg-light border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-body text-center">
+                                                                        <h6 className="card-title text-muted mb-2">
+                                                                            <i className="fas fa-clock me-1"></i>
+                                                                            Avg Days to Stockout
+                                                                        </h6>
+                                                                        <h4 className="text-danger mb-0">{Math.round(alkansyaForecast.summary.avg_days_until_stockout || 0)}</h4>
+                                                                        <small className="text-muted">days</small>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Projected Total Output Display */}
+                                                        <div className="row mb-4">
+                                                            <div className="col-12">
+                                                                <div className="card border-0 shadow-sm" style={{ 
+                                                                    borderRadius: '12px',
+                                                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                                    boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                                                                }}>
+                                                                    <div className="card-body" style={{ padding: '25px' }}>
+                                                                        <div className="row align-items-center">
+                                                                            <div className="col-md-8">
+                                                                                <h5 className="mb-2" style={{ 
+                                                                                    color: '#ffffff',
+                                                                                    fontWeight: '600',
+                                                                                    textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+                                                                                    fontSize: '1.25rem'
+                                                                                }}>
+                                                                                    <i className="fas fa-calculator me-2"></i>
+                                                                                    Projected Total Alkansya Output
+                                                                                </h5>
+                                                                                <p className="mb-0" style={{ 
+                                                                                    color: '#ffffff',
+                                                                                    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+                                                                                    fontSize: '0.95rem'
+                                                                                }}>
+                                                                                    Based on average daily output of <strong style={{ fontWeight: '700' }}>{alkansyaForecast.avg_daily_output || 0} units/day</strong> over the next <strong style={{ fontWeight: '700' }}>{alkansyaForecast.forecast_period || windowDays} days</strong>
+                                                                                </p>
+                                                                            </div>
+                                                                            <div className="col-md-4 text-end">
+                                                                                <h2 className="mb-0" style={{ 
+                                                                                    color: '#ffffff',
+                                                                                    fontWeight: '700',
+                                                                                    textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+                                                                                    fontSize: '2.5rem'
+                                                                                }}>
+                                                                                    {((alkansyaForecast.avg_daily_output || 0) * (alkansyaForecast.forecast_period || windowDays)).toFixed(0)}
+                                                                                </h2>
+                                                                                <p className="mb-0" style={{ 
+                                                                                    color: '#ffffff',
+                                                                                    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+                                                                                    fontSize: '0.9rem',
+                                                                                    fontWeight: '500'
+                                                                                }}>projected units</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* BOM Table - Materials Required for One Alkansya */}
+                                                        <div className="row mb-4">
+                                                            <div className="col-12">
+                                                                <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                                                                    <div className="card-header bg-white border-0" style={{ borderRadius: '12px 12px 0 0', padding: '15px 20px' }}>
+                                                                        <h6 className="mb-0 d-flex align-items-center text-success">
+                                                                            <i className="fas fa-list-alt me-2"></i>
+                                                                            Bill of Materials (BOM) - Materials Required for One Alkansya Unit
+                                                                        </h6>
+                                                                        <small className="text-muted">This table shows the quantity of each material needed to produce one Alkansya unit</small>
+                                                                    </div>
+                                                                    <div className="card-body" style={{ padding: '20px' }}>
+                                                                        <div className="table-responsive">
+                                                                            <table className="table table-hover mb-0" style={{ fontSize: '0.9rem' }}>
+                                                                                <thead className="table-light">
+                                                                                    <tr>
+                                                                                        <th style={{ fontWeight: '600', padding: '12px' }}>Material Name</th>
+                                                                                        <th style={{ fontWeight: '600', padding: '12px', textAlign: 'center' }}>Material Code</th>
+                                                                                        <th style={{ fontWeight: '600', padding: '12px', textAlign: 'center' }}>Quantity per Unit</th>
+                                                                                        <th style={{ fontWeight: '600', padding: '12px', textAlign: 'center' }}>Unit</th>
+                                                                                        <th style={{ fontWeight: '600', padding: '12px', textAlign: 'center' }}>Projected Total Usage</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {alkansyaForecast.material_forecasts && alkansyaForecast.material_forecasts.length > 0 ? (
+                                                                                        alkansyaForecast.material_forecasts.map((material, index) => {
+                                                                                            const projectedTotal = (material.qty_per_unit || 0) * ((alkansyaForecast.avg_daily_output || 0) * (alkansyaForecast.forecast_period || windowDays));
+                                                                                            return (
+                                                                                                <tr key={index}>
+                                                                                                    <td style={{ padding: '12px' }}>
+                                                                                                        <div className="d-flex align-items-center">
+                                                                                                            <i className="fas fa-box me-2" style={{ color: '#28a745', fontSize: '0.9rem' }}></i>
+                                                                                                            <span style={{ fontWeight: '500' }}>{material.material_name}</span>
+                                                                                                        </div>
+                                                                                                    </td>
+                                                                                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                                                                        <code className="bg-light px-2 py-1 rounded">{material.material_code}</code>
+                                                                                                    </td>
+                                                                                                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>
+                                                                                                        {material.qty_per_unit ? Number(material.qty_per_unit).toFixed(4) : '0.0000'}
+                                                                                                    </td>
+                                                                                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                                                                        <span className="text-muted">{material.unit || 'pcs'}</span>
+                                                                                                    </td>
+                                                                                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                                                                                        <span className="text-info fw-bold">
+                                                                                                            {projectedTotal.toFixed(2)} {material.unit || 'pcs'}
+                                                                                                        </span>
+                                                                                                        <br/>
+                                                                                                        <small className="text-muted">
+                                                                                                            ({((alkansyaForecast.avg_daily_output || 0) * (alkansyaForecast.forecast_period || windowDays)).toFixed(0)} units × {Number(material.qty_per_unit || 0).toFixed(4)})
+                                                                                                        </small>
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            );
+                                                                                        })
+                                                                                    ) : (
+                                                                                        <tr>
+                                                                                            <td colSpan="5" className="text-center text-muted py-4">
+                                                                                                No material data available
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    )}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -2321,8 +2859,26 @@ const EnhancedInventoryReports = () => {
                                                                                     }}
                                                                                 />
                                                                                 <Legend />
-                                                                                <Line type="monotone" dataKey="predicted_output" stroke={colors.primary} strokeWidth={3} name="Predicted Output" dot={{ r: 4 }} />
-                                                                                <Line type="monotone" dataKey="total_material_usage" stroke={colors.info} strokeWidth={3} name="Total Material Usage" dot={{ r: 4 }} />
+                                                                                <Line 
+                                                                                    type="linear" 
+                                                                                    dataKey="predicted_output" 
+                                                                                    stroke={colors.primary} 
+                                                                                    strokeWidth={3} 
+                                                                                    name="Predicted Output" 
+                                                                                    dot={{ r: 5, fill: colors.primary }} 
+                                                                                    activeDot={{ r: 7 }}
+                                                                                    connectNulls={false}
+                                                                                />
+                                                                                <Line 
+                                                                                    type="linear" 
+                                                                                    dataKey="total_material_usage" 
+                                                                                    stroke={colors.info} 
+                                                                                    strokeWidth={3} 
+                                                                                    name="Total Material Usage" 
+                                                                                    dot={{ r: 5, fill: colors.info }} 
+                                                                                    activeDot={{ r: 7 }}
+                                                                                    connectNulls={false}
+                                                                                />
                                                                             </LineChart>
                                                                         </ResponsiveContainer>
                                                                     </div>
@@ -2435,16 +2991,57 @@ const EnhancedInventoryReports = () => {
                                                                                                     </span>
                                                                                                 </td>
                                                                                                 <td style={{ padding: '15px', textAlign: 'center' }}>
-                                                                                                    <span className={`badge ${material.needs_reorder ? 'bg-warning text-dark' : 'bg-success'}`}
-                                                                                                        style={{ 
-                                                                                                            fontSize: '0.85rem',
-                                                                                                            padding: '8px 12px',
-                                                                                                            borderRadius: '8px',
-                                                                                                            fontWeight: '600'
-                                                                                                        }}>
-                                                                                                        <i className={`fas ${material.needs_reorder ? 'fa-exclamation-triangle' : 'fa-check-circle'} me-1`}></i>
-                                                                                                        {material.needs_reorder ? 'Reorder' : 'In Stock'}
-                                                                                                    </span>
+                                                                                                    {(() => {
+                                                                                                        // Calculate status with proper priority order
+                                                                                                        // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                                                                                                        const availableQty = material.current_stock || material.available_quantity || 0;
+                                                                                                        const criticalStock = material.critical_stock || 0;
+                                                                                                        const reorderPoint = material.reorder_point || 0;
+                                                                                                        const maxLevel = material.max_level || 0;
+                                                                                                        
+                                                                                                        let statusLabel = material.status_label || 'In Stock';
+                                                                                                        let statusColor = material.status_color || 'success';
+                                                                                                        
+                                                                                                        // Use backend status if available, otherwise calculate
+                                                                                                        if (!material.status_label) {
+                                                                                                            if (availableQty <= 0) {
+                                                                                                                statusLabel = 'Out of Stock';
+                                                                                                                statusColor = 'danger';
+                                                                                                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                                                                                                statusLabel = 'Critical';
+                                                                                                                statusColor = 'danger';
+                                                                                                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                                                                                                                statusLabel = 'Low Stock';
+                                                                                                                statusColor = 'warning';
+                                                                                                            } else if (maxLevel > 0 && availableQty > maxLevel) {
+                                                                                                                statusLabel = 'Overstocked';
+                                                                                                                statusColor = 'info';
+                                                                                                            }
+                                                                                                        }
+                                                                                                        
+                                                                                                        const iconClass = statusColor === 'danger' ? 'fa-exclamation-circle' : 
+                                                                                                                         statusColor === 'warning' ? 'fa-exclamation-triangle' :
+                                                                                                                         statusColor === 'info' ? 'fa-boxes' :
+                                                                                                                         'fa-check-circle';
+                                                                                                        
+                                                                                                        return (
+                                                                                                            <span className={`badge ${
+                                                                                                                statusColor === 'danger' ? 'bg-danger' :
+                                                                                                                statusColor === 'warning' ? 'bg-warning' :
+                                                                                                                statusColor === 'info' ? 'bg-info' :
+                                                                                                                'bg-success'
+                                                                                                            }`}
+                                                                                                                style={{ 
+                                                                                                                    fontSize: '0.85rem',
+                                                                                                                    padding: '8px 12px',
+                                                                                                                    borderRadius: '8px',
+                                                                                                                    fontWeight: '600'
+                                                                                                                }}>
+                                                                                                                <i className={`fas ${iconClass} me-1`}></i>
+                                                                                                                {statusLabel}
+                                                                                                            </span>
+                                                                                                        );
+                                                                                                    })()}
                                                                                                 </td>
                                                                                             </tr>
                                                                                         );
@@ -2819,16 +3416,57 @@ const EnhancedInventoryReports = () => {
                                                                                                     </span>
                                                                                                 </td>
                                                                                                 <td style={{ padding: '15px', textAlign: 'center' }}>
-                                                                                                    <span className={`badge ${material.needs_reorder ? 'bg-warning text-dark' : 'bg-success'}`}
-                                                                                                        style={{ 
-                                                                                                            fontSize: '0.85rem',
-                                                                                                            padding: '8px 12px',
-                                                                                                            borderRadius: '8px',
-                                                                                                            fontWeight: '600'
-                                                                                                        }}>
-                                                                                                        <i className={`fas ${material.needs_reorder ? 'fa-exclamation-triangle' : 'fa-check-circle'} me-1`}></i>
-                                                                                                        {material.needs_reorder ? 'Reorder' : 'In Stock'}
-                                                                                                    </span>
+                                                                                                    {(() => {
+                                                                                                        // Calculate status with proper priority order
+                                                                                                        // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                                                                                                        const availableQty = material.current_stock || material.available_quantity || 0;
+                                                                                                        const criticalStock = material.critical_stock || 0;
+                                                                                                        const reorderPoint = material.reorder_point || 0;
+                                                                                                        const maxLevel = material.max_level || 0;
+                                                                                                        
+                                                                                                        let statusLabel = material.status_label || 'In Stock';
+                                                                                                        let statusColor = material.status_color || 'success';
+                                                                                                        
+                                                                                                        // Use backend status if available, otherwise calculate
+                                                                                                        if (!material.status_label) {
+                                                                                                            if (availableQty <= 0) {
+                                                                                                                statusLabel = 'Out of Stock';
+                                                                                                                statusColor = 'danger';
+                                                                                                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                                                                                                statusLabel = 'Critical';
+                                                                                                                statusColor = 'danger';
+                                                                                                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                                                                                                                statusLabel = 'Low Stock';
+                                                                                                                statusColor = 'warning';
+                                                                                                            } else if (maxLevel > 0 && availableQty > maxLevel) {
+                                                                                                                statusLabel = 'Overstocked';
+                                                                                                                statusColor = 'info';
+                                                                                                            }
+                                                                                                        }
+                                                                                                        
+                                                                                                        const iconClass = statusColor === 'danger' ? 'fa-exclamation-circle' : 
+                                                                                                                         statusColor === 'warning' ? 'fa-exclamation-triangle' :
+                                                                                                                         statusColor === 'info' ? 'fa-boxes' :
+                                                                                                                         'fa-check-circle';
+                                                                                                        
+                                                                                                        return (
+                                                                                                            <span className={`badge ${
+                                                                                                                statusColor === 'danger' ? 'bg-danger' :
+                                                                                                                statusColor === 'warning' ? 'bg-warning' :
+                                                                                                                statusColor === 'info' ? 'bg-info' :
+                                                                                                                'bg-success'
+                                                                                                            }`}
+                                                                                                                style={{ 
+                                                                                                                    fontSize: '0.85rem',
+                                                                                                                    padding: '8px 12px',
+                                                                                                                    borderRadius: '8px',
+                                                                                                                    fontWeight: '600'
+                                                                                                                }}>
+                                                                                                                <i className={`fas ${iconClass} me-1`}></i>
+                                                                                                                {statusLabel}
+                                                                                                            </span>
+                                                                                                        );
+                                                                                                    })()}
                                                                                                 </td>
                                                                                             </tr>
                                                                                         );
@@ -3181,9 +3819,45 @@ const EnhancedInventoryReports = () => {
                                                                                     </span>
                                                                                 </td>
                                                                                 <td>
-                                                                                    <span className={`badge ${item.needs_reorder ? 'bg-warning' : 'bg-success'}`} style={{ borderRadius: '8px' }}>
-                                                                                        {item.needs_reorder ? 'Need Reorder' : 'In Stock'}
-                                                                                    </span>
+                                                                                    {(() => {
+                                                                                        // Calculate status with proper priority order
+                                                                                        // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                                                                                        const availableQty = item.current_stock || item.available_quantity || 0;
+                                                                                        const criticalStock = item.critical_stock || 0;
+                                                                                        const reorderPoint = item.reorder_point || 0;
+                                                                                        const maxLevel = item.max_level || 0;
+                                                                                        
+                                                                                        let statusLabel = item.status_label || 'In Stock';
+                                                                                        let statusColor = item.status_color || 'success';
+                                                                                        
+                                                                                        // Use backend status if available, otherwise calculate
+                                                                                        if (!item.status_label) {
+                                                                                            if (availableQty <= 0) {
+                                                                                                statusLabel = 'Out of Stock';
+                                                                                                statusColor = 'danger';
+                                                                                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                                                                                statusLabel = 'Critical';
+                                                                                                statusColor = 'danger';
+                                                                                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                                                                                                statusLabel = 'Low Stock';
+                                                                                                statusColor = 'warning';
+                                                                                            } else if (maxLevel > 0 && availableQty > maxLevel) {
+                                                                                                statusLabel = 'Overstocked';
+                                                                                                statusColor = 'info';
+                                                                                            }
+                                                                                        }
+                                                                                        
+                                                                                        return (
+                                                                                            <span className={`badge ${
+                                                                                                statusColor === 'danger' ? 'bg-danger' :
+                                                                                                statusColor === 'warning' ? 'bg-warning' :
+                                                                                                statusColor === 'info' ? 'bg-info' :
+                                                                                                'bg-success'
+                                                                                            }`} style={{ borderRadius: '8px' }}>
+                                                                                                {statusLabel}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })()}
                                                                                 </td>
                                                                             </tr>
                                                                         ))}
@@ -3265,9 +3939,45 @@ const EnhancedInventoryReports = () => {
                                                                                     </span>
                                                                                 </td>
                                                                                 <td>
-                                                                                    <span className={`badge ${item.needs_reorder ? 'bg-warning' : 'bg-success'}`} style={{ borderRadius: '8px' }}>
-                                                                                        {item.needs_reorder ? 'Need Reorder' : 'In Stock'}
-                                                                                    </span>
+                                                                                    {(() => {
+                                                                                        // Calculate status with proper priority order
+                                                                                        // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                                                                                        const availableQty = item.current_stock || item.available_quantity || 0;
+                                                                                        const criticalStock = item.critical_stock || 0;
+                                                                                        const reorderPoint = item.reorder_point || 0;
+                                                                                        const maxLevel = item.max_level || 0;
+                                                                                        
+                                                                                        let statusLabel = item.status_label || 'In Stock';
+                                                                                        let statusColor = item.status_color || 'success';
+                                                                                        
+                                                                                        // Use backend status if available, otherwise calculate
+                                                                                        if (!item.status_label) {
+                                                                                            if (availableQty <= 0) {
+                                                                                                statusLabel = 'Out of Stock';
+                                                                                                statusColor = 'danger';
+                                                                                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
+                                                                                                statusLabel = 'Critical';
+                                                                                                statusColor = 'danger';
+                                                                                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
+                                                                                                statusLabel = 'Low Stock';
+                                                                                                statusColor = 'warning';
+                                                                                            } else if (maxLevel > 0 && availableQty > maxLevel) {
+                                                                                                statusLabel = 'Overstocked';
+                                                                                                statusColor = 'info';
+                                                                                            }
+                                                                                        }
+                                                                                        
+                                                                                        return (
+                                                                                            <span className={`badge ${
+                                                                                                statusColor === 'danger' ? 'bg-danger' :
+                                                                                                statusColor === 'warning' ? 'bg-warning' :
+                                                                                                statusColor === 'info' ? 'bg-info' :
+                                                                                                'bg-success'
+                                                                                            }`} style={{ borderRadius: '8px' }}>
+                                                                                                {statusLabel}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })()}
                                                                                 </td>
                                                                             </tr>
                                                                         ))}

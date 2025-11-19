@@ -161,19 +161,36 @@ class NormalizedInventoryController extends Controller
                 $material->total_quantity_reserved = $totalReserved ?? 0;
                 $material->available_quantity = $material->total_quantity_on_hand - $material->total_quantity_reserved;
                 
-                // Calculate status based on reorder level
+                // Calculate status based on stock levels
+                // Priority order: Out of Stock > Critical > Need Reorder > Overstocked > In Stock
                 if ($material->available_quantity <= 0) {
                     $material->status = 'out_of_stock';
                     $material->status_label = 'Out of Stock';
                     $material->status_variant = 'danger';
+                    $material->needs_reorder = true;
+                } elseif ($material->critical_stock && $material->available_quantity <= $material->critical_stock) {
+                    // Critical: Stock is at or below critical level (also needs reorder)
+                    $material->status = 'critical';
+                    $material->status_label = 'Critical';
+                    $material->status_variant = 'danger';
+                    $material->needs_reorder = true;
                 } elseif ($material->reorder_level && $material->available_quantity <= $material->reorder_level) {
-                    $material->status = 'low_stock';
-                    $material->status_label = 'Low Stock';
+                    // Need Reorder: Stock is at or below reorder level
+                    $material->status = 'need_reorder';
+                    $material->status_label = 'Need Reorder';
                     $material->status_variant = 'warning';
+                    $material->needs_reorder = true;
+                } elseif ($material->max_level && $material->available_quantity > $material->max_level) {
+                    // Overstocked: Current stock exceeds max level
+                    $material->status = 'overstocked';
+                    $material->status_label = 'Overstocked';
+                    $material->status_variant = 'info';
+                    $material->needs_reorder = false;
                 } else {
                     $material->status = 'in_stock';
                     $material->status_label = 'In Stock';
                     $material->status_variant = 'success';
+                    $material->needs_reorder = false;
                 }
 
                 return $material;
@@ -251,8 +268,20 @@ class NormalizedInventoryController extends Controller
             'standard_cost' => 'required|numeric|min:0',
             'initial_quantity' => 'required|numeric|min:0',
             'location_id' => 'nullable|integer',
-            'product_id' => 'nullable|integer' // Optional: if this material belongs to a specific product
+            'product_id' => 'nullable|integer', // Optional: if this material belongs to a specific product
+            'critical_stock' => 'nullable|numeric|min:0',
+            'max_level' => 'nullable|numeric|min:0'
         ]);
+        
+        // Validate that reorder_level is greater than critical_stock
+        if ($request->has('reorder_level') && $request->has('critical_stock') && 
+            $request->reorder_level > 0 && $request->critical_stock > 0) {
+            if ($request->reorder_level <= $request->critical_stock) {
+                return response()->json([
+                    'error' => 'Reorder level must be greater than critical stock level. This ensures proper inventory management hierarchy.'
+                ], 422);
+            }
+        }
 
         DB::beginTransaction();
         try {
@@ -321,15 +350,111 @@ class NormalizedInventoryController extends Controller
             'description' => 'nullable|string',
             'unit_of_measure' => 'sometimes|string',
             'reorder_level' => 'sometimes|numeric|min:0',
-            'standard_cost' => 'sometimes|numeric|min:0'
+            'standard_cost' => 'sometimes|numeric|min:0',
+            'max_level' => 'sometimes|numeric|min:0',
+            'lead_time_days' => 'sometimes|integer|min:0',
+            'critical_stock' => 'sometimes|numeric|min:0',
+            'supplier' => 'nullable|string',
+            'category' => 'sometimes|string',
+            'location' => 'nullable|string',
+            'quantity' => 'sometimes|numeric|min:0' // For updating inventory quantity
         ]);
+        
+        // Validate that reorder_level is greater than critical_stock
+        $reorderLevel = $request->has('reorder_level') ? $request->reorder_level : $material->reorder_level;
+        $criticalStock = $request->has('critical_stock') ? $request->critical_stock : $material->critical_stock;
+        
+        if ($reorderLevel !== null && $criticalStock !== null && $reorderLevel > 0 && $criticalStock > 0) {
+            if ($reorderLevel <= $criticalStock) {
+                return response()->json([
+                    'error' => 'Reorder level must be greater than critical stock level. This ensures proper inventory management hierarchy.'
+                ], 422);
+            }
+        }
+        
+        // Also validate if only one is being updated
+        if ($request->has('reorder_level') && !$request->has('critical_stock') && $material->critical_stock > 0) {
+            if ($request->reorder_level <= $material->critical_stock) {
+                return response()->json([
+                    'error' => 'Reorder level must be greater than critical stock level (' . $material->critical_stock . '). This ensures proper inventory management hierarchy.'
+                ], 422);
+            }
+        }
+        
+        if ($request->has('critical_stock') && !$request->has('reorder_level') && $material->reorder_level > 0) {
+            if ($material->reorder_level <= $request->critical_stock) {
+                return response()->json([
+                    'error' => 'Critical stock level must be less than reorder level (' . $material->reorder_level . '). This ensures proper inventory management hierarchy.'
+                ], 422);
+            }
+        }
 
-        $material->update($request->only([
-            'material_name', 'material_code', 'description', 
-            'unit_of_measure', 'reorder_level', 'standard_cost'
-        ]));
+        DB::beginTransaction();
+        try {
+            // Update material with all provided fields
+            $updateData = $request->only([
+                'material_name', 'material_code', 'description', 
+                'unit_of_measure', 'reorder_level', 'standard_cost',
+                'max_level', 'lead_time_days', 'critical_stock',
+                'supplier', 'category', 'location'
+            ]);
+            
+            // Remove null values to avoid overwriting with null
+            $updateData = array_filter($updateData, function($value) {
+                return $value !== null;
+            });
 
-        return response()->json($material->load('inventory'));
+            $material->update($updateData);
+
+            // If quantity is provided, update inventory records
+            if ($request->has('quantity') && $request->quantity !== null) {
+                $newQuantity = $request->quantity;
+                
+                // Get or create inventory record (default location)
+                $inventory = Inventory::firstOrCreate(
+                    [
+                        'material_id' => $materialId,
+                        'location_id' => 1, // Default location
+                    ],
+                    [
+                        'current_stock' => 0,
+                        'quantity_reserved' => 0,
+                        'last_updated' => now(),
+                    ]
+                );
+                
+                $oldStock = $inventory->current_stock;
+                $adjustmentQuantity = $newQuantity - $oldStock;
+                
+                // Update inventory
+                $inventory->current_stock = $newQuantity;
+                $inventory->last_updated = now();
+                $inventory->save();
+                
+                // Create transaction record if quantity changed
+                if ($adjustmentQuantity != 0) {
+                    InventoryTransaction::create([
+                        'material_id' => $materialId,
+                        'transaction_type' => 'MANUAL_ADJUSTMENT',
+                        'quantity' => $adjustmentQuantity,
+                        'timestamp' => now(),
+                        'reference' => 'Material Quantity Update',
+                        'remarks' => "Manual quantity adjustment from {$oldStock} to {$newQuantity}",
+                        'user_id' => auth()->id() ?? null
+                    ]);
+                }
+            }
+
+            // Sync current stock to ensure accuracy
+            $material->syncCurrentStock();
+
+            DB::commit();
+            return response()->json($material->load('inventory'));
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error updating material: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to update material: ' . $e->getMessage()], 500);
+        }
     }
 
     /**
