@@ -33,14 +33,21 @@ class EnhancedInventoryReportsController extends Controller
             
             $items = $materials->map(function($material) {
                 $totalStock = $material->inventory->sum('current_stock');
-                $reorderPoint = $material->reorder_point ?? 10;
+                $reorderPoint = $material->reorder_point ?? $material->reorder_level ?? 10;
+                $criticalStock = $material->critical_stock ?? $material->safety_stock ?? 0;
+                $maxLevel = $material->max_level ?? 0;
                 
-                // Determine stock status
+                // Calculate accurate status based on actual data
+                // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
                 $stockStatus = 'in_stock';
                 if ($totalStock <= 0) {
                     $stockStatus = 'out_of_stock';
-                } elseif ($totalStock <= $reorderPoint) {
-                    $stockStatus = 'low';
+                } elseif ($criticalStock > 0 && $totalStock <= $criticalStock) {
+                    $stockStatus = 'critical';
+                } elseif ($reorderPoint > 0 && $totalStock <= $reorderPoint) {
+                    $stockStatus = 'low_stock';
+                } elseif ($maxLevel > 0 && $totalStock > $maxLevel) {
+                    $stockStatus = 'overstocked';
                 }
                 
                 return [
@@ -48,19 +55,25 @@ class EnhancedInventoryReportsController extends Controller
                     'sku' => $material->material_code ?: 'MAT-' . str_pad($material->material_id, 3, '0', STR_PAD_LEFT),
                     'category' => $material->category ?? 'Material',
                     'current_stock' => $totalStock,
+                    'available_quantity' => $totalStock, // Alias for compatibility
                     'reorder_point' => $reorderPoint,
+                    'reorder_level' => $reorderPoint, // Alias for compatibility
+                    'critical_stock' => $criticalStock,
+                    'safety_stock' => $criticalStock, // Alias for compatibility
+                    'max_level' => $maxLevel,
                     'stock_status' => $stockStatus,
-                    'unit' => $material->unit ?? 'units',
-                    'value' => $totalStock * ($material->unit_cost ?? 100), // Default unit cost of 100 if not set
-                    'unit_cost' => $material->unit_cost ?? 100
+                    'unit' => $material->unit_of_measure ?? $material->unit ?? 'units',
+                    'value' => $totalStock * ($material->standard_cost ?? $material->unit_cost ?? 100),
+                    'unit_cost' => $material->standard_cost ?? $material->unit_cost ?? 100
                 ];
             });
 
             return response()->json([
                 'summary' => [
                     'total_items' => $items->count(),
-                    'items_needing_reorder' => $items->where('stock_status', 'low')->count() + $items->where('stock_status', 'out_of_stock')->count(),
-                    'critical_items' => $items->where('stock_status', 'out_of_stock')->count(),
+                    'items_needing_reorder' => $items->whereIn('stock_status', ['low_stock', 'out_of_stock', 'critical'])->count(),
+                    'critical_items' => $items->whereIn('stock_status', ['out_of_stock', 'critical'])->count(),
+                    'overstocked_items' => $items->where('stock_status', 'overstocked')->count(),
                     'total_usage' => 0 // This would need to be calculated from transactions
                 ],
                 'items' => $items
@@ -2281,7 +2294,8 @@ class EnhancedInventoryReportsController extends Controller
                 
                 // Determine status with proper priority order
                 // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
-                $availableQty = $currentStock;
+                // For Alkansya materials, use projected stock (after 30 days) for status calculation
+                $availableQty = $projectedStock;
                 $criticalStock = $material->critical_stock ?? 0;
                 $reorderLevel = $material->reorder_level ?? 0;
                 $maxLevel = $material->max_level ?? 0;
@@ -2338,9 +2352,58 @@ class EnhancedInventoryReportsController extends Controller
                 $totalDailyMaterialUsage += $dailyMaterialUsage;
             }
 
+            // Calculate total quantity units per Alkansya (sum of all BOM material quantities)
+            // Use the same calculation method as in the material forecasts loop above
+            $totalQuantityPerAlkansya = 0;
+            $bomQuantities = [];
+            
+            foreach ($bomMaterials as $bomMaterial) {
+                $material = $bomMaterial->material;
+                if (!$material) continue; // Skip if material is not loaded
+                
+                // Use the same logic as in the material forecast loop (line 2219)
+                $qtyPerUnit = $bomMaterial->quantity_per_product ?? $bomMaterial->qty_per_unit ?? 0;
+                
+                $bomQuantities[] = [
+                    'material_id' => $material->material_id,
+                    'material_name' => $material->material_name,
+                    'quantity' => $qtyPerUnit
+                ];
+                
+                $totalQuantityPerAlkansya += $qtyPerUnit;
+            }
+            
+            // Log for debugging
+            \Log::info('Total Quantity per Alkansya Calculation', [
+                'bom_materials_count' => $bomMaterials->count(),
+                'total_quantity_per_alkansya' => $totalQuantityPerAlkansya,
+                'bom_quantities' => $bomQuantities,
+                'sample_bom' => $bomMaterials->first() ? [
+                    'material_id' => $bomMaterials->first()->material_id ?? null,
+                    'material_name' => $bomMaterials->first()->material ? $bomMaterials->first()->material->material_name : null,
+                    'quantity_per_product' => $bomMaterials->first()->quantity_per_product ?? null,
+                    'qty_per_unit' => $bomMaterials->first()->qty_per_unit ?? null,
+                    'getAttributes' => $bomMaterials->first()->getAttributes() ?? null,
+                ] : null
+            ]);
+            
             // Generate daily forecast timeline with predictive analytics
             $dailyForecast = [];
-            $predictedOutputTrend = $this->calculateOutputTrend($historicalOutput->pluck('quantity_produced')->toArray());
+            
+            // Calculate trend from historical output data
+            $outputQuantities = $historicalOutput->pluck('quantity_produced')->filter(function($value) {
+                return $value !== null && $value !== '';
+            })->values()->toArray();
+            
+            $predictedOutputTrend = $this->calculateOutputTrend($outputQuantities);
+            
+            // Log trend calculation for debugging
+            \Log::info('Output Trend Calculation', [
+                'historical_output_count' => $historicalOutput->count(),
+                'output_quantities_count' => count($outputQuantities),
+                'calculated_trend' => $predictedOutputTrend,
+                'sample_outputs' => array_slice($outputQuantities, 0, 5)
+            ]);
             
             for ($i = 1; $i <= $forecastDays; $i++) {
                 $date = Carbon::now()->addDays($i)->format('Y-m-d');
@@ -2393,7 +2456,9 @@ class EnhancedInventoryReportsController extends Controller
                         'historical_transactions_used' => $historicalTransactions->count(),
                         'historical_output_records' => $historicalOutput->count(),
                         'trend_detected' => $predictedOutputTrend != 0
-                    ]
+                    ],
+                    'calculated_trend' => round($predictedOutputTrend, 4),
+                    'total_quantity_per_alkansya' => round($totalQuantityPerAlkansya, 2)
                 ]
             ]);
 
@@ -2517,6 +2582,36 @@ class EnhancedInventoryReportsController extends Controller
                     $projectedStock = $currentStock - $forecastedUsage;
                     $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
                     
+                    // Determine status with proper priority order using projected stock (after 30 days)
+                    // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                    // For Made-to-Order materials, use projected stock for status calculation
+                    $availableQty = $projectedStock;
+                    $criticalStock = $material->critical_stock ?? 0;
+                    $reorderLevel = $material->reorder_level ?? 0;
+                    $maxLevel = $material->max_level ?? 0;
+                    
+                    $status = 'in_stock';
+                    $statusLabel = 'In Stock';
+                    $statusColor = 'success';
+                    
+                    if ($availableQty <= 0) {
+                        $status = 'out_of_stock';
+                        $statusLabel = 'Out of Stock';
+                        $statusColor = 'danger';
+                    } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                        $status = 'critical';
+                        $statusLabel = 'Critical';
+                        $statusColor = 'danger';
+                    } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
+                        $status = 'low_stock';
+                        $statusLabel = 'Low Stock';
+                        $statusColor = 'warning';
+                    } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                        $status = 'overstocked';
+                        $statusLabel = 'Overstocked';
+                        $statusColor = 'info';
+                    }
+                    
                     $materialForecasts[] = [
                         'product_name' => $product->name ?? $product->product_name,
                         'material_id' => $material->material_id,
@@ -2524,13 +2619,19 @@ class EnhancedInventoryReportsController extends Controller
                         'material_code' => $material->material_code,
                         'qty_per_unit' => $qtyPerUnit,
                         'current_stock' => round($currentStock, 2),
+                        'available_quantity' => round($availableQty, 2),
+                        'critical_stock' => $criticalStock,
+                        'max_level' => $maxLevel,
                         'avg_daily_quantity' => $avgDailyQuantity,
                         'daily_material_usage' => round($dailyMaterialUsage, 2),
                         'forecasted_usage' => round($forecastedUsage, 2),
                         'projected_stock' => round($projectedStock, 2),
                         'days_until_stockout' => $daysUntilStockout,
-                        'reorder_point' => $material->reorder_level ?? 10,
-                        'needs_reorder' => $projectedStock <= ($material->reorder_level ?? 10),
+                        'reorder_point' => $reorderLevel,
+                        'needs_reorder' => $projectedStock <= $reorderLevel,
+                        'status' => $status,
+                        'status_label' => $statusLabel,
+                        'status_color' => $statusColor,
                         'unit' => $material->unit_of_measure ?? 'pcs',
                         'unit_cost' => $material->standard_cost ?? 0
                     ];
@@ -2728,22 +2829,58 @@ class EnhancedInventoryReportsController extends Controller
                     $usageCategory = 'medium';
                 }
                 
+                // Determine status with proper priority order using projected stock (after 30 days)
+                // For materials used by Alkansya or Made-to-Order, use projected stock for status calculation
+                $isAlkansyaOrMadeToOrder = ($alkansyaUsage > 0 || $madeToOrderUsage > 0);
+                $availableQty = $isAlkansyaOrMadeToOrder ? $projectedStock : $currentStock;
+                $criticalStock = $material->critical_stock ?? 0;
+                $reorderLevel = $material->reorder_level ?? 0;
+                $maxLevel = $material->max_level ?? 0;
+                
+                $status = 'in_stock';
+                $statusLabel = 'In Stock';
+                $statusColor = 'success';
+                
+                if ($availableQty <= 0) {
+                    $status = 'out_of_stock';
+                    $statusLabel = 'Out of Stock';
+                    $statusColor = 'danger';
+                } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                    $status = 'critical';
+                    $statusLabel = 'Critical';
+                    $statusColor = 'danger';
+                } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
+                    $status = 'low_stock';
+                    $statusLabel = 'Low Stock';
+                    $statusColor = 'warning';
+                } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                    $status = 'overstocked';
+                    $statusLabel = 'Overstocked';
+                    $statusColor = 'info';
+                }
+                
                 $materialForecasts[] = [
                     'material_id' => $material->material_id,
                     'material_name' => $material->material_name,
                     'material_code' => $material->material_code,
                     'category' => $material->category ?? 'raw',
                     'current_stock' => round($currentStock, 2),
+                    'available_quantity' => round($availableQty, 2),
+                    'critical_stock' => $criticalStock,
+                    'max_level' => $maxLevel,
                     'avg_daily_usage' => round($avgDailyUsage, 2),
                     'alkansya_usage' => round($alkansyaUsage, 2),
                     'made_to_order_usage' => round($madeToOrderUsage, 2),
                     'forecasted_usage' => round($forecastedUsage, 2),
                     'projected_stock' => round($projectedStock, 2),
                     'days_until_stockout' => $daysUntilStockout,
-                    'reorder_point' => $material->reorder_level ?? 10,
-                    'safety_stock' => $material->critical_stock ?? 0,
-                    'needs_reorder' => $projectedStock <= ($material->reorder_level ?? 10),
+                    'reorder_point' => $reorderLevel,
+                    'safety_stock' => $criticalStock,
+                    'needs_reorder' => $projectedStock <= $reorderLevel,
                     'usage_category' => $usageCategory,
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'status_color' => $statusColor,
                     'unit' => $material->unit_of_measure ?? 'pcs',
                     'unit_cost' => $material->standard_cost ?? 0,
                     'total_value' => round($currentStock * ($material->standard_cost ?? 0), 2)
@@ -3053,6 +3190,14 @@ class EnhancedInventoryReportsController extends Controller
                 $daysUntilStockoutUpper = $confidenceUpper > 0 ? floor($currentStock / ($confidenceUpper / $forecastDays)) : 999; // Worst case
                 $daysUntilStockoutLower = $confidenceLower > 0 ? floor($currentStock / ($confidenceLower / $forecastDays)) : 999; // Best case
                 
+                // Calculate stock-out date (when stock will reach zero)
+                $stockOutDate = null;
+                if ($daysUntilStockout > 0 && $daysUntilStockout < 999) {
+                    $stockOutDate = Carbon::now()->addDays($daysUntilStockout)->format('Y-m-d');
+                } elseif ($daysUntilStockout <= 0) {
+                    $stockOutDate = Carbon::now()->format('Y-m-d'); // Already out of stock
+                }
+                
                 // Determine urgency level
                 $urgency = 'low';
                 if ($daysUntilStockout <= 0) {
@@ -3158,7 +3303,12 @@ class EnhancedInventoryReportsController extends Controller
                 
                 // Determine status with proper priority order
                 // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
-                $availableQty = $currentStock;
+                // For Alkansya and Made-to-Order materials, use projected stock (after 30 days) for status calculation
+                $isAlkansyaMaterial = isset($alkansyaDailyConsumption[$material->material_id]);
+                $isMadeToOrderMaterial = isset($madeToOrderDailyConsumption[$material->material_id]);
+                
+                // Use projected stock for alkansya and made-to-order materials, current stock for others
+                $availableQty = ($isAlkansyaMaterial || $isMadeToOrderMaterial) ? $projectedStock : $currentStock;
                 $criticalStock = $material->critical_stock ?? 0;
                 
                 $status = 'in_stock';
@@ -3205,15 +3355,21 @@ class EnhancedInventoryReportsController extends Controller
                     'days_until_stockout' => $daysUntilStockout,
                     'days_until_stockout_upper' => $daysUntilStockoutUpper,
                     'days_until_stockout_lower' => $daysUntilStockoutLower,
+                    'stock_out_date' => $stockOutDate,
+                    'days_remaining' => $daysUntilStockout < 999 ? $daysUntilStockout : null,
                     'days_until_reorder' => round($daysUntilReorder, 1),
+                    'forecast_days' => $forecastDays, // Number of days for projection
+                    'projected_usage' => round($forecastedConsumption, 2), // Projected usage over forecast period
                     'predictive_analytics' => $predictiveAnalytics,
                     'urgency' => $urgency,
                     'priority' => $urgency === 'critical' ? 'critical' : ($urgency === 'high' ? 'high' : 'normal'),
                     'recommended_quantity' => round($suggestedOrderQty, 2),
                     'lead_time_days' => $leadTime,
                     'reorder_date' => $reorderDate->format('Y-m-d'),
+                    'recommended_order_date' => $reorderDate->format('Y-m-d'), // Alias for consistency
                     'consumption_breakdown' => $consumptionBreakdown,
                     'needs_reorder' => $projectedStock <= $reorderPoint,
+                    'reorder_needed' => $projectedStock <= $reorderPoint, // Yes/No format
                     'is_critical' => $daysUntilStockout <= 7,
                     'status' => $status,
                     'status_label' => $statusLabel,
@@ -3268,11 +3424,24 @@ class EnhancedInventoryReportsController extends Controller
                 'schedule' => $alkansyaItems->map(function($item) {
                     return [
                         'material_name' => $item['material_name'],
+                        'material_code' => $item['material_code'] ?? '',
                         'current_stock' => $item['current_stock'],
                         'reorder_point' => $item['reorder_point'],
                         'recommended_quantity' => $item['recommended_quantity'],
                         'priority' => $item['priority'],
-                        'needs_reorder' => $item['needs_reorder']
+                        'needs_reorder' => $item['needs_reorder'],
+                        'reorder_needed' => $item['reorder_needed'] ?? $item['needs_reorder'],
+                        'days_until_reorder' => $item['days_until_reorder'] ?? null,
+                        'days_remaining' => $item['days_remaining'] ?? $item['days_until_stockout'] ?? null,
+                        'stock_out_date' => $item['stock_out_date'] ?? null,
+                        'recommended_order_date' => $item['recommended_order_date'] ?? $item['reorder_date'] ?? null,
+                        'unit_cost' => $item['unit_cost'] ?? 0,
+                        'projected_stock' => $item['projected_stock'] ?? 0,
+                        'projected_usage' => $item['projected_usage'] ?? $item['forecasted_consumption'] ?? 0,
+                        'forecast_days' => $item['forecast_days'] ?? 30,
+                        'status' => $item['status_label'] ?? $item['status'] ?? 'In Stock',
+                        'critical_stock' => $item['critical_stock'] ?? 0,
+                        'max_level' => $item['max_level'] ?? 0
                     ];
                 })->toArray()
             ];
@@ -3288,11 +3457,24 @@ class EnhancedInventoryReportsController extends Controller
                 'schedule' => $madeToOrderItems->map(function($item) {
                     return [
                         'material_name' => $item['material_name'],
+                        'material_code' => $item['material_code'] ?? '',
                         'current_stock' => $item['current_stock'],
                         'reorder_point' => $item['reorder_point'],
                         'recommended_quantity' => $item['recommended_quantity'],
                         'priority' => $item['priority'],
-                        'needs_reorder' => $item['needs_reorder']
+                        'needs_reorder' => $item['needs_reorder'],
+                        'reorder_needed' => $item['reorder_needed'] ?? $item['needs_reorder'],
+                        'days_until_reorder' => $item['days_until_reorder'] ?? null,
+                        'days_remaining' => $item['days_remaining'] ?? $item['days_until_stockout'] ?? null,
+                        'stock_out_date' => $item['stock_out_date'] ?? null,
+                        'recommended_order_date' => $item['recommended_order_date'] ?? $item['reorder_date'] ?? null,
+                        'unit_cost' => $item['unit_cost'] ?? 0,
+                        'projected_stock' => $item['projected_stock'] ?? 0,
+                        'projected_usage' => $item['projected_usage'] ?? $item['forecasted_consumption'] ?? 0,
+                        'forecast_days' => $item['forecast_days'] ?? 30,
+                        'status' => $item['status_label'] ?? $item['status'] ?? 'In Stock',
+                        'critical_stock' => $item['critical_stock'] ?? 0,
+                        'max_level' => $item['max_level'] ?? 0
                     ];
                 })->toArray()
             ];
@@ -4658,19 +4840,63 @@ class EnhancedInventoryReportsController extends Controller
 
             switch($reportType) {
                 case 'stock':
-                    // Use getNormalizedInventoryData to get actual Material data
-                    $inventoryData = $this->getNormalizedInventoryData();
-                    $data = collect($inventoryData->getData(true)['items'])->map(function($item) {
+                    // Get materials with inventory and calculate daily consumption for accurate max_level
+                    $materials = Material::with('inventory')->get();
+                    
+                    // Get daily consumption from transactions (last 90 days)
+                    $startDate = Carbon::now()->subDays(90)->startOfDay();
+                    $endDate = Carbon::now()->endOfDay();
+                    $transactions = InventoryTransaction::whereBetween('timestamp', [$startDate, $endDate])
+                        ->whereIn('transaction_type', ['ALKANSYA_CONSUMPTION', 'ORDER_FULFILLMENT', 'PRODUCTION_USAGE'])
+                        ->where('quantity', '<', 0)
+                        ->get();
+                    
+                    // Calculate average daily consumption per material
+                    $materialDailyConsumption = $transactions->groupBy('material_id')->map(function($materialTransactions) {
+                        $totalConsumption = abs($materialTransactions->sum('quantity'));
+                        $daysWithConsumption = $materialTransactions->groupBy(function($t) {
+                            return Carbon::parse($t->timestamp)->format('Y-m-d');
+                        })->count();
+                        return $daysWithConsumption > 0 ? $totalConsumption / $daysWithConsumption : 0;
+                    });
+                    
+                    $data = $materials->map(function($material) use ($materialDailyConsumption) {
+                        $totalStock = $material->inventory->sum('current_stock');
+                        $reorderPoint = $material->reorder_point ?? $material->reorder_level ?? 10;
+                        $criticalStock = $material->critical_stock ?? $material->safety_stock ?? 0;
+                        
+                        // Calculate max_level: use database value if set, otherwise calculate from daily consumption (30 days)
+                        $avgDailyConsumption = $materialDailyConsumption->get($material->material_id, 0);
+                        $backendMaxLevel = $material->max_level ?? 0;
+                        $calculatedMaxLevel = $avgDailyConsumption > 0 ? ceil($avgDailyConsumption * 30) : 0;
+                        $maxLevel = $backendMaxLevel > 0 ? $backendMaxLevel : $calculatedMaxLevel;
+                        
+                        // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                        $status = 'In Stock';
+                        if ($totalStock <= 0) {
+                            $status = 'Out of Stock';
+                        } elseif ($criticalStock > 0 && $totalStock <= $criticalStock) {
+                            $status = 'Critical';
+                        } elseif ($reorderPoint > 0 && $totalStock <= $reorderPoint) {
+                            $status = 'Low Stock';
+                        } elseif ($maxLevel > 0 && $totalStock > $maxLevel) {
+                            $status = 'Overstocked';
+                        }
+                        
+                        $unitCost = $material->standard_cost ?? $material->unit_cost ?? 100;
+                        $totalValue = $totalStock * $unitCost;
+                        
                         return [
-                            'Material Name' => $item['name'],
-                            'SKU' => $item['sku'],
-                            'Category' => $item['category'],
-                            'Current Stock' => number_format($item['current_stock'], 2),
-                            'Safety Stock' => $item['safety_stock'] ?? 0,
-                            'Reorder Point' => $item['reorder_point'],
-                            'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
-                            'Total Value' => '₱' . number_format($item['value'] ?? 0, 2),
-                            'Status' => ucwords(str_replace('_', ' ', $item['stock_status'] ?? 'N/A')),
+                            'Material Name' => $material->material_name,
+                            'SKU' => $material->material_code ?: 'MAT-' . str_pad($material->material_id, 3, '0', STR_PAD_LEFT),
+                            'Category' => $material->category ?? 'Material',
+                            'Current Stock' => number_format($totalStock, 2),
+                            'Safety Stock' => number_format($criticalStock, 2),
+                            'Reorder Point' => number_format($reorderPoint, 2),
+                            'Max Level' => number_format($maxLevel, 2),
+                            'Unit Cost' => number_format($unitCost, 2),
+                            'Total Value' => number_format($totalValue, 2),
+                            'Status' => $status,
                         ];
                     })->toArray();
                     break;
@@ -4741,12 +4967,41 @@ class EnhancedInventoryReportsController extends Controller
                             $category = 'Made to Order';
                         }
                         
-                        // Determine status
-                        $status = 'In Stock';
+                        // Calculate max_level: use database value if set, otherwise calculate from daily consumption (30 days)
+                        $backendMaxLevel = $material->max_level ?? 0;
+                        $calculatedMaxLevel = $avgDailyConsumption > 0 ? ceil($avgDailyConsumption * 30) : 0;
+                        $maxLevel = $backendMaxLevel > 0 ? $backendMaxLevel : $calculatedMaxLevel;
+                        
+                        // Calculate projected stock after 30 days
+                        $projectedUsage30Days = $avgDailyConsumption * 30;
+                        $projectedStock30Days = $currentStock - $projectedUsage30Days;
+                        
+                        // Calculate current status based on actual data
+                        $criticalStock = $material->critical_stock ?? $material->safety_stock ?? 0;
+                        $reorderPoint = $material->reorder_point ?? $material->reorder_level ?? 0;
+                        
+                        // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                        $currentStatus = 'In Stock';
                         if ($currentStock <= 0) {
-                            $status = 'Out of Stock';
-                        } elseif ($currentStock <= ($material->reorder_point ?? 10)) {
-                            $status = 'Low Stock';
+                            $currentStatus = 'Out of Stock';
+                        } elseif ($criticalStock > 0 && $currentStock <= $criticalStock) {
+                            $currentStatus = 'Critical';
+                        } elseif ($reorderPoint > 0 && $currentStock <= $reorderPoint) {
+                            $currentStatus = 'Low Stock';
+                        } elseif ($maxLevel > 0 && $currentStock > $maxLevel) {
+                            $currentStatus = 'Overstocked';
+                        }
+                        
+                        // Calculate projected status (after 30 days)
+                        $projectedStatus = 'In Stock';
+                        if ($projectedStock30Days <= 0) {
+                            $projectedStatus = 'Out of Stock';
+                        } elseif ($criticalStock > 0 && $projectedStock30Days <= $criticalStock) {
+                            $projectedStatus = 'Critical';
+                        } elseif ($reorderPoint > 0 && $projectedStock30Days <= $reorderPoint) {
+                            $projectedStatus = 'Low Stock';
+                        } elseif ($maxLevel > 0 && $projectedStock30Days > $maxLevel) {
+                            $projectedStatus = 'Overstocked';
                         }
                         
                         return [
@@ -4755,8 +5010,10 @@ class EnhancedInventoryReportsController extends Controller
                             'Average Daily Consumption' => number_format($avgDailyConsumption, 2),
                             'Current Stock' => number_format($currentStock, 2),
                             'Days Until Stockout' => $daysUntilStockout,
-                            'Projected Usage' => number_format($avgDailyConsumption * 30, 2) . ' (30-day projection)',
-                            'Status' => $status,
+                            'Projected Usage (30 days)' => number_format($projectedUsage30Days, 2),
+                            'Projected Stock (30 days)' => number_format($projectedStock30Days, 2),
+                            'Current Status' => $currentStatus,
+                            'Projected Status (30 days)' => $projectedStatus,
                             'Total Consumption' => number_format($totalConsumption, 2),
                             'Days With Consumption' => $daysWithConsumption,
                         ];
@@ -4791,28 +5048,68 @@ class EnhancedInventoryReportsController extends Controller
                     
                 case 'replenishment':
                     // Use getEnhancedReplenishmentSchedule to get actual replenishment data
+                    $forecastDays = $request->get('forecast_days', 30);
                     $replenishment = $this->getEnhancedReplenishmentSchedule($request);
                     $replenishmentData = $replenishment->getData(true);
                     
                     \Log::info('Replenishment PDF - Data structure: ' . json_encode(array_keys($replenishmentData)));
+                    \Log::info('Replenishment PDF - Forecast days: ' . $forecastDays);
                     
                     $rows = [];
+                    
+                    // Also include comprehensive replenishment items (all materials)
+                    $allReplenishmentItems = $replenishmentData['replenishment_items'] ?? [];
                     
                     // Combine Alkansya and Made-to-Order replenishment schedules
                     if (isset($replenishmentData['alkansya_replenishment']['schedule']) && is_array($replenishmentData['alkansya_replenishment']['schedule'])) {
                         \Log::info('Replenishment PDF - Alkansya schedule count: ' . count($replenishmentData['alkansya_replenishment']['schedule']));
                         foreach ($replenishmentData['alkansya_replenishment']['schedule'] as $item) {
+                            // Calculate accurate status based on projected stock
+                            $projectedStock = $item['projected_stock'] ?? $item['current_stock'] ?? 0;
+                            $reorderPoint = $item['reorder_point'] ?? 0;
+                            $criticalStock = $item['critical_stock'] ?? 0;
+                            $maxLevel = $item['max_level'] ?? 0;
+                            
+                            // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                            $status = 'In Stock';
+                            if ($projectedStock <= 0) {
+                                $status = 'Out of Stock';
+                            } elseif ($criticalStock > 0 && $projectedStock <= $criticalStock) {
+                                $status = 'Critical';
+                            } elseif ($reorderPoint > 0 && $projectedStock <= $reorderPoint) {
+                                $status = 'Need Reorder';
+                            } elseif ($maxLevel > 0 && $projectedStock > $maxLevel) {
+                                $status = 'Overstocked';
+                            }
+                            
+                            // Use days_remaining (days until stockout) for "Days Until Reorder" column
+                            // This represents how many days until the material runs out
+                            $daysUntilReorder = $item['days_remaining'] ?? $item['days_until_stockout'] ?? null;
+                            if ($daysUntilReorder === null) {
+                                // Fallback: calculate from current stock and daily usage
+                                $predictedDailyUsage = $item['predicted_daily_usage'] ?? 0;
+                                $currentStock = $item['current_stock'] ?? 0;
+                                if ($predictedDailyUsage > 0) {
+                                    $daysUntilReorder = floor($currentStock / $predictedDailyUsage);
+                                } else {
+                                    $daysUntilReorder = null; // Will display as N/A
+                                }
+                            }
+                            
+                            $unitCost = $item['unit_cost'] ?? 0;
+                            $recommendedQty = $item['recommended_quantity'] ?? 0;
+                            
                             $rows[] = [
                                 'Material Name' => $item['material_name'] ?? 'N/A',
                                 'Category' => 'Alkansya',
                                 'Current Stock' => number_format($item['current_stock'] ?? 0, 2),
-                                'Reorder Point' => number_format($item['reorder_point'] ?? 0, 2),
-                                'Recommended Quantity' => number_format($item['recommended_quantity'] ?? 0, 2),
-                                'Days Until Reorder' => $item['days_until_reorder'] ?? 'N/A',
-                                'Priority' => $item['priority'] ?? 'Normal',
-                                'Status' => ($item['needs_reorder'] ?? false) ? 'Need Reorder' : 'In Stock',
-                                'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
-                                'Estimated Cost' => '₱' . number_format(($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0), 2),
+                                'Reorder Point' => number_format($reorderPoint, 2),
+                                'Recommended Quantity' => number_format($recommendedQty, 2),
+                                'Days Until Reorder' => $daysUntilReorder !== null ? (is_numeric($daysUntilReorder) ? number_format($daysUntilReorder, 1) : $daysUntilReorder) : 'N/A',
+                                'Priority' => ucfirst($item['priority'] ?? 'Normal'),
+                                'Status' => $status,
+                                'Unit Cost' => number_format($unitCost, 2),
+                                'Estimated Cost' => number_format($recommendedQty * $unitCost, 2),
                             ];
                         }
                     }
@@ -4820,23 +5117,141 @@ class EnhancedInventoryReportsController extends Controller
                     if (isset($replenishmentData['made_to_order_replenishment']['schedule']) && is_array($replenishmentData['made_to_order_replenishment']['schedule'])) {
                         \Log::info('Replenishment PDF - Made-to-Order schedule count: ' . count($replenishmentData['made_to_order_replenishment']['schedule']));
                         foreach ($replenishmentData['made_to_order_replenishment']['schedule'] as $item) {
+                            // Calculate accurate status based on projected stock
+                            $projectedStock = $item['projected_stock'] ?? $item['current_stock'] ?? 0;
+                            $reorderPoint = $item['reorder_point'] ?? 0;
+                            $criticalStock = $item['critical_stock'] ?? 0;
+                            $maxLevel = $item['max_level'] ?? 0;
+                            
+                            // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                            $status = 'In Stock';
+                            if ($projectedStock <= 0) {
+                                $status = 'Out of Stock';
+                            } elseif ($criticalStock > 0 && $projectedStock <= $criticalStock) {
+                                $status = 'Critical';
+                            } elseif ($reorderPoint > 0 && $projectedStock <= $reorderPoint) {
+                                $status = 'Need Reorder';
+                            } elseif ($maxLevel > 0 && $projectedStock > $maxLevel) {
+                                $status = 'Overstocked';
+                            }
+                            
+                            // Use days_remaining (days until stockout) for "Days Until Reorder" column
+                            // This represents how many days until the material runs out
+                            $daysUntilReorder = $item['days_remaining'] ?? $item['days_until_stockout'] ?? null;
+                            if ($daysUntilReorder === null) {
+                                // Fallback: calculate from current stock and daily usage
+                                $predictedDailyUsage = $item['predicted_daily_usage'] ?? 0;
+                                $currentStock = $item['current_stock'] ?? 0;
+                                if ($predictedDailyUsage > 0) {
+                                    $daysUntilReorder = floor($currentStock / $predictedDailyUsage);
+                                } else {
+                                    $daysUntilReorder = null; // Will display as N/A
+                                }
+                            }
+                            
+                            $unitCost = $item['unit_cost'] ?? 0;
+                            $recommendedQty = $item['recommended_quantity'] ?? 0;
+                            
                             $rows[] = [
                                 'Material Name' => $item['material_name'] ?? 'N/A',
                                 'Category' => 'Made to Order',
                                 'Current Stock' => number_format($item['current_stock'] ?? 0, 2),
-                                'Reorder Point' => number_format($item['reorder_point'] ?? 0, 2),
-                                'Recommended Quantity' => number_format($item['recommended_quantity'] ?? 0, 2),
-                                'Days Until Reorder' => $item['days_until_reorder'] ?? 'N/A',
-                                'Priority' => $item['priority'] ?? 'Normal',
-                                'Status' => ($item['needs_reorder'] ?? false) ? 'Need Reorder' : 'In Stock',
-                                'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
-                                'Estimated Cost' => '₱' . number_format(($item['recommended_quantity'] ?? 0) * ($item['unit_cost'] ?? 0), 2),
+                                'Reorder Point' => number_format($reorderPoint, 2),
+                                'Recommended Quantity' => number_format($recommendedQty, 2),
+                                'Days Until Reorder' => $daysUntilReorder !== null ? (is_numeric($daysUntilReorder) ? number_format($daysUntilReorder, 1) : $daysUntilReorder) : 'N/A',
+                                'Priority' => ucfirst($item['priority'] ?? 'Normal'),
+                                'Status' => $status,
+                                'Unit Cost' => number_format($unitCost, 2),
+                                'Estimated Cost' => number_format($recommendedQty * $unitCost, 2),
                             ];
                         }
                     }
                     
+                    // Add comprehensive replenishment items (all materials) if not already included
+                    $processedMaterialIds = [];
+                    foreach ($rows as $row) {
+                        // Extract material ID if available (we'll track by name for now)
+                        $processedMaterialIds[] = $row['Material Name'];
+                    }
+                    
+                    // Add any materials from comprehensive schedule that aren't in Alkansya or Made-to-Order
+                    if (is_array($allReplenishmentItems) && !empty($allReplenishmentItems)) {
+                        foreach ($allReplenishmentItems as $item) {
+                            $materialName = $item['material_name'] ?? 'N/A';
+                            // Skip if already processed
+                            if (in_array($materialName, $processedMaterialIds)) {
+                                continue;
+                            }
+                            
+                            // Calculate accurate status based on projected stock
+                            $projectedStock = $item['projected_stock'] ?? $item['current_stock'] ?? 0;
+                            $reorderPoint = $item['reorder_point'] ?? 0;
+                            $criticalStock = $item['critical_stock'] ?? 0;
+                            $maxLevel = $item['max_level'] ?? 0;
+                            
+                            // Determine category
+                            $category = 'Other';
+                            if (isset($item['is_alkansya_material']) && $item['is_alkansya_material']) {
+                                $category = 'Alkansya';
+                            } elseif (isset($item['is_made_to_order_material']) && $item['is_made_to_order_material']) {
+                                $category = 'Made to Order';
+                            }
+                            
+                            // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                            $status = 'In Stock';
+                            if ($projectedStock <= 0) {
+                                $status = 'Out of Stock';
+                            } elseif ($criticalStock > 0 && $projectedStock <= $criticalStock) {
+                                $status = 'Critical';
+                            } elseif ($reorderPoint > 0 && $projectedStock <= $reorderPoint) {
+                                $status = 'Need Reorder';
+                            } elseif ($maxLevel > 0 && $projectedStock > $maxLevel) {
+                                $status = 'Overstocked';
+                            }
+                            
+                            // Use days_remaining (days until stockout) for "Days Until Reorder" column
+                            // This represents how many days until the material runs out
+                            $daysUntilReorder = $item['days_remaining'] ?? $item['days_until_stockout'] ?? null;
+                            if ($daysUntilReorder === null) {
+                                // Fallback: calculate from current stock and daily usage
+                                $predictedDailyUsage = $item['predicted_daily_usage'] ?? 0;
+                                $currentStock = $item['current_stock'] ?? 0;
+                                if ($predictedDailyUsage > 0) {
+                                    $daysUntilReorder = floor($currentStock / $predictedDailyUsage);
+                                } else {
+                                    $daysUntilReorder = null; // Will display as N/A
+                                }
+                            }
+                            
+                            $unitCost = $item['unit_cost'] ?? 0;
+                            $recommendedQty = $item['recommended_quantity'] ?? 0;
+                            
+                            $rows[] = [
+                                'Material Name' => $materialName,
+                                'Category' => $category,
+                                'Current Stock' => number_format($item['current_stock'] ?? 0, 2),
+                                'Reorder Point' => number_format($reorderPoint, 2),
+                                'Recommended Quantity' => number_format($recommendedQty, 2),
+                                'Days Until Reorder' => $daysUntilReorder !== null ? (is_numeric($daysUntilReorder) ? number_format($daysUntilReorder, 1) : $daysUntilReorder) : 'N/A',
+                                'Priority' => ucfirst($item['priority'] ?? 'Normal'),
+                                'Status' => $status,
+                                'Unit Cost' => number_format($unitCost, 2),
+                                'Estimated Cost' => number_format($recommendedQty * $unitCost, 2),
+                            ];
+                            $processedMaterialIds[] = $materialName;
+                        }
+                    }
+                    
                     $data = $rows;
+                    
+                    // Set date range for report based on forecast days
+                    $dateRange = [
+                        'start' => Carbon::now()->format('Y-m-d'),
+                        'end' => Carbon::now()->addDays($forecastDays)->format('Y-m-d')
+                    ];
+                    
                     \Log::info('Replenishment PDF - Total rows: ' . count($data));
+                    \Log::info('Replenishment PDF - Forecast days: ' . $forecastDays);
                     if (count($data) > 0) {
                         \Log::info('Replenishment PDF - First item: ' . json_encode($data[0]));
                     }
@@ -4848,16 +5263,35 @@ class EnhancedInventoryReportsController extends Controller
                     $inventoryItems = collect($inventoryData->getData(true)['items']);
                     
                     $data = $inventoryItems->map(function($item) {
+                        // Calculate accurate status based on actual data
+                        $availableQty = $item['current_stock'] ?? $item['available_quantity'] ?? 0;
+                        $criticalStock = $item['critical_stock'] ?? $item['safety_stock'] ?? 0;
+                        $reorderPoint = $item['reorder_point'] ?? $item['reorder_level'] ?? 0;
+                        $maxLevel = $item['max_level'] ?? 0;
+                        
+                        // Priority: Out of Stock > Critical > Low Stock > Overstocked > In Stock
+                        $status = 'In Stock';
+                        if ($availableQty <= 0) {
+                            $status = 'Out of Stock';
+                        } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                            $status = 'Critical';
+                        } elseif ($reorderPoint > 0 && $availableQty <= $reorderPoint) {
+                            $status = 'Low Stock';
+                        } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                            $status = 'Overstocked';
+                        }
+                        
                         return [
                             'Material Name' => $item['name'],
                             'SKU' => $item['sku'],
                             'Category' => $item['category'],
-                            'Current Stock' => number_format($item['current_stock'], 2),
-                            'Safety Stock' => $item['safety_stock'] ?? 0,
-                            'Reorder Point' => $item['reorder_point'],
-                            'Unit Cost' => '₱' . number_format($item['unit_cost'] ?? 0, 2),
-                            'Total Value' => '₱' . number_format($item['value'] ?? 0, 2),
-                            'Status' => ucwords(str_replace('_', ' ', $item['stock_status'] ?? 'N/A')),
+                            'Current Stock' => number_format($availableQty, 2),
+                            'Safety Stock' => number_format($criticalStock, 2),
+                            'Reorder Point' => number_format($reorderPoint, 2),
+                            'Max Level' => number_format($maxLevel, 2),
+                            'Unit Cost' => number_format($item['unit_cost'] ?? 0, 2),
+                            'Total Value' => number_format($item['value'] ?? 0, 2),
+                            'Status' => $status,
                         ];
                     })->toArray();
                     break;

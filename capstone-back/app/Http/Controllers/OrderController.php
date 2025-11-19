@@ -1079,15 +1079,26 @@ class OrderController extends Controller
         $productNames = $order->items->pluck('product.name')->unique()->join(', ');
         
         try {
+            // Create database notification
             $notification = \App\Models\Notification::create([
                 'user_id' => $order->user_id,
                 'order_id' => $order->id,
                 'type' => 'ready_for_delivery',
-                'title' => '📦 Order Ready for Delivery!',
+                'title' => 'Order Ready for Delivery!',
                 'message' => "Great news! Your order #{$order->id} ({$productNames}) is ready for delivery. We'll contact you soon to arrange delivery.",
             ]);
             
-            \Log::info('Notification created successfully', [
+            // Send email notification
+            if ($order->user) {
+                $order->user->notify(new \App\Notifications\OrderStageUpdated(
+                    $order->id,
+                    $productNames,
+                    'Ready for Delivery',
+                    'Ready for Delivery'
+                ));
+            }
+            
+            \Log::info('Notification created and email sent successfully', [
                 'notification_id' => $notification->id,
                 'user_id' => $order->user_id,
                 'order_id' => $order->id

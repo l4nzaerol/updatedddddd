@@ -18,6 +18,7 @@ use App\Notifications\OrderStageUpdated;
 use App\Notifications\LowStockAlert;
 use App\Models\Order;
 use App\Models\OrderTracking;
+use App\Models\Notification;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -492,17 +493,27 @@ class ProductionController extends Controller
                 \Log::warning("Failed to broadcast production update: " . $e->getMessage());
             }
 
-            // Notify customer if there's an order (wrapped in try-catch to prevent email errors from breaking the API)
+            // Notify customer when process is completed (for made-to-order products)
             try {
-                if ($production->order_id) {
-                    $order = Order::with('user')->find($production->order_id);
+                if ($newStatus === 'completed' && $production->order_id) {
+                    $order = Order::with(['user', 'items.product'])->find($production->order_id);
+                    
                     if ($order && $order->user) {
-                        $order->user->notify(new OrderStageUpdated(
-                            $order->id,
-                            $production->product_name,
-                            $production->current_stage,
-                            $production->status
-                        ));
+                        // Check if this is a made-to-order product
+                        $isMadeToOrder = $this->isMadeToOrderProduct($order, $production);
+                        
+                        if ($isMadeToOrder) {
+                            // Send notification for process completion
+                            $this->notifyProcessCompletion($order, $production, $process);
+                            
+                            // Check if all processes are completed
+                            $allProcessesCompleted = $this->checkAllProcessesCompleted($production);
+                            
+                            if ($allProcessesCompleted) {
+                                // Send notification for production completion
+                                $this->notifyProductionCompletion($order, $production);
+                            }
+                        }
                     }
                 }
             } catch (\Exception $e) {
@@ -561,7 +572,7 @@ class ProductionController extends Controller
                 
                 // Update order status to 'ready_for_delivery' when production is done
                 if ($production->order_id) {
-                    $order = Order::find($production->order_id);
+                    $order = Order::with(['user', 'items.product'])->find($production->order_id);
                     if ($order && $order->status === 'processing') {
                         $order->status = 'ready_for_delivery';
                         $order->save();
@@ -573,6 +584,14 @@ class ProductionController extends Controller
                             'current_stage' => 'Ready for Delivery',
                             'progress_percentage' => 100,
                         ]);
+
+                        // Notify customer if this is a made-to-order product
+                        if ($order->user) {
+                            $isMadeToOrder = $this->isMadeToOrderProduct($order, $production);
+                            if ($isMadeToOrder) {
+                                $this->notifyProductionCompletion($order, $production);
+                            }
+                        }
                     }
                 }
                 
@@ -1914,6 +1933,114 @@ class ProductionController extends Controller
             \Log::info("Created production completion transaction for production #{$production->id}");
         } catch (\Exception $e) {
             \Log::error("Failed to create production completion transaction: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Check if the product is a made-to-order product
+     */
+    private function isMadeToOrderProduct($order, $production)
+    {
+        // Check if product has made-to-order category
+        if ($production->product_id) {
+            $product = \App\Models\Product::find($production->product_id);
+            if ($product) {
+                $categoryName = strtolower($product->category_name ?? '');
+                if (str_contains($categoryName, 'made to order') || str_contains($categoryName, 'made-to-order')) {
+                    return true;
+                }
+            }
+        }
+
+        // Check order items for made-to-order products
+        if ($order->items) {
+            foreach ($order->items as $item) {
+                if ($item->product) {
+                    $categoryName = strtolower($item->product->category_name ?? '');
+                    if (str_contains($categoryName, 'made to order') || str_contains($categoryName, 'made-to-order')) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if all processes are completed
+     */
+    private function checkAllProcessesCompleted($production)
+    {
+        $processes = $production->processes()->get();
+        
+        if ($processes->isEmpty()) {
+            return false;
+        }
+
+        $completedCount = $processes->where('status', 'completed')->count();
+        return $completedCount === $processes->count();
+    }
+
+    /**
+     * Notify customer when a production process is completed
+     */
+    private function notifyProcessCompletion($order, $production, $process)
+    {
+        try {
+            $customer = $order->user;
+            
+            // Create database notification
+            Notification::create([
+                'user_id' => $customer->id,
+                'order_id' => $order->id,
+                'type' => 'production_process_completed',
+                'title' => 'Production Progress Update',
+                'message' => "The '{$process->process_name}' process for your order #{$order->id} ({$production->product_name}) has been completed successfully.",
+            ]);
+
+            // Send email notification
+            $customer->notify(new OrderStageUpdated(
+                $order->id,
+                $production->product_name,
+                $process->process_name . ' (Completed)',
+                'In Progress'
+            ));
+
+            \Log::info("Sent process completion notification to customer {$customer->id} for order #{$order->id}, process: {$process->process_name}");
+        } catch (\Exception $e) {
+            \Log::error("Failed to send process completion notification: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify customer when production is fully completed
+     */
+    private function notifyProductionCompletion($order, $production)
+    {
+        try {
+            $customer = $order->user;
+            
+            // Create database notification
+            Notification::create([
+                'user_id' => $customer->id,
+                'order_id' => $order->id,
+                'type' => 'production_completed',
+                'title' => 'Production Completed!',
+                'message' => "Great news! Your order #{$order->id} ({$production->product_name}) has completed all production processes and is ready for delivery.",
+            ]);
+
+            // Send email notification
+            $customer->notify(new OrderStageUpdated(
+                $order->id,
+                $production->product_name,
+                'Production Completed',
+                'Ready for Delivery'
+            ));
+
+            \Log::info("Sent production completion notification to customer {$customer->id} for order #{$order->id}");
+        } catch (\Exception $e) {
+            \Log::error("Failed to send production completion notification: " . $e->getMessage());
         }
     }
 

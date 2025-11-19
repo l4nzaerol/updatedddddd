@@ -1366,8 +1366,8 @@ export default function ProductionTrackingSystem() {
                       p.status === 'Completed' && 
                       p.overall_progress >= 100 && 
                       p.product_type !== 'alkansya' &&
-                      p.order?.status !== 'ready_for_delivery' && 
-                      p.order?.status !== 'delivered'
+                      (p.order?.status === 'ready_for_delivery' || 
+                       (p.order?.status !== 'delivered' && p.order?.status !== 'completed'))
                     ).length}
                   </span>
                 </h5>
@@ -1382,9 +1382,8 @@ export default function ProductionTrackingSystem() {
                   p.status === 'Completed' && 
                   p.overall_progress >= 100 && 
                   p.product_type !== 'alkansya' &&
-                  p.order?.status !== 'ready_for_delivery' && 
-                  p.order?.status !== 'delivered' &&
-                  p.order?.status !== 'completed'
+                  (p.order?.status === 'ready_for_delivery' || 
+                   (p.order?.status !== 'delivered' && p.order?.status !== 'completed'))
                 ).length === 0 && (
                   <div className="text-center py-5 text-muted">
                     <i className="fas fa-truck-loading fa-3x mb-3"></i>
@@ -1397,9 +1396,8 @@ export default function ProductionTrackingSystem() {
                   p.status === 'Completed' && 
                   p.overall_progress >= 100 && 
                   p.product_type !== 'alkansya' &&
-                  p.order?.status !== 'ready_for_delivery' && 
-                  p.order?.status !== 'delivered' &&
-                  p.order?.status !== 'completed'
+                  (p.order?.status === 'ready_for_delivery' || 
+                   (p.order?.status !== 'delivered' && p.order?.status !== 'completed'))
                 ).map(prod => (
                     <div key={prod.id} className="card mb-3 border-start border-4" style={{ borderColor: '#f39c12' }}>
                       <div className="card-body p-3">
@@ -1422,14 +1420,23 @@ export default function ProductionTrackingSystem() {
                             </div>
                           </div>
                           <div className="text-end">
-                            <span className="badge bg-success">Completed</span>
+                            {prod.order?.status === 'ready_for_delivery' ? (
+                              <span className="badge bg-warning text-dark">Ready to Deliver</span>
+                            ) : (
+                              <span className="badge bg-success">Completed</span>
+                            )}
                           </div>
                         </div>
 
                         <div className="mt-3 d-flex gap-2">
                           {prod.order_id && prod.order?.status !== 'completed' && (
                             <>
-                              {prod.order?.status !== 'ready_for_delivery' && (
+                              {prod.order?.status === 'ready_for_delivery' ? (
+                                <span className="badge bg-warning text-dark">
+                                  <i className="fas fa-truck me-1"></i>
+                                  Ready to Deliver
+                                </span>
+                              ) : (
                                 <button
                                   className="btn btn-outline-warning btn-sm"
                                   onClick={() => markOrderReadyForDelivery(prod.order_id)}
@@ -1480,7 +1487,9 @@ export default function ProductionTrackingSystem() {
                     {filtered.filter(p => 
                       p.status === 'Completed' && 
                       p.product_type !== 'alkansya' &&
-                      (p.order?.status === 'completed' || !p.order_id)
+                      (p.order?.status === 'completed' || 
+                       p.order?.status === 'ready_for_delivery' || 
+                       !p.order_id)
                     ).length}
                   </span>
                 </h5>
@@ -1494,7 +1503,9 @@ export default function ProductionTrackingSystem() {
                 {filtered.filter(p => 
                   p.status === 'Completed' && 
                   p.product_type !== 'alkansya' &&
-                  (p.order?.status === 'completed' || !p.order_id)
+                  (p.order?.status === 'completed' || 
+                   p.order?.status === 'ready_for_delivery' || 
+                   !p.order_id)
                 ).length === 0 && (
                   <div className="text-center py-5 text-muted">
                     <i className="fas fa-check-circle fa-3x mb-3"></i>
@@ -1505,7 +1516,10 @@ export default function ProductionTrackingSystem() {
 
                 {filtered.filter(p => 
                   p.status === 'Completed' && 
-                  p.product_type !== 'alkansya'
+                  p.product_type !== 'alkansya' &&
+                  (p.order?.status === 'completed' || 
+                   p.order?.status === 'ready_for_delivery' || 
+                   !p.order_id)
                 ).map(prod => (
                     <div key={prod.id} className="card mb-3 border-start border-4 border-success">
                       <div className="card-body p-3">
