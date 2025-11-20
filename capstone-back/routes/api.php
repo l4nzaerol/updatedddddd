@@ -139,6 +139,7 @@ Route::get('/production/overview', [\App\Http\Controllers\EnhancedInventoryRepor
 Route::get('/production/alkansya-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getAlkansyaProductionData']);
 Route::get('/production/made-to-order-data', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getMadeToOrderProductionData']);
 Route::get('/production/output-analytics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionOutputAnalytics']);
+Route::get('/production/product-performance', [\App\Http\Controllers\ReportController::class, 'getProductPerformanceData']);
 Route::get('/production/analytics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getProductionAnalytics']);
 Route::get('/production/efficiency-metrics', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getEfficiencyMetrics']);
 Route::get('/production/resource-utilization', [\App\Http\Controllers\EnhancedInventoryReportsController::class, 'getResourceUtilization']);
@@ -421,6 +422,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/replenishment-schedule', [EnhancedInventoryReportsController::class, 'getReplenishmentSchedule']);
         Route::get('/transactions', [EnhancedInventoryReportsController::class, 'getInventoryTransactions']);
         Route::get('/alerts', [EnhancedInventoryReportsController::class, 'getAlerts']);
+        Route::get('/stock-levels', [EnhancedInventoryReportsController::class, 'getStockLevels']);
+        Route::post('/stock-levels/sync', [EnhancedInventoryReportsController::class, 'syncStockLevels']);
     });
 
     // Sales Analytics Routes

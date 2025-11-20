@@ -7,6 +7,9 @@ use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
 use App\Models\Production;
 use App\Models\ProductionProcess;
+use App\Models\AlkansyaDailyOutput;
+use App\Models\Product;
+use App\Models\Order;
 use Illuminate\Http\Request;
 use App\Services\InventoryForecastService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -220,11 +223,13 @@ class ReportController extends Controller
     {
         $start = $request->query('start_date');
         $end = $request->query('end_date');
+        
+        // Get regular production data (excluding alkansya)
         $q = Production::with('product');
         if ($start && $end) {
             $q->whereBetween('date', [$start, $end]);
         }
-        $rows = $q->get()->map(function($p){
+        $productionRows = $q->get()->map(function($p){
             return [
                 'id' => $p->id,
                 'date' => optional($p->date)->format('Y-m-d'),
@@ -234,6 +239,45 @@ class ReportController extends Controller
                 'quantity' => $p->quantity,
             ];
         })->toArray();
+
+        // Get alkansya production data from AlkansyaDailyOutput
+        $alkansyaQuery = AlkansyaDailyOutput::query();
+        if ($start && $end) {
+            $alkansyaQuery->whereBetween('date', [$start, $end]);
+        }
+        
+        // Get alkansya product name
+        $alkansyaProduct = Product::where('category_name', 'Stocked Products')
+            ->where(function($query) {
+                $query->where('name', 'LIKE', '%Alkansya%')
+                      ->orWhere('product_name', 'LIKE', '%Alkansya%');
+            })
+            ->first();
+        
+        $alkansyaProductName = $alkansyaProduct ? ($alkansyaProduct->product_name ?? $alkansyaProduct->name) : 'Alkansya';
+        
+        $alkansyaRows = $alkansyaQuery->get()->map(function($alkansya, $index) use ($alkansyaProductName) {
+            return [
+                'id' => 'ALK-' . ($alkansya->id ?? $index + 1),
+                'date' => optional($alkansya->date)->format('Y-m-d'),
+                'product' => $alkansyaProductName,
+                'stage' => 'Completed', // Alkansya is pre-made, so always completed
+                'status' => 'Completed',
+                'quantity' => $alkansya->quantity_produced ?? 0,
+            ];
+        })->toArray();
+
+        // Merge both arrays
+        $rows = array_merge($productionRows, $alkansyaRows);
+        
+        // Sort by date (most recent first) and then by id
+        usort($rows, function($a, $b) {
+            $dateCompare = strcmp($b['date'] ?? '', $a['date'] ?? '');
+            if ($dateCompare !== 0) {
+                return $dateCompare;
+            }
+            return strcmp($a['id'] ?? '', $b['id'] ?? '');
+        });
 
         return $this->arrayToCsvResponse($rows, 'production.csv');
     }
@@ -367,11 +411,13 @@ class ReportController extends Controller
     {
         $start = $request->query('start_date');
         $end = $request->query('end_date');
+        
+        // Get regular production data (excluding alkansya)
         $q = Production::with('product');
         if ($start && $end) {
             $q->whereBetween('date', [$start, $end]);
         }
-        $rows = $q->get()->map(function($p){
+        $productionRows = $q->get()->map(function($p){
             return [
                 'id' => $p->id,
                 'date' => optional($p->date)->format('Y-m-d'),
@@ -381,6 +427,45 @@ class ReportController extends Controller
                 'quantity' => $p->quantity,
             ];
         })->toArray();
+
+        // Get alkansya production data from AlkansyaDailyOutput
+        $alkansyaQuery = AlkansyaDailyOutput::query();
+        if ($start && $end) {
+            $alkansyaQuery->whereBetween('date', [$start, $end]);
+        }
+        
+        // Get alkansya product name
+        $alkansyaProduct = Product::where('category_name', 'Stocked Products')
+            ->where(function($query) {
+                $query->where('name', 'LIKE', '%Alkansya%')
+                      ->orWhere('product_name', 'LIKE', '%Alkansya%');
+            })
+            ->first();
+        
+        $alkansyaProductName = $alkansyaProduct ? ($alkansyaProduct->product_name ?? $alkansyaProduct->name) : 'Alkansya';
+        
+        $alkansyaRows = $alkansyaQuery->get()->map(function($alkansya, $index) use ($alkansyaProductName) {
+            return [
+                'id' => 'ALK-' . ($alkansya->id ?? $index + 1),
+                'date' => optional($alkansya->date)->format('Y-m-d'),
+                'product' => $alkansyaProductName,
+                'stage' => 'Completed', // Alkansya is pre-made, so always completed
+                'status' => 'Completed',
+                'quantity' => $alkansya->quantity_produced ?? 0,
+            ];
+        })->toArray();
+
+        // Merge both arrays
+        $rows = array_merge($productionRows, $alkansyaRows);
+        
+        // Sort by date (most recent first) and then by id
+        usort($rows, function($a, $b) {
+            $dateCompare = strcmp($b['date'] ?? '', $a['date'] ?? '');
+            if ($dateCompare !== 0) {
+                return $dateCompare;
+            }
+            return strcmp($a['id'] ?? '', $b['id'] ?? '');
+        });
 
         $pdf = Pdf::loadView('pdf.production-report', [
             'data' => $rows,
@@ -392,5 +477,197 @@ class ReportController extends Controller
         ]);
 
         return $pdf->download('production_report_' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    /**
+     * Get product-level production performance data
+     * Returns detailed performance metrics for each product (both Alkansya and Made-to-Order)
+     */
+    public function getProductPerformanceData(Request $request)
+    {
+        $start = $request->query('start_date', Carbon::now()->subDays(30)->format('Y-m-d'));
+        $end = $request->query('end_date', Carbon::now()->format('Y-m-d'));
+        
+        $products = [];
+        
+        // Get Alkansya product
+        $alkansyaProduct = Product::where('category_name', 'Stocked Products')
+            ->where(function($query) {
+                $query->where('name', 'LIKE', '%Alkansya%')
+                      ->orWhere('product_name', 'LIKE', '%Alkansya%');
+            })
+            ->first();
+        
+        if ($alkansyaProduct) {
+            // Get Alkansya daily output data
+            $alkansyaOutput = AlkansyaDailyOutput::whereBetween('date', [$start, $end])
+                ->orderBy('date', 'desc')
+                ->get();
+            
+            $totalProduced = $alkansyaOutput->sum('quantity_produced');
+            $daysWithOutput = $alkansyaOutput->count();
+            $avgDailyOutput = $daysWithOutput > 0 ? round($totalProduced / $daysWithOutput, 2) : 0;
+            $maxDailyOutput = $alkansyaOutput->max('quantity_produced') ?? 0;
+            $minDailyOutput = $alkansyaOutput->min('quantity_produced') ?? 0;
+            
+            // Calculate efficiency (based on target if available, or use average)
+            $targetDaily = 20; // Default target
+            $efficiency = $targetDaily > 0 ? round(($avgDailyOutput / $targetDaily) * 100, 2) : 0;
+            
+            // Get recent production dates
+            $firstProductionDate = $alkansyaOutput->min('date');
+            $lastProductionDate = $alkansyaOutput->max('date');
+            
+            $products[] = [
+                'product_id' => $alkansyaProduct->id,
+                'product_name' => $alkansyaProduct->product_name ?? $alkansyaProduct->name,
+                'category' => 'Alkansya',
+                'total_quantity_produced' => $totalProduced,
+                'days_with_production' => $daysWithOutput,
+                'average_daily_output' => $avgDailyOutput,
+                'max_daily_output' => $maxDailyOutput,
+                'min_daily_output' => $minDailyOutput,
+                'efficiency_percentage' => $efficiency,
+                'first_production_date' => $firstProductionDate ? $firstProductionDate->format('Y-m-d') : null,
+                'last_production_date' => $lastProductionDate ? $lastProductionDate->format('Y-m-d') : null,
+                'production_trend' => $this->calculateProductionTrend($alkansyaOutput),
+                'recent_output' => $alkansyaOutput->take(5)->map(function($output) {
+                    return [
+                        'date' => $output->date->format('Y-m-d'),
+                        'quantity' => $output->quantity_produced,
+                        'produced_by' => $output->produced_by ?? 'N/A'
+                    ];
+                })->values()
+            ];
+        }
+        
+        // Get Made-to-Order products
+        $madeToOrderProducts = Product::where(function($query) {
+            $query->where('category_name', 'Made-to-Order')
+                  ->orWhere('category_name', 'Made to Order');
+        })->get();
+        
+        foreach ($madeToOrderProducts as $product) {
+            // Get orders for this product
+            $orders = \App\Models\Order::whereBetween('created_at', [$start, $end])
+                ->whereHas('items', function($query) use ($product) {
+                    $query->where('product_id', $product->id);
+                })
+                ->with(['items' => function($query) use ($product) {
+                    $query->where('product_id', $product->id);
+                }])
+                ->get();
+            
+            // Get production records for this product
+            $productions = Production::whereBetween('date', [$start, $end])
+                ->where('product_id', $product->id)
+                ->get();
+            
+            $totalOrdered = $orders->sum(function($order) use ($product) {
+                return $order->items->where('product_id', $product->id)->sum('quantity');
+            });
+            
+            $totalProduced = $productions->sum('quantity');
+            $completedProductions = $productions->where('status', 'completed')->count();
+            $inProgressProductions = $productions->whereIn('status', ['in_progress', 'processing'])->count();
+            $pendingProductions = $productions->where('status', 'pending')->count();
+            
+            $completionRate = $productions->count() > 0 
+                ? round(($completedProductions / $productions->count()) * 100, 2) 
+                : 0;
+            
+            // Calculate average production time (if we have completion data)
+            $avgProductionTime = 0;
+            if ($completedProductions > 0) {
+                // Estimate based on order dates and completion dates
+                $avgDays = $productions->where('status', 'completed')
+                    ->filter(function($p) {
+                        return $p->date && $p->created_at;
+                    })
+                    ->map(function($p) {
+                        return Carbon::parse($p->date)->diffInDays(Carbon::parse($p->created_at));
+                    })
+                    ->avg();
+                $avgProductionTime = $avgDays ? round($avgDays, 1) : 0;
+            }
+            
+            // Calculate efficiency (based on completion rate and production time)
+            $efficiency = $completionRate; // Use completion rate as efficiency metric
+            
+            $firstOrderDate = $orders->min('created_at');
+            $lastOrderDate = $orders->max('created_at');
+            $firstProductionDate = $productions->min('date');
+            $lastProductionDate = $productions->max('date');
+            
+            $products[] = [
+                'product_id' => $product->id,
+                'product_name' => $product->product_name ?? $product->name,
+                'category' => 'Made-to-Order',
+                'total_quantity_ordered' => $totalOrdered,
+                'total_quantity_produced' => $totalProduced,
+                'orders_count' => $orders->count(),
+                'completed_productions' => $completedProductions,
+                'in_progress_productions' => $inProgressProductions,
+                'pending_productions' => $pendingProductions,
+                'completion_rate' => $completionRate,
+                'efficiency_percentage' => $efficiency,
+                'average_production_time_days' => $avgProductionTime,
+                'first_order_date' => $firstOrderDate ? Carbon::parse($firstOrderDate)->format('Y-m-d') : null,
+                'last_order_date' => $lastOrderDate ? Carbon::parse($lastOrderDate)->format('Y-m-d') : null,
+                'first_production_date' => $firstProductionDate ? Carbon::parse($firstProductionDate)->format('Y-m-d') : null,
+                'last_production_date' => $lastProductionDate ? Carbon::parse($lastProductionDate)->format('Y-m-d') : null,
+                'recent_orders' => $orders->take(5)->map(function($order) use ($product) {
+                    $item = $order->items->where('product_id', $product->id)->first();
+                    return [
+                        'order_id' => $order->id,
+                        'date' => $order->created_at->format('Y-m-d'),
+                        'quantity' => $item ? $item->quantity : 0,
+                        'status' => $order->acceptance_status
+                    ];
+                })->values()
+            ];
+        }
+        
+        // Sort products by total quantity produced (descending)
+        usort($products, function($a, $b) {
+            $aQty = $a['total_quantity_produced'] ?? 0;
+            $bQty = $b['total_quantity_produced'] ?? 0;
+            return $bQty <=> $aQty;
+        });
+        
+        return response()->json([
+            'products' => $products,
+            'summary' => [
+                'total_products' => count($products),
+                'alkansya_products' => count(array_filter($products, fn($p) => $p['category'] === 'Alkansya')),
+                'made_to_order_products' => count(array_filter($products, fn($p) => $p['category'] === 'Made-to-Order')),
+                'total_quantity_produced' => array_sum(array_column($products, 'total_quantity_produced')),
+                'average_efficiency' => count($products) > 0 
+                    ? round(array_sum(array_column($products, 'efficiency_percentage')) / count($products), 2)
+                    : 0
+            ],
+            'date_range' => [
+                'start_date' => $start,
+                'end_date' => $end
+            ]
+        ]);
+    }
+    
+    private function calculateProductionTrend($alkansyaOutput)
+    {
+        if ($alkansyaOutput->count() < 2) {
+            return 'stable';
+        }
+        
+        $recent = $alkansyaOutput->take(7)->avg('quantity_produced');
+        $previous = $alkansyaOutput->skip(7)->take(7)->avg('quantity_produced');
+        
+        if ($recent > $previous * 1.1) {
+            return 'increasing';
+        } elseif ($recent < $previous * 0.9) {
+            return 'decreasing';
+        } else {
+            return 'stable';
+        }
     }
 }

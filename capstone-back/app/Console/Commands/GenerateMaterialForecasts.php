@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Database\Seeders\MaterialForecastSeeder;
 
 class GenerateMaterialForecasts extends Command
 {
@@ -11,20 +12,28 @@ class GenerateMaterialForecasts extends Command
      *
      * @var string
      */
-    protected $signature = 'app:generate-material-forecasts';
+    protected $signature = 'forecasts:generate';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Generate accurate material forecasts from Alkansya production data';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
-        //
+        $this->info('Generating material forecasts...');
+        
+        $seeder = new MaterialForecastSeeder();
+        $seeder->setCommand($this);
+        $seeder->run();
+        
+        $this->info('Material forecasts generated successfully!');
+        
+        return 0;
     }
 }

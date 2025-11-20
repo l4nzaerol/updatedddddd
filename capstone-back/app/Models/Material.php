@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use App\Models\StockLevel;
 
 class Material extends Model
 {
@@ -46,6 +47,12 @@ class Material extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(InventoryTransaction::class, 'material_id', 'material_id');
+    }
+
+    // Material has stock level record
+    public function stockLevel(): HasMany
+    {
+        return $this->hasMany(StockLevel::class, 'material_id', 'material_id');
     }
 
     // BOM relationships

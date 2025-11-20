@@ -493,6 +493,13 @@ const EnhancedInventoryReports = () => {
         }
     }, [activeTab, tabLoadingStates.stock, loading, refreshKey]);
 
+    // Reload stock data when filter changes (only if already on stock tab)
+    useEffect(() => {
+        if (activeTab === 'stock' && !tabLoadingStates.stock) {
+            loadTabData('stock');
+        }
+    }, [stockFilter, activeTab]);
+
 
     const handleGlobalRefresh = () => {
         setRefreshKey(prev => prev + 1);
@@ -799,7 +806,7 @@ const EnhancedInventoryReports = () => {
                     projectedStatus = 'Overstocked';
                 }
                 
-                content += `"${item.name}",${item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other'},${avgDailyConsumption.toFixed(2)},${currentStock.toFixed(2)},${maxLevel.toFixed(2)},${item.days_until_stockout || 'N/A'},${projectedUsage30Days.toFixed(2)},${projectedStock30Days.toFixed(2)},${currentStatus},${projectedStatus},${item.total_consumption || 0},${item.days_with_consumption || 0}\n`;
+                content += `"${item.name}",${item.is_alkansya_material ? 'Alkansya' : item.is_made_to_order_material ? 'Made to Order' : 'Other'},${Number(avgDailyConsumption || 0).toFixed(2)},${Number(currentStock || 0).toFixed(2)},${Number(maxLevel || 0).toFixed(2)},${item.days_until_stockout || 'N/A'},${Number(projectedUsage30Days || 0).toFixed(2)},${Number(projectedStock30Days || 0).toFixed(2)},${currentStatus},${projectedStatus},${item.total_consumption || 0},${item.days_with_consumption || 0}\n`;
             });
         }
         
@@ -1273,244 +1280,132 @@ const EnhancedInventoryReports = () => {
                     break;
                     
                 case 'stock':
-                    // Always refresh stock data when tab is clicked with MRP calculations
-                    const [materialsRes, productsRes, outputRes, bomsRes, acceptedOrdersRes] = await Promise.allSettled([
-                        api.get('/normalized-inventory/materials'),
-                        api.get('/normalized-inventory/products'),
-                        api.get('/normalized-inventory/daily-output'),
-                        api.get('/bom'),
-                        api.get('/orders/accepted') // Fetch accepted orders for Made-to-Order consumption calculation
-                    ]);
-                    
-                    const materials = materialsRes.status === 'fulfilled' ? materialsRes.value?.data : [];
-                    const products = productsRes.status === 'fulfilled' ? productsRes.value?.data : [];
-                    const alkansyaOutput = outputRes.status === 'fulfilled' ? outputRes.value?.data?.daily_outputs : [];
-                    const boms = bomsRes.status === 'fulfilled' ? bomsRes.value?.data : [];
-                    const acceptedOrders = acceptedOrdersRes.status === 'fulfilled' ? (acceptedOrdersRes.value?.data?.orders || []) : [];
-                    
-                    // Reapply MRP processing
-                    const alkansyaProductIds = products
-                        .filter(p => p.category_name === 'Stocked Products' && p.name?.toLowerCase().includes('alkansya'))
-                        .map(p => p.id);
-                    
-                    const madeToOrderProductIds = products
-                        .filter(p => p.category_name === 'Made to Order')
-                        .map(p => p.id);
-                    
-                    const alkansyaMaterialIds = boms
-                        .filter(bom => alkansyaProductIds.includes(bom.product_id))
-                        .map(bom => bom.material_id);
-                    
-                    const madeToOrderMaterialIds = boms
-                        .filter(bom => madeToOrderProductIds.includes(bom.product_id))
-                        .map(bom => bom.material_id);
-                    
-                    const processedItems = materials.map(material => {
-                        const isAlkansyaMaterial = alkansyaMaterialIds.includes(material.material_id);
-                        const isMadeToOrderMaterial = madeToOrderMaterialIds.includes(material.material_id);
+                    // Sync stock levels first, then fetch from the new endpoint
+                    try {
+                        // Sync stock levels to ensure data is up-to-date
+                        await api.post('/inventory/stock-levels/sync').catch(err => {
+                            console.warn('Stock levels sync failed (may already be synced):', err);
+                        });
                         
-                        // Use ALL alkansya output data (not just last 30 days) to include seeded data
-                        const allOutput = alkansyaOutput || [];
+                        // Fetch stock levels from the new endpoint
+                        const filterParam = stockFilter === 'all' ? 'all' : 
+                                          stockFilter === 'alkansya' ? 'alkansya' : 
+                                          stockFilter === 'made_to_order' ? 'made_to_order' : 
+                                          stockFilter === 'overstocked' ? 'overstocked' : 'all';
                         
-                        // Find BOM entries for both Alkansya and Made-to-Order
-                        const alkansyaBomEntry = boms.find(b => 
-                            b.material_id === material.material_id && 
-                            alkansyaProductIds.includes(b.product_id)
-                        );
+                        const stockLevelsRes = await api.get(`/inventory/stock-levels`, {
+                            params: { filter: filterParam }
+                        });
                         
-                        const madeToOrderBomEntry = boms.find(b => 
-                            b.material_id === material.material_id && 
-                            madeToOrderProductIds.includes(b.product_id)
-                        );
+                        const stockData = stockLevelsRes.data;
                         
-                        // Calculate Alkansya consumption
-                        let alkansyaConsumption = 0;
-                        if (alkansyaBomEntry && allOutput.length > 0) {
-                            // Get unique days with output
-                            const uniqueDays = new Set();
-                            const totalQuantity = allOutput.reduce((sum, o) => {
-                                // Handle both date field names (date or output_date)
-                                const date = o.date || o.output_date;
-                                if (date) {
-                                    // Normalize date to YYYY-MM-DD format
-                                    const dateStr = typeof date === 'string' 
-                                        ? date.split('T')[0] 
-                                        : new Date(date).toISOString().split('T')[0];
-                                    uniqueDays.add(dateStr);
-                                }
-                                return sum + (o.quantity_produced || 0);
-                            }, 0);
-                            
-                            // Calculate average by dividing by actual number of days with output
-                            const actualDaysWithOutput = uniqueDays.size || allOutput.length;
-                            const avgDailyOutput = actualDaysWithOutput > 0 ? totalQuantity / actualDaysWithOutput : 0;
-                            alkansyaConsumption = avgDailyOutput * (alkansyaBomEntry.quantity_per_product || 0);
-                        }
+                        // Map the response to match expected format
+                        const processedItems = (stockData.items || []).map(item => ({
+                            material_id: item.material_id,
+                            name: item.name,
+                            material_code: item.sku,
+                            sku: item.sku,
+                            category: item.category || 'raw',
+                            current_stock: item.available_quantity || 0,
+                            available_quantity: item.available_quantity || 0,
+                            quantity_on_hand: item.quantity_on_hand || 0,
+                            quantity_reserved: item.quantity_reserved || 0,
+                            unit: item.unit || 'pcs',
+                            unit_cost: item.unit_cost || 0,
+                            value: item.value || 0,
+                            reorder_point: item.reorder_point || 0,
+                            reorder_level: item.reorder_level || item.reorder_point || 0,
+                            safety_stock: item.safety_stock || 0,
+                            max_level: item.max_level || 0,
+                            critical_stock: item.critical_stock || 0,
+                            lead_time_days: item.lead_time_days || 0,
+                            supplier: item.supplier || 'N/A',
+                            location: item.location || 'Windfield 2',
+                            stock_status: item.stock_status || 'in_stock',
+                            status: item.stock_status || 'in_stock',
+                            status_label: item.status_label || item.stock_status || 'In Stock',
+                            is_alkansya_material: item.is_alkansya_material || false,
+                            is_made_to_order_material: item.is_made_to_order_material || false,
+                            avg_daily_consumption: Number(item.avg_daily_consumption || 0),
+                            days_until_stockout: item.days_until_stockout !== null && item.days_until_stockout !== undefined ? Number(item.days_until_stockout) : 999,
+                            needs_reorder: item.needs_reorder || false
+                        }));
                         
-                        // Calculate Made-to-Order consumption from accepted orders (use ALL orders)
-                        let madeToOrderConsumption = 0;
-                        if (isMadeToOrderMaterial && madeToOrderBomEntry && acceptedOrders.length > 0) {
-                            // Use ALL accepted orders, not just recent ones
-                            const allAcceptedOrders = acceptedOrders || [];
-                            
-                            // Get unique days with orders
-                            const uniqueOrderDays = new Set();
-                            const totalQuantityOrdered = allAcceptedOrders.reduce((sum, order) => {
-                                const orderDate = order.accepted_at || order.created_at;
-                                if (orderDate) {
-                                    // Normalize date to YYYY-MM-DD format
-                                    const dateStr = typeof orderDate === 'string' 
-                                        ? orderDate.split('T')[0] 
-                                        : new Date(orderDate).toISOString().split('T')[0];
-                                    uniqueOrderDays.add(dateStr);
-                                }
-                                
-                                const orderProducts = order.order_items || order.products || [];
-                                const materialQuantity = orderProducts.reduce((prodSum, item) => {
-                                    const orderBomEntry = boms.find(b => 
-                                        b.product_id === item.product_id && 
-                                        b.material_id === material.material_id &&
-                                        madeToOrderProductIds.includes(b.product_id)
-                                    );
-                                    if (orderBomEntry) {
-                                        return prodSum + (item.quantity * orderBomEntry.quantity_per_product);
-                                    }
-                                    return prodSum;
-                                }, 0);
-                                return sum + materialQuantity;
-                            }, 0);
-                            
-                            // Calculate average by dividing by actual number of days with orders
-                            const actualDaysWithOrders = uniqueOrderDays.size || allAcceptedOrders.length;
-                            madeToOrderConsumption = actualDaysWithOrders > 0 ? totalQuantityOrdered / actualDaysWithOrders : 0;
-                        }
-                        
-                        // Total average daily consumption (Alkansya + Made-to-Order)
-                        let avgDailyConsumption = alkansyaConsumption + madeToOrderConsumption;
-                        
-                        // Use backend reorder_level if available, otherwise calculate reorder point
-                        const backendReorderLevel = material.reorder_level || 0;
-                        const leadTimeDays = material.lead_time_days || 7;
-                        const safetyStock = Math.ceil(avgDailyConsumption * 14);
-                        const calculatedReorderPoint = safetyStock + Math.ceil(avgDailyConsumption * leadTimeDays);
-                        // Prefer backend reorder_level, fallback to calculated
-                        const reorderPoint = backendReorderLevel > 0 ? backendReorderLevel : calculatedReorderPoint;
-                        
-                        // Calculate max level (use backend max_level if set, otherwise calculate)
-                        const backendMaxLevel = material.max_level || 0;
-                        const calculatedMaxLevel = Math.ceil(avgDailyConsumption * 30);
-                        const maxLevel = backendMaxLevel > 0 ? backendMaxLevel : calculatedMaxLevel;
-                        
-                        const availableQty = material.available_quantity || 0;
-                        const criticalStock = material.critical_stock || 0;
-                        // Use backend status if available, otherwise calculate
-                        let stockStatus = material.status || 'in_stock';
-                        
-                        // If backend didn't provide status, calculate it
-                        // Priority order: Out of Stock > Critical > Need Reorder > Overstocked > In Stock
-                        if (!material.status) {
-                            if (availableQty <= 0) {
-                                stockStatus = 'out_of_stock';
-                            } else if (criticalStock > 0 && availableQty <= criticalStock) {
-                                // Critical: Stock is at or below critical level
-                                stockStatus = 'critical';
-                            } else if (reorderPoint > 0 && availableQty <= reorderPoint) {
-                                // Need Reorder: Stock is at or below reorder point
-                                stockStatus = 'need_reorder';
-                            } else if (maxLevel > 0 && availableQty > maxLevel) {
-                                // Overstocked: Current stock exceeds max level
-                                stockStatus = 'overstocked';
-                            }
-                        }
-                        
-                        // Determine needs_reorder: use backend flag if available, otherwise check against reorder_point
-                        // Handle backend needs_reorder as boolean, string, or number
-                        const backendNeedsReorder = material.needs_reorder !== undefined 
-                            ? (material.needs_reorder === true || material.needs_reorder === 'true' || material.needs_reorder === 1 || material.needs_reorder === '1')
-                            : undefined;
-                        const calculatedNeedsReorder = reorderPoint > 0 && availableQty <= reorderPoint;
-                        const needsReorder = backendNeedsReorder !== undefined ? backendNeedsReorder : calculatedNeedsReorder;
-                        
-                        const daysUntilStockout = avgDailyConsumption > 0 
-                            ? Math.floor(availableQty / avgDailyConsumption) 
-                            : 999;
-                        const totalValue = availableQty * (material.standard_cost || 0);
-                        
-                        return {
-                            material_id: material.material_id,
-                            name: material.material_name,
-                            material_code: material.material_code,
-                            sku: material.material_code,
-                            category: material.category || 'raw',
-                            current_stock: availableQty,
-                            available_quantity: availableQty,
-                            quantity_on_hand: material.total_quantity_on_hand || 0,
-                            quantity_reserved: material.total_quantity_reserved || 0,
-                            unit: material.unit_of_measure || 'pcs',
-                            unit_cost: material.standard_cost || 0,
-                            value: totalValue,
-                            reorder_point: reorderPoint,
-                            reorder_level: backendReorderLevel, // Include backend reorder_level for reference
-                            safety_stock: safetyStock,
-                            max_level: maxLevel,
-                            critical_stock: material.critical_stock || 0,
-                            lead_time_days: leadTimeDays,
-                            supplier: material.supplier || 'N/A',
-                            location: material.location || 'Windfield 2',
-                            stock_status: stockStatus,
-                            status: material.status || stockStatus, // Include backend status for compatibility
-                            is_alkansya_material: isAlkansyaMaterial,
-                            is_made_to_order_material: isMadeToOrderMaterial,
-                            avg_daily_consumption: avgDailyConsumption,
-                            days_until_stockout: daysUntilStockout,
-                            needs_reorder: needsReorder
-                        };
-                    });
-                    
-                    const data = {
-                        items: processedItems,
-                        summary: {
-                            total_items: processedItems.length,
+                        // Calculate summary with proper status mapping
+                        const summary = {
+                            total_items: stockData.summary?.total_items || processedItems.length,
                             items_needing_reorder: processedItems.filter(i => i.needs_reorder).length,
-                            critical_items: processedItems.filter(i => i.stock_status === 'critical' || i.stock_status === 'out_of_stock').length,
-                            total_usage: processedItems.reduce((sum, item) => sum + item.avg_daily_consumption, 0),
-                            total_value: processedItems.reduce((sum, item) => sum + item.value, 0),
+                            critical_items: processedItems.filter(i => 
+                                i.stock_status === 'critical' || 
+                                i.stock_status === 'out_of_stock' ||
+                                i.status_label === 'Critical' ||
+                                i.status_label === 'Out of Stock'
+                            ).length,
+                            critical_stock_items: processedItems.filter(i => {
+                                const qty = i.available_quantity || 0;
+                                const critical = i.critical_stock || 0;
+                                return critical > 0 && qty <= critical && qty > 0;
+                            }).length,
+                            total_usage: processedItems.reduce((sum, item) => sum + (item.avg_daily_consumption || 0), 0),
+                            total_value: stockData.summary?.total_value || processedItems.reduce((sum, item) => sum + (item.value || 0), 0),
                             alkansya_materials: processedItems.filter(i => i.is_alkansya_material).length,
                             made_to_order_materials: processedItems.filter(i => i.is_made_to_order_material).length,
-                            // Low Stock includes both critical and need reorder items
-                            // Use needs_reorder flag from backend OR check status OR check quantities directly
-                            low_stock_items: (() => {
-                                const lowStockItems = processedItems.filter(i => {
+                            overstocked_items: stockData.summary?.overstocked || processedItems.filter(i => 
+                                i.stock_status === 'overstocked' || 
+                                i.status_label === 'Overstocked' ||
+                                (i.max_level > 0 && i.available_quantity > i.max_level)
+                            ).length,
+                            low_stock_items: stockData.summary?.low_stock_items || processedItems.filter(i => {
                                     const qty = i.available_quantity || 0;
                                     const critical = i.critical_stock || 0;
-                                    // Use reorder_level from backend if available, otherwise use calculated reorder_point
                                     const reorderPoint = i.reorder_level || i.reorder_point || 0;
                                     const stockStatus = i.stock_status || '';
                                     const needsReorder = i.needs_reorder || false;
                                     
-                                    // Include if:
-                                    // 1. Backend says it needs reorder
-                                    // 2. Status is critical or need_reorder
-                                    // 3. Quantity is at or below critical level (and critical > 0)
-                                    // 4. Quantity is at or below reorder point/level (and reorderPoint > 0)
-                                    const shouldInclude = needsReorder || 
+                                return needsReorder || 
                                            stockStatus === 'critical' || 
                                            stockStatus === 'need_reorder' || 
+                                       stockStatus === 'low_stock' ||
                                            (critical > 0 && qty <= critical && qty > 0) || 
                                            (reorderPoint > 0 && qty <= reorderPoint);
-                                    
-                                    return shouldInclude;
-                                });
-                                
-                                return lowStockItems.length;
-                            })(),
-                            out_of_stock_items: processedItems.filter(i => i.stock_status === 'out_of_stock').length
-                        }
+                            }).length,
+                            out_of_stock_items: processedItems.filter(i => 
+                                i.stock_status === 'out_of_stock' || 
+                                i.status_label === 'Out of Stock'
+                            ).length
+                        };
+                        
+                        const data = {
+                            items: processedItems,
+                            summary: summary
                     };
                     
                     setInventoryReport(data);
                     applyFilter(data, materialFilter);
                     setFilteredInventoryData(data);
+                    } catch (error) {
+                        console.error('Error loading stock levels:', error);
+                        toast.error('Failed to load stock levels. Please try again.');
+                        // Set empty data on error
+                        const emptyData = {
+                            items: [],
+                            summary: {
+                                total_items: 0,
+                                items_needing_reorder: 0,
+                                critical_items: 0,
+                                critical_stock_items: 0,
+                                total_usage: 0,
+                                total_value: 0,
+                                alkansya_materials: 0,
+                                made_to_order_materials: 0,
+                                overstocked_items: 0,
+                                low_stock_items: 0,
+                                out_of_stock_items: 0
+                            }
+                        };
+                        setInventoryReport(emptyData);
+                        setFilteredInventoryData(emptyData);
+                    }
                     break;
                     
                 case 'forecast':
@@ -1868,328 +1763,573 @@ const EnhancedInventoryReports = () => {
                         </div>
                     </div>
 
-                    {/* Automated Reports Section - White Theme */}
+                    {/* Automated Reports Section - Matching Production Reports Design */}
                     <div className="col-12 mb-4">
-                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', background: 'white' }}>
+                        <div className="card border-0 shadow-sm" style={{ borderRadius: '12px', background: 'linear-gradient(135deg, rgba(245, 222, 179, 0.1), rgba(255, 255, 255, 0.9))' }}>
                             <div className="card-body p-4">
                                 <div className="d-flex align-items-center mb-3">
-                                    <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3">
+                                    <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3" style={{ 
+                                        background: 'linear-gradient(135deg, rgba(0, 123, 255, 0.1), rgba(0, 123, 255, 0.05))',
+                                        width: '56px',
+                                        height: '56px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}>
                                         <i className="fas fa-file-export text-primary" style={{ fontSize: '24px' }}></i>
                                     </div>
                                     <div>
-                                        <h5 className="mb-0 fw-bold">Automated Reports & Analytics</h5>
+                                        <h5 className="mb-0 fw-bold" style={{ color: '#495057', fontSize: '1.25rem' }}>Automated Reports & Analytics</h5>
                                         <small className="text-muted">Download comprehensive inventory reports</small>
                                     </div>
                                 </div>
-                                <p className="text-muted mb-3">Generate detailed reports for stock levels, material usage trends, and replenishment schedules</p>
+                                <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>Generate detailed reports for stock levels, material usage trends, and replenishment schedules</p>
                                         
-                                        {/* CSV Reports Row */}
-                                        <div className="mb-3">
-                                            <div className="d-flex gap-2 flex-wrap justify-content-start w-100">
-                                                {/* Stock Levels CSV */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-primary"
-                                                        onClick={() => previewReport('stock')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#8B4513';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#8B4513';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-primary"
-                                                        onClick={() => downloadReport('stock')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#6B3410';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#8B4513';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-csv me-2"></i>
-                                                        CSV
-                                                    </button>
-                                                </div>
-                                                {/* Usage Trends CSV */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-info"
-                                                        onClick={() => previewReport('usage')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#17a2b8';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#17a2b8';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-info"
-                                                        onClick={() => downloadReport('usage')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#138496';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#17a2b8';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-csv me-2"></i>
-                                                        CSV
-                                                    </button>
-                                                </div>
-                                                {/* Replenishment CSV */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-warning"
-                                                        onClick={() => previewReport('replenishment')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#ffc107';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#ffc107';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-warning"
-                                                        onClick={() => downloadReport('replenishment')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#e0a800';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#ffc107';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-csv me-2"></i>
-                                                        CSV
-                                                    </button>
-                                                </div>
-                                                {/* Complete Report CSV */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-success"
-                                                        onClick={() => previewReport('full')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#28a745';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#28a745';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-success"
-                                                        onClick={() => downloadReport('full')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#1e7e34';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#28a745';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-csv me-2"></i>
-                                                        CSV
-                                                    </button>
+                                {/* CSV Reports Section */}
+                                <div className="mb-4">
+                                    <div className="d-flex align-items-center mb-3">
+                                        <div style={{ 
+                                            width: '3px', 
+                                            height: '18px', 
+                                            background: 'linear-gradient(135deg, #0d6efd, #0a58ca)',
+                                            borderRadius: '2px',
+                                            marginRight: '8px'
+                                        }}></div>
+                                        <h6 className="mb-0 fw-bold" style={{ color: '#0d6efd', fontSize: '0.9rem' }}>
+                                            CSV Reports
+                                        </h6>
+                                    </div>
+                                    <div className="row g-3">
+                                        {/* Stock Levels Report */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(139, 69, 19, 0.05), rgba(139, 69, 19, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(139, 69, 19, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #8B4513, #6B4423)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaBox className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#8B4513', fontSize: '0.85rem' }}>
+                                                            Stock Levels Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-primary"
+                                                            onClick={() => previewReport('stock')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#8B4513';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#8B4513';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-primary"
+                                                            onClick={() => downloadReport('stock')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1, backgroundColor: '#8B4513', borderColor: '#8B4513' }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#6B3410';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#8B4513';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-csv me-2"></i>
+                                                            CSV
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* PDF Reports Row */}
-                                        <div>
-                                            <div className="d-flex gap-2 flex-wrap justify-content-start w-100">
-                                                {/* Stock Levels PDF */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-danger"
-                                                        onClick={() => previewPdfReport('stock')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-danger"
-                                                        onClick={() => downloadPdfReport('stock')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#c82333';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-pdf me-2"></i>
-                                                        PDF
-                                                    </button>
-                                                </div>
-                                                {/* Usage Trends PDF */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-danger"
-                                                        onClick={() => previewPdfReport('usage')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-danger"
-                                                        onClick={() => downloadPdfReport('usage')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#c82333';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-pdf me-2"></i>
-                                                        PDF
-                                                    </button>
-                                                </div>
-                                                {/* Replenishment PDF */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-danger"
-                                                        onClick={() => previewPdfReport('replenishment')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-danger"
-                                                        onClick={() => downloadPdfReport('replenishment')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#c82333';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-pdf me-2"></i>
-                                                        PDF
-                                                    </button>
-                                                </div>
-                                                {/* Complete Report PDF */}
-                                                <div className="btn-group" role="group">
-                                                    <button 
-                                                        className="btn btn-outline-danger"
-                                                        onClick={() => previewPdfReport('full')}
-                                                        style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.color = 'white';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = 'transparent';
-                                                            e.currentTarget.style.color = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-eye me-2"></i>
-                                                        Preview
-                                                    </button>
-                                                    <button 
-                                                        className="btn btn-danger"
-                                                        onClick={() => downloadPdfReport('full')}
-                                                        style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s' }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#c82333';
-                                                            e.currentTarget.style.transform = 'translateY(-2px)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.backgroundColor = '#dc3545';
-                                                            e.currentTarget.style.transform = 'translateY(0)';
-                                                        }}
-                                                    >
-                                                        <i className="fas fa-file-pdf me-2"></i>
-                                                        PDF
-                                                    </button>
+                                        {/* Material Usage Trends Report */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(23, 162, 184, 0.05), rgba(23, 162, 184, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(23, 162, 184, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #17a2b8, #138496)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaChartLine className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#17a2b8', fontSize: '0.85rem' }}>
+                                                            Material Usage Trends Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-info"
+                                                            onClick={() => previewReport('usage')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#17a2b8';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-info"
+                                                            onClick={() => downloadReport('usage')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#138496';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#17a2b8';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-csv me-2"></i>
+                                                            CSV
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Replenishment Schedule Report */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(255, 193, 7, 0.05), rgba(255, 193, 7, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(255, 193, 7, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #ffc107, #e0a800)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaTruck className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#ffc107', fontSize: '0.85rem' }}>
+                                                            Replenishment Schedule Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-warning"
+                                                            onClick={() => previewReport('replenishment')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#ffc107';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#ffc107';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-warning"
+                                                            onClick={() => downloadReport('replenishment')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#e0a800';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#ffc107';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-csv me-2"></i>
+                                                            CSV
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Comprehensive Inventory Report - Separate Row */}
+                                <div className="mb-4">
+                                    <div className="row g-3">
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(40, 167, 69, 0.05), rgba(40, 167, 69, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(40, 167, 69, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #28a745, #1e7e34)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaClipboardList className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#28a745', fontSize: '0.85rem' }}>
+                                                            Comprehensive Inventory Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-success"
+                                                            onClick={() => previewReport('full')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#28a745';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#28a745';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-success"
+                                                            onClick={() => downloadReport('full')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#1e7e34';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#28a745';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-csv me-2"></i>
+                                                            CSV
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* PDF Reports Section */}
+                                <div>
+                                    <div className="d-flex align-items-center mb-3">
+                                        <div style={{ 
+                                            width: '3px', 
+                                            height: '18px', 
+                                            background: 'linear-gradient(135deg, #dc3545, #c82333)',
+                                            borderRadius: '2px',
+                                            marginRight: '8px'
+                                        }}></div>
+                                        <h6 className="mb-0 fw-bold" style={{ color: '#dc3545', fontSize: '0.9rem' }}>
+                                            PDF Reports
+                                        </h6>
+                                    </div>
+                                    <div className="row g-3">
+                                        {/* Stock Levels Report PDF */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(220, 53, 69, 0.05), rgba(220, 53, 69, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(220, 53, 69, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #dc3545, #c82333)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaBox className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#dc3545', fontSize: '0.85rem' }}>
+                                                            Stock Levels Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-danger"
+                                                            onClick={() => previewPdfReport('stock')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-danger"
+                                                            onClick={() => downloadPdfReport('stock')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#c82333';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-pdf me-2"></i>
+                                                            PDF
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Material Usage Trends Report PDF */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(220, 53, 69, 0.05), rgba(220, 53, 69, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(220, 53, 69, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #dc3545, #c82333)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaChartLine className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#dc3545', fontSize: '0.85rem' }}>
+                                                            Material Usage Trends Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-danger"
+                                                            onClick={() => previewPdfReport('usage')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-danger"
+                                                            onClick={() => downloadPdfReport('usage')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#c82333';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-pdf me-2"></i>
+                                                            PDF
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Replenishment Schedule Report PDF */}
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(220, 53, 69, 0.05), rgba(220, 53, 69, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(220, 53, 69, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #dc3545, #c82333)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaTruck className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#dc3545', fontSize: '0.85rem' }}>
+                                                            Replenishment Schedule Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-danger"
+                                                            onClick={() => previewPdfReport('replenishment')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-danger"
+                                                            onClick={() => downloadPdfReport('replenishment')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#c82333';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-pdf me-2"></i>
+                                                            PDF
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Comprehensive Inventory Report PDF - Separate Row */}
+                                <div>
+                                    <div className="row g-3">
+                                        <div className="col-md-4">
+                                            <div className="card border-0 shadow-sm h-100" style={{ 
+                                                background: 'linear-gradient(135deg, rgba(220, 53, 69, 0.05), rgba(220, 53, 69, 0.02))',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(220, 53, 69, 0.1)'
+                                            }}>
+                                                <div className="card-body p-3">
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="rounded-circle p-2 me-2" style={{ 
+                                                            background: 'linear-gradient(135deg, #dc3545, #c82333)',
+                                                            width: '32px',
+                                                            height: '32px',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <FaClipboardList className="text-white" style={{ fontSize: '14px' }} />
+                                                        </div>
+                                                        <h6 className="mb-0 fw-bold" style={{ color: '#dc3545', fontSize: '0.85rem' }}>
+                                                            Comprehensive Inventory Report
+                                                        </h6>
+                                                    </div>
+                                                    <div className="btn-group w-100" role="group">
+                                                        <button 
+                                                            className="btn btn-outline-danger"
+                                                            onClick={() => previewPdfReport('full')}
+                                                            style={{ borderRadius: '8px 0 0 8px', transition: 'all 0.3s', borderWidth: '2px', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.color = 'white';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                e.currentTarget.style.color = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-eye me-2"></i>
+                                                            Preview
+                                                        </button>
+                                                        <button 
+                                                            className="btn btn-danger"
+                                                            onClick={() => downloadPdfReport('full')}
+                                                            style={{ borderRadius: '0 8px 8px 0', transition: 'all 0.3s', flex: 1 }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#c82333';
+                                                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.backgroundColor = '#dc3545';
+                                                                e.currentTarget.style.transform = 'translateY(0)';
+                                                            }}
+                                                        >
+                                                            <i className="fas fa-file-pdf me-2"></i>
+                                                            PDF
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2625,7 +2765,7 @@ const EnhancedInventoryReports = () => {
                                                             </td>
                                                         <td className="text-end" style={{ padding: '1rem' }}>
                                                                 <span className="text-info">
-                                                                    {item.avg_daily_consumption?.toFixed(2) || '0.00'}
+                                                                    {Number(item.avg_daily_consumption || 0).toFixed(2)}
                                                                 </span>
                                                         </td>
                                                         <td style={{ padding: '1rem' }}>

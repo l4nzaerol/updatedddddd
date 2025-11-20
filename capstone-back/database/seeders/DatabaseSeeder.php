@@ -16,7 +16,10 @@ class DatabaseSeeder extends Seeder
             
             
             TwoWeeksAlkansyaProductionSeeder::class,// Creates 2 weeks of daily Alkansya production output with material consumption
-            TwoWeeksMadeToOrderOrdersSeeder::class
+            TwoWeeksMadeToOrderOrdersSeeder::class,
+            
+            // Generate material forecasts from actual production data
+            MaterialForecastSeeder::class // Creates accurate material forecasts based on Alkansya production
         ]);
     }
 }

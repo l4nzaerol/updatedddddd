@@ -16,6 +16,7 @@ use App\Models\AlkansyaDailyOutput;
 use App\Models\ProductMaterial;
 use App\Models\InventoryItem;
 use App\Models\InventoryUsage;
+use App\Models\StockLevel;
 use App\Http\Controllers\NormalizedInventoryController;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -2221,6 +2222,24 @@ class EnhancedInventoryReportsController extends Controller
                 $materialUsageByDate[$date][$materialId] += abs($transaction->quantity);
             }
 
+            // Try to get stored forecasts from material_forecasts table first
+            // Priority: Use any active forecasts (most recent first) - this ensures AccurateMaterialForecastSeeder data is used
+            $storedForecasts = DB::table('material_forecasts')
+                ->where('is_active', true)
+                ->orderBy('forecast_date', 'desc')
+                ->get()
+                ->groupBy('material_id')
+                ->map(function($forecasts) {
+                    // Get the most recent forecast for each material
+                    return $forecasts->first();
+                });
+            
+            \Log::info('Stored forecasts lookup for Alkansya materials', [
+                'total_active_forecasts' => DB::table('material_forecasts')->where('is_active', true)->count(),
+                'unique_materials_found' => $storedForecasts->count(),
+                'material_ids' => $storedForecasts->keys()->toArray()
+            ]);
+            
             // Generate forecast for each material with predictive analytics
             $materialForecasts = [];
             $totalDailyMaterialUsage = 0; // Track total for daily forecast
@@ -2231,122 +2250,181 @@ class EnhancedInventoryReportsController extends Controller
                 
                 $qtyPerUnit = $bomMaterial->quantity_per_product ?? $bomMaterial->qty_per_unit ?? 0;
                 
-                // Calculate historical daily material usage from transactions
-                $historicalMaterialUsage = [];
-                foreach ($materialUsageByDate as $date => $materials) {
-                    if (isset($materials[$material->material_id])) {
-                        $historicalMaterialUsage[] = $materials[$material->material_id];
+                // Check if we have a stored forecast for this material
+                $storedForecast = $storedForecasts->get($material->material_id);
+                
+                if ($storedForecast) {
+                    // Use stored forecast data from database columns
+                    $dailyMaterialUsage = $storedForecast->daily_usage ?? ($storedForecast->forecasted_usage / $forecastDays);
+                    $forecastedUsage = $storedForecast->forecasted_usage;
+                    $currentStock = $storedForecast->current_stock ?? 0;
+                    $daysUntilStockout = $storedForecast->days_until_stockout ?? 999;
+                    $status = $storedForecast->status ?? 'in_stock';
+                    $statusLabel = $storedForecast->status_label ?? 'In Stock';
+                    $projectedStock = $storedForecast->projected_stock ?? 0;
+                    $needsReorder = $storedForecast->needs_reorder ?? false;
+                    
+                    // Get material thresholds
+                    $criticalStock = $material->critical_stock ?? 0;
+                    $reorderLevel = $material->reorder_level ?? 0;
+                    $maxLevel = $material->max_level ?? 0;
+                    $availableQty = $projectedStock;
+                    
+                    // Set status color
+                    $statusColor = 'success';
+                    if ($status === 'out_of_stock' || $status === 'critical') {
+                        $statusColor = 'danger';
+                    } elseif ($status === 'low_stock') {
+                        $statusColor = 'warning';
+                    } elseif ($status === 'overstocked') {
+                        $statusColor = 'info';
                     }
-                }
-                
-                // Calculate expected daily usage from BOM (baseline)
-                $expectedDailyUsage = $avgDailyOutput * $qtyPerUnit;
-                
-                // If we have historical transaction data, use it for more accurate prediction
-                // But validate it against expected usage to avoid inflated values
-                if (!empty($historicalMaterialUsage)) {
-                    $avgDailyMaterialUsage = array_sum($historicalMaterialUsage) / count($historicalMaterialUsage);
                     
-                    // Calculate moving averages for trend analysis
-                    $movingAvg7 = count($historicalMaterialUsage) >= 7 
-                        ? array_sum(array_slice($historicalMaterialUsage, -7)) / 7 
-                        : $avgDailyMaterialUsage;
-                    $movingAvg14 = count($historicalMaterialUsage) >= 14 
-                        ? array_sum(array_slice($historicalMaterialUsage, -14)) / 14 
-                        : $avgDailyMaterialUsage;
-                    
-                    // Use weighted average (recent data has more weight)
-                    $calculatedFromTransactions = ($movingAvg7 * 0.6) + ($movingAvg14 * 0.4);
-                    
-                    // Validate: If calculated usage is more than 2x expected, use expected instead
-                    // This prevents inflated values from duplicate transactions or data errors
-                    if ($calculatedFromTransactions > 0 && $expectedDailyUsage > 0) {
-                        $ratio = $calculatedFromTransactions / $expectedDailyUsage;
-                        if ($ratio > 2.0 || $ratio < 0.5) {
-                            // Historical data seems incorrect, use BOM-based calculation
-                            $dailyMaterialUsage = $expectedDailyUsage;
-                        } else {
-                            // Historical data is reasonable, use it
-                            $dailyMaterialUsage = $calculatedFromTransactions;
+                    // Get historical usage for has_historical_data flag
+                    $historicalMaterialUsage = [];
+                    foreach ($materialUsageByDate as $date => $materials) {
+                        if (isset($materials[$material->material_id])) {
+                            $historicalMaterialUsage[] = $materials[$material->material_id];
                         }
-                    } else {
-                        $dailyMaterialUsage = $expectedDailyUsage;
                     }
                 } else {
-                    // Fallback: Calculate from BOM and average daily output
-                    $dailyMaterialUsage = $expectedDailyUsage;
+                    // Calculate historical daily material usage from transactions
+                    $historicalMaterialUsage = [];
+                    foreach ($materialUsageByDate as $date => $materials) {
+                        if (isset($materials[$material->material_id])) {
+                            $historicalMaterialUsage[] = $materials[$material->material_id];
+                        }
+                    }
+                    
+                    // Calculate expected daily usage from BOM (baseline)
+                    $expectedDailyUsage = $avgDailyOutput * $qtyPerUnit;
+                
+                    // If we have historical transaction data, use it for more accurate prediction
+                    // But validate it against expected usage to avoid inflated values
+                    if (!empty($historicalMaterialUsage)) {
+                        $avgDailyMaterialUsage = array_sum($historicalMaterialUsage) / count($historicalMaterialUsage);
+                        
+                        // Calculate moving averages for trend analysis
+                        $movingAvg7 = count($historicalMaterialUsage) >= 7 
+                            ? array_sum(array_slice($historicalMaterialUsage, -7)) / 7 
+                            : $avgDailyMaterialUsage;
+                        $movingAvg14 = count($historicalMaterialUsage) >= 14 
+                            ? array_sum(array_slice($historicalMaterialUsage, -14)) / 14 
+                            : $avgDailyMaterialUsage;
+                        
+                        // Use weighted average (recent data has more weight)
+                        $calculatedFromTransactions = ($movingAvg7 * 0.6) + ($movingAvg14 * 0.4);
+                        
+                        // Validate: If calculated usage is more than 2x expected, use expected instead
+                        // This prevents inflated values from duplicate transactions or data errors
+                        if ($calculatedFromTransactions > 0 && $expectedDailyUsage > 0) {
+                            $ratio = $calculatedFromTransactions / $expectedDailyUsage;
+                            if ($ratio > 2.0 || $ratio < 0.5) {
+                                // Historical data seems incorrect, use BOM-based calculation
+                                $dailyMaterialUsage = $expectedDailyUsage;
+                            } else {
+                                // Historical data is reasonable, use it
+                                $dailyMaterialUsage = $calculatedFromTransactions;
+                            }
+                        } else {
+                            $dailyMaterialUsage = $expectedDailyUsage;
+                        }
+                    } else {
+                        // Fallback: Calculate from BOM and average daily output
+                        $dailyMaterialUsage = $expectedDailyUsage;
+                    }
+                    
+                    $forecastedUsage = $dailyMaterialUsage * $forecastDays;
+                    
+                    // Get current stock from Material model (only if not using stored forecast)
+                    // First try direct field, then sum from inventory records (more accurate)
+                    $currentStock = $material->current_stock ?? 0;
+                    $inventorySum = $material->inventory->sum('current_stock') ?? 0;
+                    // Use inventory sum if it's different (more accurate) or if direct field is 0
+                    if ($inventorySum > 0 && abs($currentStock - $inventorySum) > 0.01) {
+                        $currentStock = $inventorySum;
+                    }
+                    $projectedStock = $currentStock - $forecastedUsage;
+                    
+                    // Calculate days until stockout
+                    $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
+                    
+                    // Determine status with proper priority order
+                    // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                    // For Alkansya materials, use projected stock (after 30 days) for status calculation
+                    $availableQty = $projectedStock;
+                    $criticalStock = $material->critical_stock ?? 0;
+                    $reorderLevel = $material->reorder_level ?? 0;
+                    $maxLevel = $material->max_level ?? 0;
+                    
+                    $status = 'in_stock';
+                    $statusLabel = 'In Stock';
+                    $statusColor = 'success';
+                    
+                    if ($availableQty <= 0) {
+                        $status = 'out_of_stock';
+                        $statusLabel = 'Out of Stock';
+                        $statusColor = 'danger';
+                    } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                        $status = 'critical';
+                        $statusLabel = 'Critical';
+                        $statusColor = 'danger';
+                    } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
+                        $status = 'low_stock';
+                        $statusLabel = 'Low Stock';
+                        $statusColor = 'warning';
+                    } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                        $status = 'overstocked';
+                        $statusLabel = 'Overstocked';
+                        $statusColor = 'info';
+                    }
+                    
+                    $needsReorder = $projectedStock <= $reorderLevel;
                 }
                 
-                $forecastedUsage = $dailyMaterialUsage * $forecastDays;
-                
-                // Get current stock from Material model
-                // First try direct field, then sum from inventory records (more accurate)
-                $currentStock = $material->current_stock ?? 0;
-                $inventorySum = $material->inventory->sum('current_stock') ?? 0;
-                // Use inventory sum if it's different (more accurate) or if direct field is 0
-                if ($inventorySum > 0 && abs($currentStock - $inventorySum) > 0.01) {
-                    $currentStock = $inventorySum;
+                // Ensure we have material thresholds for both stored and calculated forecasts
+                if (!isset($criticalStock)) {
+                    $criticalStock = $material->critical_stock ?? 0;
                 }
-                $projectedStock = $currentStock - $forecastedUsage;
-                
-                // Calculate days until stockout
-                $daysUntilStockout = $dailyMaterialUsage > 0 ? floor($currentStock / $dailyMaterialUsage) : 999;
-                
-                // Determine status with proper priority order
-                // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
-                // For Alkansya materials, use projected stock (after 30 days) for status calculation
-                $availableQty = $projectedStock;
-                $criticalStock = $material->critical_stock ?? 0;
-                $reorderLevel = $material->reorder_level ?? 0;
-                $maxLevel = $material->max_level ?? 0;
-                
-                $status = 'in_stock';
-                $statusLabel = 'In Stock';
-                $statusColor = 'success';
-                
-                if ($availableQty <= 0) {
-                    $status = 'out_of_stock';
-                    $statusLabel = 'Out of Stock';
-                    $statusColor = 'danger';
-                } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
-                    $status = 'critical';
-                    $statusLabel = 'Critical';
-                    $statusColor = 'danger';
-                } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
-                    $status = 'low_stock';
-                    $statusLabel = 'Low Stock';
-                    $statusColor = 'warning';
-                } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
-                    $status = 'overstocked';
-                    $statusLabel = 'Overstocked';
-                    $statusColor = 'info';
+                if (!isset($reorderLevel)) {
+                    $reorderLevel = $material->reorder_level ?? 0;
+                }
+                if (!isset($maxLevel)) {
+                    $maxLevel = $material->max_level ?? 0;
+                }
+                if (!isset($availableQty)) {
+                    $availableQty = $projectedStock ?? 0;
                 }
                 
-                $needsReorder = $projectedStock <= $reorderLevel;
-                
-                $materialForecasts[] = [
+                // Build material forecast response
+                // Priority: Use stored database values when available for accuracy
+                $materialForecastData = [
                     'material_id' => $material->material_id,
                     'material_name' => $material->material_name,
                     'material_code' => $material->material_code,
                     'qty_per_unit' => $qtyPerUnit,
-                    'current_stock' => round($currentStock, 2),
+                    // Core display fields - use stored values from database when available
+                    'current_stock' => round($currentStock, 2), // CURRENT STOCK column
                     'available_quantity' => round($availableQty, 2),
+                    'daily_material_usage' => round($dailyMaterialUsage, 2), // DAILY USAGE column
+                    'forecasted_usage' => round($forecastedUsage, 2), // FORECASTED USAGE column
+                    'days_until_stockout' => $daysUntilStockout, // DAYS LEFT column
+                    'status' => $status, // STATUS column
+                    'status_label' => $statusLabel, // STATUS label for display
+                    'status_color' => $statusColor, // STATUS color for display
+                    // Additional fields
                     'critical_stock' => $criticalStock,
                     'max_level' => $maxLevel,
                     'avg_daily_output' => round($avgDailyOutput, 2),
-                    'daily_material_usage' => round($dailyMaterialUsage, 2),
-                    'forecasted_usage' => round($forecastedUsage, 2),
                     'projected_stock' => round($projectedStock, 2),
-                    'days_until_stockout' => $daysUntilStockout,
                     'reorder_point' => $reorderLevel,
                     'needs_reorder' => $needsReorder,
-                    'status' => $status,
-                    'status_label' => $statusLabel,
-                    'status_color' => $statusColor,
                     'unit' => $material->unit_of_measure ?? 'pcs',
                     'unit_cost' => $material->standard_cost ?? 0,
                     'has_historical_data' => !empty($historicalMaterialUsage)
                 ];
+                
+                $materialForecasts[] = $materialForecastData;
                 
                 // Add to total daily material usage
                 $totalDailyMaterialUsage += $dailyMaterialUsage;
@@ -2438,8 +2516,10 @@ class EnhancedInventoryReportsController extends Controller
                 'forecast_period' => $forecastDays,
                 'historical_period' => $historicalDays,
                 'avg_daily_output' => round($avgDailyOutput, 2),
-                'total_historical_output' => $totalOutput,
-                'actual_days_with_output' => $uniqueDays,
+                'total_output' => $totalOutput, // Changed from total_historical_output
+                'total_historical_output' => $totalOutput, // Keep for backward compatibility
+                'days_with_output' => $uniqueDays, // Changed from actual_days_with_output
+                'actual_days_with_output' => $uniqueDays, // Keep for backward compatibility
                 'material_forecasts' => $materialForecasts,
                 'daily_forecast' => $dailyForecast,
                 'summary' => [
@@ -5320,6 +5400,453 @@ class EnhancedInventoryReportsController extends Controller
             \Log::error('Error generating PDF: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json(['error' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Sync stock levels from materials and inventory tables
+     * This calculates accurate stock levels and populates the stock_levels table
+     */
+    public function syncStockLevels()
+    {
+        try {
+            DB::beginTransaction();
+            
+            $materials = Material::with('inventory')->get();
+            $syncedCount = 0;
+            
+            foreach ($materials as $material) {
+                // Calculate quantities from inventory table
+                $totalOnHand = $material->inventory->sum('current_stock') ?? 0;
+                $totalReserved = $material->inventory->sum('quantity_reserved') ?? 0;
+                $availableQuantity = $totalOnHand - $totalReserved;
+                
+                // Get material thresholds
+                $reorderLevel = $material->reorder_level ?? 0;
+                $reorderPoint = $material->reorder_point ?? $reorderLevel;
+                $criticalStock = $material->critical_stock ?? 0;
+                $safetyStock = $criticalStock > 0 ? $criticalStock : ($reorderLevel > 0 ? $reorderLevel * 0.5 : 0);
+                $maxLevel = $material->max_level ?? 0;
+                $unitCost = $material->standard_cost ?? 0;
+                
+                // Calculate average daily consumption from transactions (last 30 days)
+                $thirtyDaysAgo = Carbon::now()->subDays(30);
+                $transactions = InventoryTransaction::where('material_id', $material->material_id)
+                    ->where('created_at', '>=', $thirtyDaysAgo)
+                    ->whereIn('transaction_type', [
+                        'CONSUMPTION',
+                        'PRODUCTION_USAGE',
+                        'ORDER_CONSUMPTION',
+                        'ALKANSYA_CONSUMPTION',
+                        'ORDER_PRODUCTION'
+                    ])
+                    ->get();
+                
+                $totalConsumption = abs($transactions->sum('quantity'));
+                $daysWithTransactions = $transactions->groupBy(function($t) {
+                    return Carbon::parse($t->created_at)->format('Y-m-d');
+                })->count();
+                $avgDailyConsumption = $daysWithTransactions > 0 ? $totalConsumption / $daysWithTransactions : 0;
+                
+                // Calculate days until stockout
+                $daysUntilStockout = $avgDailyConsumption > 0 
+                    ? floor($availableQuantity / $avgDailyConsumption) 
+                    : 999;
+                
+                // Determine stock status
+                $stockStatus = 'In Stock';
+                $needsReorder = false;
+                
+                if ($availableQuantity <= 0) {
+                    $stockStatus = 'Out of Stock';
+                    $needsReorder = true;
+                } elseif ($criticalStock > 0 && $availableQuantity <= $criticalStock) {
+                    $stockStatus = 'Critical';
+                    $needsReorder = true;
+                } elseif ($reorderPoint > 0 && $availableQuantity <= $reorderPoint) {
+                    $stockStatus = 'Low Stock';
+                    $needsReorder = true;
+                } elseif ($maxLevel > 0 && $availableQuantity > $maxLevel) {
+                    $stockStatus = 'Overstocked';
+                    $needsReorder = false;
+                } elseif ($reorderPoint > 0 && $availableQuantity <= $reorderPoint) {
+                    $stockStatus = 'Needs Reorder';
+                    $needsReorder = true;
+                }
+                
+                // Check if material is used in Alkansya or Made-to-Order products
+                $alkansyaProducts = Product::where('category_name', 'Stocked Products')
+                    ->where(function($q) {
+                        $q->where('name', 'LIKE', '%Alkansya%')
+                          ->orWhere('product_name', 'LIKE', '%Alkansya%');
+                    })
+                    ->pluck('id');
+                
+                $madeToOrderProducts = Product::where('category_name', 'Made to Order')
+                    ->orWhere('category_name', 'made_to_order')
+                    ->pluck('id');
+                
+                $isAlkansyaMaterial = BOM::where('material_id', $material->material_id)
+                    ->whereIn('product_id', $alkansyaProducts)
+                    ->exists();
+                
+                $isMadeToOrderMaterial = BOM::where('material_id', $material->material_id)
+                    ->whereIn('product_id', $madeToOrderProducts)
+                    ->exists();
+                
+                // Calculate total value
+                $totalValue = $availableQuantity * $unitCost;
+                
+                // Update or create stock level record
+                StockLevel::updateOrCreate(
+                    ['material_id' => $material->material_id],
+                    [
+                        'material_name' => $material->material_name,
+                        'sku' => $material->material_code ?? 'MAT-' . str_pad($material->material_id, 3, '0', STR_PAD_LEFT),
+                        'category' => $material->category ?? 'raw',
+                        'location' => $material->location,
+                        'supplier' => $material->supplier,
+                        'unit_of_measure' => $material->unit_of_measure ?? 'pcs',
+                        'available_quantity' => $availableQuantity,
+                        'quantity_on_hand' => $totalOnHand,
+                        'quantity_reserved' => $totalReserved,
+                        'safety_stock' => $safetyStock,
+                        'reorder_point' => $reorderPoint,
+                        'reorder_level' => $reorderLevel,
+                        'critical_stock' => $criticalStock,
+                        'max_level' => $maxLevel,
+                        'avg_daily_consumption' => $avgDailyConsumption,
+                        'days_until_stockout' => $daysUntilStockout,
+                        'unit_cost' => $unitCost,
+                        'total_value' => $totalValue,
+                        'lead_time_days' => $material->lead_time_days ?? 0,
+                        'stock_status' => $stockStatus,
+                        'is_alkansya_material' => $isAlkansyaMaterial,
+                        'is_made_to_order_material' => $isMadeToOrderMaterial,
+                        'needs_reorder' => $needsReorder,
+                        'last_calculated_at' => Carbon::now()
+                    ]
+                );
+                
+                $syncedCount++;
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully synced {$syncedCount} stock levels",
+                'synced_count' => $syncedCount
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error syncing stock levels: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to sync stock levels: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get stock levels from stock_levels table
+     */
+    public function getStockLevels(Request $request)
+    {
+        try {
+            $filter = $request->get('filter', 'all'); // all, alkansya, made_to_order, overstocked
+            
+            $query = StockLevel::query();
+            
+            // Apply filters
+            if ($filter === 'alkansya') {
+                $query->where('is_alkansya_material', true);
+            } elseif ($filter === 'made_to_order') {
+                $query->where('is_made_to_order_material', true);
+            } elseif ($filter === 'overstocked') {
+                $query->where('stock_status', 'Overstocked');
+            }
+            
+            $stockLevels = $query->orderBy('material_name')->get();
+            
+            // Calculate summary statistics
+            $summary = [
+                'total_items' => $stockLevels->count(),
+                'overstocked' => $stockLevels->where('stock_status', 'Overstocked')->count(),
+                'critical_items' => $stockLevels->whereIn('stock_status', ['Critical', 'Out of Stock'])->count(),
+                'low_stock_items' => $stockLevels->whereIn('stock_status', ['Low Stock', 'Needs Reorder', 'Critical'])->count(),
+                'total_value' => $stockLevels->sum('total_value')
+            ];
+            
+            // Format items for frontend
+            $items = $stockLevels->map(function($level) {
+                return [
+                    'material_id' => $level->material_id,
+                    'name' => $level->material_name,
+                    'sku' => $level->sku,
+                    'category' => $level->category,
+                    'current_stock' => $level->available_quantity,
+                    'available_quantity' => $level->available_quantity,
+                    'quantity_on_hand' => $level->quantity_on_hand,
+                    'quantity_reserved' => $level->quantity_reserved,
+                    'safety_stock' => $level->safety_stock,
+                    'reorder_point' => $level->reorder_point,
+                    'reorder_level' => $level->reorder_level,
+                    'critical_stock' => $level->critical_stock,
+                    'max_level' => $level->max_level,
+                    'avg_daily_consumption' => $level->avg_daily_consumption,
+                    'days_until_stockout' => $level->days_until_stockout,
+                    'unit' => $level->unit_of_measure,
+                    'unit_cost' => $level->unit_cost,
+                    'value' => $level->total_value,
+                    'stock_status' => strtolower(str_replace(' ', '_', $level->stock_status)),
+                    'status_label' => $level->stock_status,
+                    'needs_reorder' => $level->needs_reorder,
+                    'is_alkansya_material' => $level->is_alkansya_material,
+                    'is_made_to_order_material' => $level->is_made_to_order_material,
+                    'location' => $level->location,
+                    'supplier' => $level->supplier,
+                    'lead_time_days' => $level->lead_time_days,
+                    'last_calculated_at' => $level->last_calculated_at
+                ];
+            });
+            
+            return response()->json([
+                'summary' => $summary,
+                'items' => $items
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error fetching stock levels: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'summary' => [
+                    'total_items' => 0,
+                    'overstocked' => 0,
+                    'critical_items' => 0,
+                    'low_stock_items' => 0,
+                    'total_value' => 0
+                ],
+                'items' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate and store forecasts in material_forecasts table
+     * This method is used to populate the database with accurate forecast data
+     */
+    private function generateAndStoreForecasts($alkansyaProduct, $bomMaterials, $historicalOutput, $historicalTransactions, $avgDailyOutput, $totalOutput, $uniqueDays, $materialUsageByDate, $forecastDays = 30)
+    {
+        try {
+            $forecastDate = Carbon::today();
+            $forecastPeriodStart = Carbon::today();
+            $forecastPeriodEnd = Carbon::today()->addDays($forecastDays);
+            
+            foreach ($bomMaterials as $bomMaterial) {
+                $material = $bomMaterial->material;
+                if (!$material) continue;
+                
+                $qtyPerUnit = $bomMaterial->quantity_per_product ?? $bomMaterial->qty_per_unit ?? 0;
+                
+                // Calculate historical daily material usage from transactions
+                $historicalMaterialUsage = [];
+                foreach ($materialUsageByDate as $date => $materials) {
+                    if (isset($materials[$material->material_id])) {
+                        $historicalMaterialUsage[] = $materials[$material->material_id];
+                    }
+                }
+                
+                // Calculate expected daily usage from BOM
+                $expectedDailyUsage = $avgDailyOutput * $qtyPerUnit;
+                
+                // Use historical data if available, otherwise use BOM calculation
+                if (!empty($historicalMaterialUsage)) {
+                    $avgDailyMaterialUsage = array_sum($historicalMaterialUsage) / count($historicalMaterialUsage);
+                    
+                    // Calculate moving averages for trend analysis
+                    $movingAvg7 = count($historicalMaterialUsage) >= 7 
+                        ? array_sum(array_slice($historicalMaterialUsage, -7)) / 7 
+                        : $avgDailyMaterialUsage;
+                    $movingAvg14 = count($historicalMaterialUsage) >= 14 
+                        ? array_sum(array_slice($historicalMaterialUsage, -14)) / 14 
+                        : $avgDailyMaterialUsage;
+                    
+                    // Weighted average (recent data has more weight)
+                    $calculatedFromTransactions = ($movingAvg7 * 0.6) + ($movingAvg14 * 0.4);
+                    
+                    // Validate: If calculated usage is more than 2x expected, use expected instead
+                    if ($calculatedFromTransactions > 0 && $expectedDailyUsage > 0) {
+                        $ratio = $calculatedFromTransactions / $expectedDailyUsage;
+                        if ($ratio > 2.0 || $ratio < 0.5) {
+                            $dailyMaterialUsage = $expectedDailyUsage;
+                        } else {
+                            $dailyMaterialUsage = $calculatedFromTransactions;
+                        }
+                    } else {
+                        $dailyMaterialUsage = $expectedDailyUsage;
+                    }
+                } else {
+                    $dailyMaterialUsage = $expectedDailyUsage;
+                }
+                
+                // Round to 2 decimal places for consistency
+                $dailyMaterialUsage = round($dailyMaterialUsage, 2);
+                $forecastedUsage = round($dailyMaterialUsage * $forecastDays, 2);
+                
+                // Get current stock from Material model - prioritize inventory sum for accuracy
+                $currentStock = 0;
+                $inventorySum = 0;
+                
+                // Try to get from inventory records first (most accurate)
+                if ($material->inventory && $material->inventory->count() > 0) {
+                    $inventorySum = $material->inventory->sum('current_stock') ?? 0;
+                }
+                
+                // Fallback to direct field if inventory sum is 0
+                if ($inventorySum > 0) {
+                    $currentStock = $inventorySum;
+                } else {
+                    $currentStock = $material->current_stock ?? 0;
+                }
+                
+                // If still 0, try to get from inventory table directly
+                if ($currentStock == 0) {
+                    $inventoryRecords = DB::table('inventory')
+                        ->where('material_id', $material->material_id)
+                        ->sum('current_stock');
+                    if ($inventoryRecords > 0) {
+                        $currentStock = $inventoryRecords;
+                    }
+                }
+                
+                // Ensure we have a valid current stock value
+                $currentStock = max(0, round($currentStock, 2));
+                
+                // Calculate projected stock after forecast period
+                $projectedStock = $currentStock - $forecastedUsage;
+                
+                // Calculate days until stockout (Days Left) - use exact formula
+                // Formula: Days Left = Current Stock ÷ Daily Material Usage
+                if ($dailyMaterialUsage > 0) {
+                    $daysUntilStockout = floor($currentStock / $dailyMaterialUsage);
+                    // Cap at reasonable maximum to avoid overflow
+                    $daysUntilStockout = min($daysUntilStockout, 99999);
+                } else {
+                    $daysUntilStockout = 99999; // No usage, stock won't deplete
+                }
+                
+                // Determine status with proper priority order
+                // Priority: Out of Stock > Critical > Low > Overstocked > In Stock
+                $availableQty = $projectedStock;
+                $criticalStock = $material->critical_stock ?? 0;
+                $reorderLevel = $material->reorder_level ?? 0;
+                $maxLevel = $material->max_level ?? 0;
+                
+                $status = 'in_stock';
+                $statusLabel = 'In Stock';
+                
+                if ($availableQty <= 0) {
+                    $status = 'out_of_stock';
+                    $statusLabel = 'Out of Stock';
+                } elseif ($criticalStock > 0 && $availableQty <= $criticalStock) {
+                    $status = 'critical';
+                    $statusLabel = 'Critical';
+                } elseif ($reorderLevel > 0 && $availableQty <= $reorderLevel) {
+                    $status = 'low_stock';
+                    $statusLabel = 'Low Stock';
+                } elseif ($maxLevel > 0 && $availableQty > $maxLevel) {
+                    $status = 'overstocked';
+                    $statusLabel = 'Overstocked';
+                }
+                
+                $needsReorder = $projectedStock <= $reorderLevel;
+                
+                // Calculate confidence score based on data quality
+                $confidenceScore = 70; // Base confidence
+                if (!empty($historicalMaterialUsage)) {
+                    $confidenceScore += 20; // Historical data available
+                    if (count($historicalMaterialUsage) >= 14) {
+                        $confidenceScore += 10; // Sufficient historical data
+                    }
+                }
+                $confidenceScore = min(100, $confidenceScore);
+                
+                // Determine confidence level
+                $confidenceLevel = 'medium';
+                if ($confidenceScore >= 90) {
+                    $confidenceLevel = 'high';
+                } elseif ($confidenceScore >= 70) {
+                    $confidenceLevel = 'medium';
+                } else {
+                    $confidenceLevel = 'low';
+                }
+                
+                // Forecast method
+                $forecastMethod = !empty($historicalMaterialUsage) ? 'historical_transactions' : 'bom_calculation';
+                
+                // Method details
+                $methodDetails = [
+                    'avg_daily_output' => $avgDailyOutput,
+                    'qty_per_unit' => $qtyPerUnit,
+                    'expected_daily_usage' => $expectedDailyUsage,
+                    'calculated_daily_usage' => $dailyMaterialUsage,
+                    'historical_data_points' => count($historicalMaterialUsage),
+                    'unique_days_with_output' => $uniqueDays,
+                    'total_output' => $totalOutput
+                ];
+                
+                // Forecast breakdown (daily projections)
+                $forecastBreakdown = [];
+                for ($day = 0; $day < $forecastDays; $day++) {
+                    $forecastBreakdown[] = [
+                        'day' => $day + 1,
+                        'date' => Carbon::today()->addDays($day)->format('Y-m-d'),
+                        'projected_usage' => round($dailyMaterialUsage, 2),
+                        'cumulative_usage' => round($dailyMaterialUsage * ($day + 1), 2)
+                    ];
+                }
+                
+                // Delete old forecasts for this material and create new one
+                DB::table('material_forecasts')
+                    ->where('material_id', $material->material_id)
+                    ->delete();
+                
+                // Create new forecast with current date
+                DB::table('material_forecasts')->insert([
+                    'material_id' => $material->material_id,
+                    // Core display columns
+                    'current_stock' => round($currentStock, 2),
+                    'daily_usage' => $dailyMaterialUsage,
+                    'forecasted_usage' => $forecastedUsage,
+                    'days_until_stockout' => $daysUntilStockout,
+                    'status' => $status,
+                    'status_label' => $statusLabel,
+                    'projected_stock' => round($projectedStock, 2),
+                    'needs_reorder' => $needsReorder,
+                    // Forecast metadata
+                    'forecast_method' => $forecastMethod,
+                    'forecast_days' => $forecastDays,
+                    'confidence_score' => $confidenceScore,
+                    'confidence_level' => $confidenceLevel,
+                    'method_details' => json_encode($methodDetails),
+                    'forecast_breakdown' => json_encode($forecastBreakdown),
+                    'forecast_date' => $forecastDate->format('Y-m-d'),
+                    'forecast_period_start' => $forecastPeriodStart->format('Y-m-d'),
+                    'forecast_period_end' => $forecastPeriodEnd->format('Y-m-d'),
+                    'is_active' => true,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now()
+                ]);
+            }
+            
+            \Log::info('Auto-generated material forecasts for ' . count($bomMaterials) . ' materials');
+            
+        } catch (\Exception $e) {
+            \Log::error('Error auto-generating forecasts: ' . $e->getMessage());
+            // Don't throw, just log - controller will calculate on-the-fly
         }
     }
 }
